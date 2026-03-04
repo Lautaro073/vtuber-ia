@@ -1,0 +1,21 @@
+{
+  "name": "nyra-vtuber",
+  "version": "1.0.0",
+  "description": "NYRA - VTuber con IA local regenerativa (sin APIs externas)",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "node-fetch": "^3.3.2",
+    "say": "^0.16.0",
+    "tiktok-live-connector": "^2.1.1-beta1",
+    "tmi.js": "^1.8.5",
+    "uuid": "^9.0.0",
+    "ws": "^8.16.0"
+  }
+}

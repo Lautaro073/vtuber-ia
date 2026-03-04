@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>NYRA - Panel de Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+JP:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #05060f; --panel: #0c0e1e; --border: #1a1f3e;
+    --cyan: #00f5ff; --pink: #ff2d78; --purple: #7c3aed;
+    --text: #e0e8ff; --dim: #6b7db3;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Noto Sans JP', sans-serif; min-height: 100vh; }
+
+  .grid-bg {
+    position: fixed; inset: 0; z-index: 0;
+    background-image: linear-gradient(rgba(0,245,255,.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,245,255,.03) 1px, transparent 1px);
+    background-size: 40px 40px; pointer-events: none;
+  }
+
+  .app { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 340px; grid-template-rows: 56px 1fr; height: 100vh; }
+
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; border-bottom: 1px solid var(--border);
+    background: rgba(5,6,15,.95); backdrop-filter: blur(10px);
+  }
+  .logo { font-family: 'Orbitron',monospace; font-size: 16px; color: var(--cyan); text-shadow: 0 0 20px #00f5ff88; letter-spacing: 4px; }
+  .status-pill {
+    display: flex; align-items: center; gap: 8px; padding: 4px 14px;
+    border: 1px solid var(--border); border-radius: 20px; font-size: 11px;
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #00f5ff; box-shadow: 0 0 8px #00f5ff; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* chat */
+  .chat-col { display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+
+  .tabs { display: flex; border-bottom: 1px solid var(--border); }
+  .tab {
+    padding: 12px 20px; font-family: 'Orbitron',monospace; font-size: 10px;
+    letter-spacing: 2px; color: var(--dim); cursor: pointer; border-bottom: 2px solid transparent;
+    transition: all .2s;
+  }
+  .tab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+
+  .tab-content { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+  .tab-content.active { display: flex; }
+
+  .messages {
+    flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  }
+
+  .msg {
+    max-width: 80%; padding: 10px 14px; border-radius: 12px;
+    font-size: 14px; line-height: 1.5; animation: fadeUp .3s ease;
+  }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1} }
+  .msg-user { align-self: flex-end; background: linear-gradient(135deg,#1a0a2e,#2a0a3e); border: 1px solid var(--purple); color: #d4b8ff; }
+  .msg-ai {
+    align-self: flex-start; background: linear-gradient(135deg,#001a20,#001828);
+    border: 1px solid rgba(0,245,255,.3); color: var(--text); position: relative;
+  }
+  .msg-ai::before { content:'// NYRA'; position:absolute; top:-18px; left:0; font-family:'Orbitron',monospace; font-size:9px; color:var(--cyan); letter-spacing:2px; }
+  .msg-rag { font-size: 10px; color: var(--purple); margin-top: 4px; }
+
+  .chat-form { padding: 14px; border-top: 1px solid var(--border); display: flex; gap: 10px; }
+  input[type=text], textarea {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 14px; color: var(--text); font-family: inherit; font-size: 14px; outline: none;
+    transition: border-color .2s;
+  }
+  input[type=text]:focus, textarea:focus { border-color: var(--cyan); box-shadow: 0 0 10px rgba(0,245,255,.1); }
+  input[type=text] { flex: 1; }
+  textarea { width: 100%; resize: vertical; min-height: 140px; }
+
+  .btn {
+    padding: 10px 18px; border-radius: 8px; border: none; cursor: pointer;
+    font-family: 'Orbitron',monospace; font-size: 10px; letter-spacing: 2px; font-weight: 700;
+    transition: all .2s;
+  }
+  .btn-cyan { background: linear-gradient(135deg,#00c8d4,#00f5ff); color: #000; box-shadow: 0 0 15px rgba(0,245,255,.3); }
+  .btn-cyan:hover { box-shadow: 0 0 25px rgba(0,245,255,.6); transform: translateY(-1px); }
+  .btn-cyan:disabled { opacity:.4; cursor:not-allowed; transform:none; }
+  .btn-pink { background: linear-gradient(135deg,#c4005e,#ff2d78); color:#fff; box-shadow:0 0 15px rgba(255,45,120,.3); }
+  .btn-pink:hover { box-shadow:0 0 25px rgba(255,45,120,.6); transform:translateY(-1px); }
+  .btn-sm { padding: 6px 12px; font-size: 9px; }
+
+  .thinking { display:flex; gap:4px; align-items:center; padding:10px 14px; }
+  .thinking span { width:8px;height:8px;border-radius:50%;background:var(--cyan);animation:bounce .9s infinite ease-in-out; }
+  .thinking span:nth-child(2){animation-delay:.15s} .thinking span:nth-child(3){animation-delay:.3s}
+  @keyframes bounce{0%,100%{transform:scale(1)}50%{transform:scale(.5);opacity:.4}}
+
+  /* learn panel */
+  .learn-section { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .platform-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    transition: box-shadow .2s;
+  }
+  .platform-badge {
+    font-size: 10px; font-family: 'Orbitron', monospace; letter-spacing: 1px;
+    padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border);
+    transition: color .3s, background .3s, border-color .3s;
+  }
+  .platform-badge--off { color: var(--dim); background: rgba(255,255,255,.04); }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .label { font-family:'Orbitron',monospace; font-size:10px; letter-spacing:2px; color:var(--dim); }
+
+  /* right panel */
+  .right-col { display: flex; flex-direction: column; background: var(--panel); overflow: hidden; }
+
+  .panel-section { border-bottom: 1px solid var(--border); padding: 16px; }
+  .panel-title { font-family:'Orbitron',monospace; font-size:10px; letter-spacing:3px; color:var(--pink); text-shadow:0 0 10px #ff2d7888; margin-bottom:12px; }
+
+  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat-box { background: rgba(0,245,255,.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; }
+  .stat-num { font-family:'Orbitron',monospace; font-size: 22px; color: var(--cyan); }
+  .stat-lbl { font-size: 10px; color: var(--dim); letter-spacing: 1px; margin-top: 2px; }
+
+  .model-select {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 12px;
+    border-radius: 6px; font-family: 'Noto Sans JP',sans-serif; font-size: 13px; width: 100%; outline: none;
+  }
+  .model-select:focus { border-color: var(--cyan); }
+
+  .mem-scroll { max-height: 200px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .mem-entry {
+    padding: 6px 10px; margin-bottom: 4px; border-left: 2px solid var(--purple);
+    background: rgba(124,58,237,.05); border-radius: 0 4px 4px 0;
+    font-size: 11px; color: var(--dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .mem-source { color: var(--purple); font-size: 10px; }
+
+  .obs-link {
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(0,245,255,.03); border: 1px solid rgba(0,245,255,.2);
+    border-radius: 8px; padding: 10px 14px; font-size: 12px; margin-top: 10px;
+  }
+  .obs-url { color: var(--cyan); font-family: monospace; font-size: 11px; }
+
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; z-index: 100;
+    padding: 10px 20px; border-radius: 8px; font-size: 13px;
+    background: linear-gradient(135deg,#001a20,#001828);
+    border: 1px solid rgba(0,245,255,.5); color: var(--cyan);
+    animation: fadeUp .3s ease; display: none;
+  }
+  .toast.show { display: block; }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="app">
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <span class="logo">NYRA CONTROL PANEL</span>
+    <div style="display:flex;gap:12px;align-items:center">
+      <div class="status-pill">
+        <div class="dot" id="ollamaDot" style="background:#666;box-shadow:none"></div>
+        <span id="ollamaStatus" style="color:var(--dim)">Chequeando Ollama...</span>
+      </div>
+      <a href="/obs" target="_blank">
+        <button class="btn btn-pink btn-sm">ABRIR OBS VIEW</button>
+      </a>
+    </div>
+  </div>
+
+  <!-- Chat col -->
+  <div class="chat-col">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('chat')">// CHAT</div>
+      <div class="tab" onclick="switchTab('learn')">// ENSEÑAR</div>
+      <div class="tab" onclick="switchTab('stream')">// STREAM</div>
+    </div>
+
+    <!-- Chat tab -->
+    <div class="tab-content active" id="tab-chat">
+      <div class="messages" id="messages">
+        <div class="msg msg-ai">Iniciando sistema. Conectá al servidor... te espero.</div>
+      </div>
+      <div class="chat-form">
+        <input type="text" id="chatInput" placeholder="Habla con NYRA..." onkeydown="if(event.key==='Enter')sendMsg()">
+        <button class="btn btn-cyan" onclick="sendMsg()" id="sendBtn">ENVIAR</button>
+        <button class="btn btn-sm" onclick="clearHistory()" title="Limpiar historial" style="background:var(--panel);color:var(--dim);border:1px solid var(--border)">✕</button>
+      </div>
+    </div>
+
+    <!-- Learn tab -->
+    <div class="tab-content" id="tab-learn">
+      <div class="learn-section">
+        <div class="form-group">
+          <label class="label">TEXTO A APRENDER</label>
+          <textarea id="learnText" placeholder="Pegá cualquier texto aquí...&#10;&#10;• Artículos de Wikipedia&#10;• Noticias&#10;• Cualquier información que quieras que NYRA sepa"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="label">FUENTE (opcional)</label>
+          <input type="text" id="learnSource" placeholder="Wikipedia, noticias, manual...">
+        </div>
+        <button class="btn btn-pink" onclick="learnText()">⬆ ENSEÑAR A NYRA</button>
+        <div id="learnResult" style="font-size:12px;color:var(--dim);display:none"></div>
+
+        <div style="border-top:1px solid var(--border);padding-top:14px">
+          <div class="label" style="margin-bottom:8px">MODO BATCH — MÚLTIPLES TEXTOS</div>
+          <textarea id="batchText" placeholder="Texto 1&#10;---&#10;Texto 2&#10;---&#10;Texto 3" style="min-height:100px"></textarea>
+          <button class="btn btn-sm btn-cyan" style="margin-top:8px" onclick="learnBatch()">APRENDER BATCH</button>
+        </div>
+
+        <div style="border-top:1px solid var(--border);padding-top:14px">
+          <div class="label" style="margin-bottom:8px">INGESTAR DESDE URL</div>
+          <input type="text" id="ingestUrl" placeholder="https://es.wikipedia.org/wiki/..." style="margin-bottom:8px">
+          <button class="btn btn-sm btn-cyan" onclick="ingestUrl()">&#x2B07; IMPORTAR URL</button>
+          <div id="ingestResult" style="font-size:11px;color:var(--dim);margin-top:6px;display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stream tab -->
+    <div class="tab-content" id="tab-stream">
+      <div class="learn-section">
+
+        <!-- Twitch card -->
+        <div class="platform-card" id="card-twitch" style="--pc:#9146ff">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span class="label" style="color:#9146ff;letter-spacing:2px">TWITCH</span>
+            <span id="status-twitch" class="platform-badge platform-badge--off">&#x25CF; OFF</span>
+          </div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="channel-twitch" placeholder="nombre_canal" style="flex:1">
+            <button class="btn btn-sm" style="background:#9146ff22;color:#9146ff;border:1px solid #9146ff55"
+              onclick="connectPlatform('twitch')">CONECTAR</button>
+            <button class="btn btn-sm" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3)"
+              id="disc-twitch" onclick="disconnectPlatform('twitch')" title="Desconectar">✕</button>
+          </div>
+        </div>
+
+        <!-- TikTok card -->
+        <div class="platform-card" id="card-tiktok" style="--pc:#ff0050">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span class="label" style="color:#ff0050;letter-spacing:2px">TIKTOK</span>
+            <span id="status-tiktok" class="platform-badge platform-badge--off">&#x25CF; OFF</span>
+          </div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="channel-tiktok" placeholder="@usuario" style="flex:1">
+            <button class="btn btn-sm" style="background:#ff005022;color:#ff0050;border:1px solid #ff005055"
+              onclick="connectPlatform('tiktok')">CONECTAR</button>
+            <button class="btn btn-sm" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3)"
+              id="disc-tiktok" onclick="disconnectPlatform('tiktok')" title="Desconectar">✕</button>
+          </div>
+        </div>
+
+        <!-- Kick card -->
+        <div class="platform-card" id="card-kick" style="--pc:#53b934">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <span class="label" style="color:#53b934;letter-spacing:2px">KICK</span>
+            <span id="status-kick" class="platform-badge platform-badge--off">&#x25CF; OFF</span>
+          </div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="channel-kick" placeholder="nombre_canal" style="flex:1">
+            <button class="btn btn-sm" style="background:#53b93422;color:#53b934;border:1px solid #53b93455"
+              onclick="connectPlatform('kick')">CONECTAR</button>
+            <button class="btn btn-sm" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3)"
+              id="disc-kick" onclick="disconnectPlatform('kick')" title="Desconectar">✕</button>
+          </div>
+        </div>
+
+        <!-- Respond mode -->
+        <div style="border-top:1px solid var(--border);padding-top:12px">
+          <div class="label" style="margin-bottom:8px">MODO DE RESPUESTA</div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="respondToAll" onchange="setRespondToAll(this.checked)"
+              style="accent-color:var(--cyan);width:14px;height:14px">
+            Responder a todos (desactivado = solo menciones @nyra)
+          </label>
+        </div>
+
+        <!-- Live chat -->
+        <div style="border-top:1px solid var(--border);padding-top:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div class="label">CHAT EN VIVO</div>
+            <button class="btn btn-sm" onclick="clearStreamLog()"
+              style="background:transparent;color:var(--dim);border:1px solid var(--border);padding:2px 8px;font-size:10px">
+              LIMPIAR
+            </button>
+          </div>
+          <div id="streamChatLog" style="
+            max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;
+            scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+          ">
+            <div style="font-size:11px;color:var(--dim)">Sin mensajes aún.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /chat-col -->
+
+  <!-- Right col -->
+  <div class="right-col">
+
+    <!-- Stats -->
+    <div class="panel-section">
+      <div class="panel-title">// CONOCIMIENTO</div>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="stat-num" id="statChunks">0</div><div class="stat-lbl">CHUNKS</div></div>
+        <div class="stat-box"><div class="stat-num" id="statWords">0</div><div class="stat-lbl">PALABRAS</div></div>
+        <div class="stat-box"><div class="stat-num" id="statSources">0</div><div class="stat-lbl">FUENTES</div></div>
+        <div class="stat-box"><div class="stat-num" id="statMsgs">0</div><div class="stat-lbl">MENSAJES</div></div>
+      </div>
+      <button class="btn btn-sm" onclick="clearKnowledge()" style="margin-top:10px;background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3);width:100%">
+        ⚠ BORRAR TODO EL CONOCIMIENTO
+      </button>
+    </div>
+
+    <!-- Model selector -->
+    <div class="panel-section">
+      <div class="panel-title">// MODELO LOCAL</div>
+      <select class="model-select" id="modelSelect">
+        <option value="llama3">llama3</option>
+        <option value="mistral">mistral</option>
+        <option value="gemma2">gemma2</option>
+        <option value="phi3">phi3</option>
+        <option value="llama3.1">llama3.1</option>
+        <option value="qwen2" selected>qwen2</option>
+      </select>
+      <button class="btn btn-sm btn-cyan" style="margin-top:8px;width:100%" onclick="changeModel()">CAMBIAR MODELO</button>
+      <div id="availableModels" style="font-size:10px;color:var(--dim);margin-top:6px"></div>
+    </div>
+
+    <!-- TTS -->
+    <div class="panel-section">
+      <div class="panel-title">// CONTROLES</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-pink" onclick="ttsStop()">■ DETENER VOZ</button>
+        <button class="btn btn-sm" onclick="clearHistory()" style="background:var(--panel);color:var(--dim);border:1px solid var(--border)">⟳ NUEVO CHAT</button>
+      </div>
+      <div class="obs-link">
+        <span>Browser Source OBS:</span>
+        <span class="obs-url">localhost:3000/obs</span>
+      </div>
+      <div style="font-size:11px;color:var(--dim);margin-top:8px">
+        Tamaño recomendado: <strong style="color:var(--cyan)">400×480px</strong><br>
+        Fondo ya es transparente — <strong style="color:var(--cyan)">NO activar Chroma Key</strong> en OBS
+      </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="panel-section">
+      <div class="panel-title">// FILTROS</div>
+
+      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);cursor:pointer;margin-bottom:10px">
+        <input type="checkbox" id="autoLearnToggle" onchange="setAutoLearn(this.checked)"
+          style="accent-color:var(--cyan);width:14px;height:14px">
+        Auto-aprender del chat
+      </label>
+
+      <div style="margin-bottom:8px">
+        <div class="label" style="margin-bottom:6px">PALABRAS BLOQUEADAS</div>
+        <div id="wordList" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;min-height:20px"></div>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="newWord" placeholder="palabra..." style="flex:1;font-size:12px;padding:6px 10px">
+          <button class="btn btn-sm btn-pink" onclick="addWord()">+</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="label" style="margin-bottom:6px">USUARIOS BLOQUEADOS</div>
+        <div id="userList" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;min-height:20px"></div>
+        <div style="display:flex;gap:6px">
+          <input type="text" id="newUser" placeholder="@usuario..." style="flex:1;font-size:12px;padding:6px 10px">
+          <button class="btn btn-sm btn-pink" onclick="addBlockedUser()">+</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent memories -->
+    <div class="panel-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+      <div class="panel-title">// MEMORIAS RECIENTES</div>
+      <div class="mem-scroll" id="memList">
+        <div style="font-size:12px;color:var(--dim)">Sin conocimiento aún.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  let ws;
+  let msgCount = 0;
+  let isThinking = false;
+  let streamBuffer = '';
+  let streamEl = null;
+
+  function toast(msg, duration = 2500) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), duration);
+  }
+
+  // ─ Tabs ─
+  const TAB_NAMES = ['chat', 'learn', 'stream'];
+  function switchTab(name) {
+    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', TAB_NAMES[i] === name));
+    document.querySelectorAll('.tab-content').forEach((c, i) => c.classList.toggle('active', TAB_NAMES[i] === name.replace('tab-', '')));
+    // fix: match by id
+    document.querySelectorAll('.tab-content').forEach(c => {
+      c.classList.toggle('active', c.id === `tab-${name}`);
+    });
+  }
+
+  // ─ WebSocket ─
+  function connectWS() {
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${wsProto}//${location.host}`);
+
+    ws.onopen = () => {
+      document.getElementById('ollamaDot').style.cssText = 'background:#00f5ff;box-shadow:0 0 8px #00f5ff;width:7px;height:7px;border-radius:50%';
+      document.getElementById('ollamaStatus').textContent = 'CONECTADO';
+      document.getElementById('ollamaStatus').style.color = 'var(--cyan)';
+    };
+
+    ws.onmessage = (e) => {
+      const data = JSON.parse(e.data);
+
+      if (data.type === 'welcome') {
+        addMsg('ai', data.text);
+        if (data.stats) updateStats(data.stats);
+      }
+
+      if (data.type === 'thinking') {
+        isThinking = true;
+        document.getElementById('sendBtn').disabled = true;
+        const el = document.createElement('div');
+        el.className = 'msg msg-ai';
+        el.innerHTML = '<div class="thinking"><span></span><span></span><span></span></div>';
+        el.id = 'thinking-el';
+        document.getElementById('messages').appendChild(el);
+        scrollBottom();
+      }
+
+      if (data.type === 'stream_start') {
+        const thEl = document.getElementById('thinking-el');
+        if (thEl) thEl.remove();
+        streamBuffer = '';
+        streamEl = document.createElement('div');
+        streamEl.className = 'msg msg-ai';
+        document.getElementById('messages').appendChild(streamEl);
+        scrollBottom();
+      }
+
+      if (data.type === 'stream_chunk') {
+        streamBuffer += data.chunk;
+        if (streamEl) streamEl.textContent = streamBuffer;
+        scrollBottom();
+      }
+
+      if (data.type === 'stream_end') {
+        if (streamEl) {
+          streamEl.textContent = data.fullText;
+          if (data.usedRAG) {
+            const rag = document.createElement('div');
+            rag.className = 'msg-rag';
+            rag.textContent = '✦ Usé conocimiento aprendido';
+            streamEl.appendChild(rag);
+          }
+        }
+        streamEl = null;
+        streamBuffer = '';
+        isThinking = false;
+        document.getElementById('sendBtn').disabled = false;
+        msgCount++;
+        document.getElementById('statMsgs').textContent = msgCount;
+        scrollBottom();
+      }
+
+      if (data.type === 'learned') {
+        updateStats(data.stats);
+        toast(`✓ NYRA aprendió ${data.chunksAdded} chunks nuevos!`);
+        loadMemories();
+      }
+
+      if (data.type === 'history_cleared') {
+        document.getElementById('messages').innerHTML = '';
+        addMsg('ai', 'Historial limpiado. Empecemos de cero.');
+        msgCount = 0;
+        document.getElementById('statMsgs').textContent = '0';
+      }
+
+      if (data.type === 'error') {
+        const thEl = document.getElementById('thinking-el');
+        if (thEl) thEl.remove();
+        addMsg('ai', data.text);
+        isThinking = false;
+        document.getElementById('sendBtn').disabled = false;
+      }
+
+      if (data.type === 'tts_play') {
+        new Audio(data.url).play().catch(e => console.warn('TTS panel:', e));
+      }
+
+      if (data.type === 'stream_status') {
+        updateStreamStatus(data);
+      }
+
+      if (data.type === 'stream_chat_message') {
+        addStreamMessage(data.username, data.text, data.platform);
+      }
+
+      if (data.type === 'filters_updated') {
+        renderFilters(data.filters);
+      }
+    };
+
+    ws.onclose = () => {
+      document.getElementById('ollamaDot').style.background = '#ff4444';
+      document.getElementById('ollamaStatus').textContent = 'DESCONECTADO - recargá la página';
+      setTimeout(connectWS, 3000);
+    };
+  }
+
+  function addMsg(role, text) {
+    const el = document.createElement('div');
+    el.className = `msg msg-${role}`;
+    el.textContent = text;
+    document.getElementById('messages').appendChild(el);
+    scrollBottom();
+    if (role === 'user') { msgCount++; document.getElementById('statMsgs').textContent = msgCount; }
+  }
+
+  function scrollBottom() {
+    const m = document.getElementById('messages');
+    m.scrollTop = m.scrollHeight;
+  }
+
+  function sendMsg() {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text || isThinking || ws.readyState !== 1) return;
+    addMsg('user', text);
+    ws.send(JSON.stringify({ type: 'chat', text }));
+    input.value = '';
+  }
+
+  function clearHistory() {
+    ws.send(JSON.stringify({ type: 'clear_history' }));
+  }
+
+  // ─ Learn ─
+  function learnText() {
+    const text = document.getElementById('learnText').value.trim();
+    const source = document.getElementById('learnSource').value.trim() || 'manual';
+    if (!text) return toast('Escribí algo para enseñar!');
+    ws.send(JSON.stringify({ type: 'learn', text, source }));
+    document.getElementById('learnText').value = '';
+    document.getElementById('learnResult').style.display = 'none';
+  }
+
+  function learnBatch() {
+    const raw = document.getElementById('batchText').value;
+    const parts = raw.split('---').map(p => p.trim()).filter(Boolean);
+    if (!parts.length) return toast('Usá --- para separar textos');
+    parts.forEach(text => ws.send(JSON.stringify({ type: 'learn', text, source: 'batch' })));
+    document.getElementById('batchText').value = '';
+    toast(`Enviando ${parts.length} textos para aprender...`);
+  }
+
+  function clearKnowledge() {
+    if (!confirm('¿Borrar TODA la base de conocimiento de NYRA?')) return;
+    fetch('/api/knowledge', { method: 'DELETE' })
+      .then(() => { updateStats({ totalChunks:0, totalWords:0, sources:0 }); loadMemories(); toast('Conocimiento borrado'); });
+  }
+
+  // ─ Model ─
+  function changeModel() {
+    const model = document.getElementById('modelSelect').value;
+    fetch('/api/model', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model }) })
+      .then(() => toast(`Modelo cambiado a ${model}`));
+  }
+
+  // ─ TTS ─
+  function ttsStop() { fetch('/api/tts/stop', { method:'POST' }); ws.send(JSON.stringify({ type:'tts_stop' })); }
+
+  // ─ UI updates ─
+  function updateStats(s) {
+    document.getElementById('statChunks').textContent = s.totalChunks ?? s.chunks ?? 0;
+    document.getElementById('statWords').textContent = s.totalWords ?? s.words ?? 0;
+    document.getElementById('statSources').textContent = s.sources ?? 0;
+  }
+
+  async function loadMemories() {
+    const res = await fetch('/api/knowledge');
+    const data = await res.json();
+    updateStats(data.stats);
+    const list = document.getElementById('memList');
+    if (!data.recent.length) { list.innerHTML = '<div style="font-size:12px;color:var(--dim)">Sin conocimiento aún.</div>'; return; }
+    list.innerHTML = data.recent.map(m => `
+      <div class="mem-entry" title="${m.preview}">
+        <span class="mem-source">[${m.source}]</span> ${m.preview}
+      </div>
+    `).join('');
+  }
+
+  async function checkOllama() {
+    const res = await fetch('/api/status');
+    const data = await res.json();
+    if (data.ollama) {
+      document.getElementById('availableModels').textContent = `Modelos instalados: ${data.models.join(', ')}`;
+    } else {
+      document.getElementById('ollamaStatus').textContent = 'Ollama no encontrado';
+      document.getElementById('ollamaDot').style.background = '#ff8800';
+    }
+    updateStats(data.knowledge);
+  }
+
+  // ─ Stream Chat ─
+  const PLATFORM_COLORS = { twitch:'#9146ff', tiktok:'#ff0050', kick:'#53b934' };
+
+  async function connectPlatform(platform) {
+    const input   = document.getElementById(`channel-${platform}`);
+    const channel = input ? input.value.trim() : '';
+    if (!channel) return toast(`Ingresá el canal para ${platform}`);
+    const btn = input.nextElementSibling;
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    try {
+      const res  = await fetch('/api/stream/connect', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ platform, channel })
+      });
+      const data = await res.json();
+      if (data.ok) { toast(`✓ Conectado a ${platform}/${channel}`); }
+      else         { toast(`Error: ${data.error || 'desconocido'}`); }
+    } catch(e) { toast('Error de red'); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = 'CONECTAR'; } }
+  }
+
+  async function disconnectPlatform(platform) {
+    await fetch('/api/stream/disconnect', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ platform })
+    });
+    toast(`${platform} desconectado`);
+  }
+
+  function setRespondToAll(val) {
+    fetch('/api/filters/settings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ respondToAll: val }) });
+  }
+
+  function clearStreamLog() {
+    const log = document.getElementById('streamChatLog');
+    if (log) log.innerHTML = '<div style="font-size:11px;color:var(--dim)">Sin mensajes aún.</div>';
+  }
+
+  function hexToRgb(hex) {
+    const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+    return `${r},${g},${b}`;
+  }
+
+  function updateStreamStatus(s) {
+    const platforms = s.platforms || {};
+    for (const [platform, info] of Object.entries(platforms)) {
+      const badge = document.getElementById(`status-${platform}`);
+      const card  = document.getElementById(`card-${platform}`);
+      if (!badge) continue;
+      const color = PLATFORM_COLORS[platform] || '#00f5ff';
+      if (info.connected) {
+        badge.textContent = `● ${info.channel}`;
+        badge.style.color = color;
+        badge.style.background = `rgba(${hexToRgb(color)},.1)`;
+        badge.style.borderColor = `rgba(${hexToRgb(color)},.4)`;
+        if (card) card.style.boxShadow = `0 0 0 1px rgba(${hexToRgb(color)},.3)`;
+        const inp = document.getElementById(`channel-${platform}`);
+        if (inp && !inp.value) inp.value = info.channel;
+      } else {
+        badge.textContent = '● OFF';
+        badge.style.color = 'var(--dim)';
+        badge.style.background = 'rgba(255,255,255,.04)';
+        badge.style.borderColor = 'var(--border)';
+        if (card) card.style.boxShadow = 'none';
+      }
+    }
+    // respondToAll
+    if (s.respondToAll !== undefined) {
+      const cb = document.getElementById('respondToAll');
+      if (cb) cb.checked = s.respondToAll;
+    }
+  }
+
+  function addStreamMessage(username, text, platform) {
+    const log = document.getElementById('streamChatLog');
+    if (!log) return;
+    const empty = log.querySelector('div[style*="dim"]');
+    if (empty && log.children.length === 1) log.innerHTML = '';
+    const color = PLATFORM_COLORS[platform] || 'var(--cyan)';
+    const el = document.createElement('div');
+    el.style.cssText = `padding:5px 8px;border-left:2px solid ${color};background:rgba(${hexToRgb(color) || '0,245,255'},.03);border-radius:0 4px 4px 0;font-size:11px`;
+    el.innerHTML = `<span style="color:${color};font-size:10px;opacity:.7">[${platform.toUpperCase()}]</span> <strong style="color:${color}">@${username}</strong>: <span style="color:var(--text)">${text}</span>`;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+    while (log.children.length > 30) log.removeChild(log.firstChild);
+  }
+
+  // ─ Filtros ─
+  async function loadFilters() {
+    const res  = await fetch('/api/filters');
+    const data = await res.json();
+    renderFilters(data);
+  }
+
+  function renderFilters(data) {
+    document.getElementById('autoLearnToggle').checked = !!data.autoLearn;
+    document.getElementById('respondToAll').checked    = !!data.respondToAll;
+
+    const wl = document.getElementById('wordList');
+    wl.innerHTML = (data.words || []).map(w =>
+      `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:rgba(255,45,120,.1);border:1px solid rgba(255,45,120,.3);border-radius:12px;font-size:10px;color:var(--pink)">
+        ${w} <span onclick="removeWord('${w}')" style="cursor:pointer;opacity:.6;font-size:12px">×</span>
+      </span>`
+    ).join('');
+
+    const ul = document.getElementById('userList');
+    ul.innerHTML = (data.blockedUsers || []).map(u =>
+      `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.3);border-radius:12px;font-size:10px;color:var(--purple)">
+        @${u} <span onclick="removeBlockedUser('${u}')" style="cursor:pointer;opacity:.6;font-size:12px">×</span>
+      </span>`
+    ).join('');
+  }
+
+  async function addWord() {
+    const word = document.getElementById('newWord').value.trim();
+    if (!word) return;
+    await fetch('/api/filters/word', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ word }) });
+    document.getElementById('newWord').value = '';
+    loadFilters();
+  }
+
+  async function removeWord(word) {
+    await fetch('/api/filters/word', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ word, action:'remove' }) });
+    loadFilters();
+  }
+
+  async function addBlockedUser() {
+    const user = document.getElementById('newUser').value.trim().replace(/^@/, '');
+    if (!user) return;
+    await fetch('/api/filters/user', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ user }) });
+    document.getElementById('newUser').value = '';
+    loadFilters();
+  }
+
+  async function removeBlockedUser(user) {
+    await fetch('/api/filters/user', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ user, action:'remove' }) });
+    loadFilters();
+  }
+
+  function setAutoLearn(val) {
+    fetch('/api/filters/settings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ autoLearn: val }) });
+    toast(val ? 'Auto-aprendizaje activado' : 'Auto-aprendizaje desactivado');
+  }
+
+  // ─ Ingesta de URL ─
+  async function ingestUrl() {
+    const url = document.getElementById('ingestUrl').value.trim();
+    if (!url) return toast('Ingresá una URL');
+    const res  = document.getElementById('ingestResult');
+    res.style.display = 'block';
+    res.textContent = 'Importando...';
+    res.style.color = 'var(--dim)';
+    try {
+      const r    = await fetch('/api/ingest/url', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ url }) });
+      const data = await r.json();
+      if (data.ok) {
+        res.textContent = `✓ Importados ${data.chunksAdded} chunks desde ${new URL(url).hostname}`;
+        res.style.color = 'var(--cyan)';
+        document.getElementById('ingestUrl').value = '';
+        updateStats(data.stats);
+        loadMemories();
+      } else {
+        res.textContent = `Error: ${data.error}`;
+        res.style.color = 'var(--pink)';
+      }
+    } catch (e) {
+      res.textContent = `Error: ${e.message}`;
+      res.style.color = 'var(--pink)';
+    }
+  }
+
+  // ─ Init ─
+  connectWS();
+  loadMemories();
+  checkOllama();
+  loadFilters();
+
+  // Chequear estado del stream al cargar
+  fetch('/api/stream/status').then(r => r.json()).then(updateStreamStatus);
+</script>
+</body>
+</html>

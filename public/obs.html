@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>NYRA VTuber - OBS</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { background: transparent; width: 500px; height: 600px; overflow: hidden; }
+
+  .scene {
+    width:500px; height:600px; position:relative;
+    display:flex; align-items:flex-end; justify-content:center;
+  }
+
+  .avatar {
+    position:relative; width:460px; height:560px;
+    display:flex; align-items:flex-end; justify-content:center;
+  }
+
+  /* ── Cada expresión es un <img> apilado ── */
+  .expr {
+    position: absolute;
+    bottom: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    object-position: bottom center;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    pointer-events: none;
+  }
+  .expr.active { opacity: 1; }
+  /* Blink se superpone instantáneamente sobre idle, sin fade */
+  #expr-blink { z-index: 2; transition: opacity 0.02s ease; }
+
+  /* Animaciones por estado — se aplican al wrapper */
+  .avatar.idle     { animation: breathe 4s ease-in-out infinite; }
+  .avatar.speaking { animation: speak-bob .3s ease-in-out infinite alternate; }
+  .avatar.thinking { animation: think-sway 1.5s ease-in-out infinite; }
+  .avatar.blinking { animation: breathe 4s ease-in-out infinite; } /* misma que idle */
+
+  @keyframes breathe   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
+  @keyframes speak-bob { from{transform:translateY(0) rotate(-.25deg)} to{transform:translateY(-5px) rotate(.25deg)} }
+  @keyframes think-sway{ 0%,100%{transform:rotate(-1.8deg)} 50%{transform:rotate(1.8deg) translateY(-6px)} }
+
+  /* ── Burbuja ── */
+  .bubble {
+    position:absolute; bottom:92%; right:-30px; width:250px;
+    opacity:0; transform:scale(.94) translateY(8px);
+    transition:opacity .3s, transform .3s;
+    pointer-events:none; z-index:10;
+  }
+  .bubble.show { opacity:1; transform:scale(1) translateY(0); }
+  .bubble-box {
+    background:linear-gradient(140deg,rgba(8,4,20,.94),rgba(16,8,32,.94));
+    border:1.5px solid rgba(190,120,255,.5);
+    border-radius:20px 20px 4px 20px;
+    padding:13px 17px 12px;
+    box-shadow:0 8px 32px rgba(140,60,255,.2);
+    color:#eedeff; font:14px/1.6 'Segoe UI',sans-serif; position:relative;
+  }
+  .bubble-box::after  { content:''; position:absolute; bottom:-11px; right:28px; border:11px solid transparent; border-top-color:rgba(190,120,255,.5); }
+  .bubble-box::before { content:''; position:absolute; bottom:-9px;  right:30px; border:9px  solid transparent; border-top-color:#100820; z-index:1; }
+  .bubble-name { font:700 9px/1 monospace; letter-spacing:3px; color:#bb77ff; margin-bottom:7px; }
+  .cursor { display:inline-block; width:2px; height:14px; background:#bb77ff; margin-left:2px; vertical-align:middle; animation:bc .5s step-end infinite; }
+  @keyframes bc { 0%,100%{opacity:1} 50%{opacity:0} }
+  .t-dots { display:flex; gap:5px; padding:4px 0; }
+  .t-dots span { width:8px; height:8px; border-radius:50%; background:#bb77ff; animation:td .88s infinite ease-in-out; }
+  .t-dots span:nth-child(2){animation-delay:.15s} .t-dots span:nth-child(3){animation-delay:.3s}
+  @keyframes td { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(.3);opacity:.25} }
+
+  /* ── Status ── */
+  .status { position:absolute; top:14px; left:14px; display:flex; align-items:center; gap:7px; background:rgba(8,4,20,.85); border:1px solid rgba(190,120,255,.22); border-radius:24px; padding:5px 16px; backdrop-filter:blur(10px); }
+  .s-dot  { width:7px; height:7px; border-radius:50%; background:#bb77ff; box-shadow:0 0 8px #bb77ff; animation:sp 2s infinite; }
+  @keyframes sp { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .s-txt  { font:700 10px/1 monospace; color:#bb77ff; letter-spacing:2.5px; }
+
+  /* ── Wave ── */
+  .wave { position:absolute; bottom:14px; right:14px; display:none; align-items:center; gap:3px; background:rgba(8,4,20,.85); border:1px solid rgba(190,120,255,.22); border-radius:24px; padding:7px 14px; }
+  .wave.show { display:flex; }
+  .wave span { width:3px; background:#bb77ff; border-radius:3px; animation:wv .75s ease-in-out infinite; }
+  .wave span:nth-child(1){height:5px} .wave span:nth-child(2){height:12px;animation-delay:.1s}
+  .wave span:nth-child(3){height:7px;animation-delay:.2s} .wave span:nth-child(4){height:15px;animation-delay:.14s} .wave span:nth-child(5){height:5px;animation-delay:.06s}
+  @keyframes wv { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(.18)} }
+
+  .ground-shadow { position:absolute; bottom:4px; left:50%; transform:translateX(-50%); width:180px; height:22px; background:radial-gradient(ellipse,rgba(130,50,255,.2) 0%,transparent 70%); border-radius:50%; }
+</style>
+</head>
+<body>
+<div class="scene">
+
+  <div class="status">
+    <div class="s-dot" id="sDot"></div>
+    <span class="s-txt" id="sTxt">ONLINE</span>
+  </div>
+  <div class="wave" id="wave">
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+
+  <div class="avatar idle" id="avatar">
+
+    <!-- Burbuja de diálogo -->
+    <div class="bubble" id="bubble">
+      <div class="bubble-box">
+        <div class="bubble-name">// NYRA</div>
+        <div id="bubTxt"></div>
+      </div>
+    </div>
+
+    <!-- ✅ Una imagen por expresión, se crossfadean -->
+    <img id="expr-idle"     class="expr active" src="nyra_idle.png"     alt="idle">
+    <img id="expr-talking"  class="expr"        src="nyra_talking.png"  alt="talking">
+    <img id="expr-thinking" class="expr"        src="nyra_thinking.png" alt="thinking">
+    <img id="expr-blink"    class="expr"        src="nyra_blink.png"    alt="blink">
+    <img id="expr-surprise" class="expr"        src="nyra_sorprais.png" alt="surprise">
+
+  </div>
+
+  <div class="ground-shadow"></div>
+</div>
+
+<!-- Overlay para desbloquear autoplay en browsers con restricción -->
+<div id="audio-overlay" style="
+  position:fixed; inset:0; z-index:9999;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(0,0,0,0.45); cursor:pointer;
+" onclick="this.style.display='none'; if(typeof _actx!=='undefined'&&_actx&&_actx.state==='suspended')_actx.resume();">
+  <div style="color:#00f5ff;font-family:monospace;font-size:13px;text-align:center;text-shadow:0 0 10px #00f5ff;">
+    🔊 CLICK PARA ACTIVAR AUDIO
+  </div>
+</div>
+
+<script>
+  const overlay  = document.getElementById('audio-overlay');
+  const avatar   = document.getElementById('avatar');
+  const bubble   = document.getElementById('bubble');
+  const bubTxt   = document.getElementById('bubTxt');
+  const sDot     = document.getElementById('sDot');
+  const sTxt     = document.getElementById('sTxt');
+  const wave     = document.getElementById('wave');
+
+  // Mapa de expresiones
+  const EXPRS = {
+    idle:     document.getElementById('expr-idle'),
+    talking:  document.getElementById('expr-talking'),
+    thinking: document.getElementById('expr-thinking'),
+    blink:    document.getElementById('expr-blink'),
+    surprise: document.getElementById('expr-surprise'),
+  };
+
+  let currentExpr = 'idle';
+  let bubTimer    = null;
+  let streamBuf   = '';
+  let blinkLoop   = null;
+  let talkLoop    = null;
+
+  // ── Cambiar expresión con crossfade ──
+  function setExpr(name) {
+    if (!EXPRS[name]) return;
+    EXPRS[currentExpr]?.classList.remove('active');
+    EXPRS[name].classList.add('active');
+    currentExpr = name;
+  }
+
+  // ── Parpadeo automático cada ~4s ──
+  // Blink se superpone SOBRE idle (no la reemplaza), así nunca hay frame vacío
+  function startBlinkLoop() {
+    stopBlinkLoop();
+    blinkLoop = setInterval(() => {
+      if (currentExpr !== 'idle') return;
+      EXPRS.blink.classList.add('active');
+      setTimeout(() => {
+        EXPRS.blink.classList.remove('active');
+      }, 150);
+    }, 3500 + Math.random() * 2000);
+  }
+  function stopBlinkLoop() {
+    clearInterval(blinkLoop);
+    EXPRS.blink.classList.remove('active');
+  }
+
+  // ── Animación boca al hablar (alterna idle ↔ talking) ──
+  function startTalkLoop() {
+    stopTalkLoop();
+    talkLoop = setInterval(() => {
+      setExpr(currentExpr === 'talking' ? 'idle' : 'talking');
+    }, 200);
+  }
+  function stopTalkLoop() {
+    clearInterval(talkLoop);
+    setExpr('idle');
+  }
+
+  // ── Estado general ──
+  function setState(s) {
+    avatar.className = 'avatar ' + s;
+    wave.classList.toggle('show', s === 'speaking');
+
+    const C = { speaking:'#ff5599', thinking:'#9944ff', idle:'#bb77ff' };
+    const L = { speaking:'HABLANDO', thinking:'PENSANDO...', idle:'ONLINE' };
+    sDot.style.background = C[s] || C.idle;
+    sDot.style.boxShadow  = `0 0 10px ${C[s] || C.idle}`;
+    sTxt.textContent      = L[s] || 'ONLINE';
+
+    if (s === 'speaking') {
+      stopBlinkLoop();
+      startTalkLoop();
+    } else if (s === 'thinking') {
+      stopTalkLoop();
+      stopBlinkLoop();
+      setExpr('thinking');
+    } else {
+      stopTalkLoop();
+      startBlinkLoop();
+      setExpr('idle');
+    }
+  }
+
+  // ── Burbuja ──
+  function showBubble(txt, typing = false) {
+    clearTimeout(bubTimer);
+    bubble.classList.add('show');
+    if (typing) {
+      bubTxt.innerHTML = '<div class="t-dots"><span></span><span></span><span></span></div>';
+    } else {
+      bubTxt.textContent = txt;
+      bubTimer = setTimeout(() => {
+        bubble.classList.remove('show');
+        setState('idle');
+      }, Math.max(4500, txt.length * 68));
+    }
+  }
+
+  // ── WebSocket ──
+  const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${wsProto}//${location.host}`);
+
+  ws.onmessage = ({ data }) => {
+    const m = JSON.parse(data);
+
+    if (m.type === 'welcome') {
+      setTimeout(() => { setExpr('surprise'); showBubble(m.text); }, 900);
+      setTimeout(() => setExpr('idle'), 2000);
+    }
+    if (m.type === 'thinking') {
+      setState('thinking');
+      showBubble('', true);
+    }
+    if (m.type === 'stream_start') {
+      streamBuf = '';
+      setState('speaking');
+      clearTimeout(bubTimer);
+      bubble.classList.add('show');
+      bubTxt.innerHTML = '';
+    }
+    if (m.type === 'stream_chunk') {
+      streamBuf += m.chunk;
+      bubTxt.innerHTML = streamBuf + '<span class="cursor"></span>';
+    }
+    if (m.type === 'stream_end') {
+      stopTalkLoop();
+      setExpr('idle');
+      bubTxt.textContent = m.fullText;
+      bubTimer = setTimeout(() => {
+        bubble.classList.remove('show');
+        setState('idle');
+      }, Math.max(5000, m.fullText.length * 70));
+    }
+    if (m.type === 'tts_play') {
+      playTTS(m.url);
+    }
+  };
+
+  ws.onclose = () => {
+    sTxt.textContent = 'OFFLINE';
+    sDot.style.background = '#444';
+    sDot.style.boxShadow = 'none';
+  };
+
+  // ── AudioContext (evita bloqueo autoplay en browsers normales) ──
+  let _actx = null;
+
+  // Detectar si estamos dentro de OBS Browser Source
+  const _isOBS = typeof window.obsstudio !== 'undefined';
+
+  function _getCtx() {
+    if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
+    return _actx;
+  }
+
+  function _unlock() {
+    const ctx = _getCtx();
+    ctx.resume().catch(() => {});
+    overlay.style.display = 'none';
+  }
+
+  if (_isOBS) {
+    // ── Dentro de OBS: audio sin restricciones ──
+    overlay.style.display = 'none'; // ocultar overlay, no hace falta click
+    // Intentar desbloquear AudioContext apenas carga
+    setTimeout(_unlock, 300);
+    // OBS dispara estos eventos al activar/desactivar la fuente o cambiar escena
+    window.addEventListener('obsSceneActiveChanged',  (e) => { if (e.detail?.active)  _unlock(); });
+    window.addEventListener('obsSourceActiveChanged', (e) => { if (e.detail?.active)  _unlock(); });
+    window.addEventListener('obsSourceVisibleChanged',(e) => { if (e.detail?.visible) _unlock(); });
+  } else {
+    // ── Browser normal: requiere interacción del usuario ──
+    document.addEventListener('click',   _unlock, { once: false });
+    document.addEventListener('keydown', _unlock, { once: false });
+  }
+
+  async function playTTS(url) {
+    try {
+      if (_isOBS) {
+        // En OBS el autoplay está permitido directamente
+        const audio = new Audio(url);
+        await audio.play();
+        return;
+      }
+      // Fuera de OBS: usar AudioContext para evitar bloqueo de autoplay
+      const ctx = _getCtx();
+      if (ctx.state === 'suspended') await ctx.resume();
+      const res     = await fetch(url);
+      const buf     = await res.arrayBuffer();
+      const decoded = await ctx.decodeAudioData(buf);
+      const src     = ctx.createBufferSource();
+      src.buffer    = decoded;
+      src.connect(ctx.destination);
+      src.start(0);
+      src.onended = () => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tts_done' })); };
+    } catch(e) {
+      console.warn('TTS audio error:', e);
+      const a = new Audio(url);
+      a.onended = () => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tts_done' })); };
+      a.play().catch(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tts_done' })); });
+    }
+  }
+
+  // ── Arrancar ──
+  setState('idle');
+</script>
+</body>
+</html>
