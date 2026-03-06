@@ -42,38 +42,6 @@
   @keyframes speak-bob { from{transform:translateY(0) rotate(-.25deg)} to{transform:translateY(-5px) rotate(.25deg)} }
   @keyframes think-sway{ 0%,100%{transform:rotate(-1.8deg)} 50%{transform:rotate(1.8deg) translateY(-6px)} }
 
-  /* ── Burbuja ── */
-  .bubble {
-    position:absolute; bottom:92%; right:-30px; width:250px;
-    opacity:0; transform:scale(.94) translateY(8px);
-    transition:opacity .3s, transform .3s;
-    pointer-events:none; z-index:10;
-  }
-  .bubble.show { opacity:1; transform:scale(1) translateY(0); }
-  .bubble-box {
-    background:linear-gradient(140deg,rgba(8,4,20,.94),rgba(16,8,32,.94));
-    border:1.5px solid rgba(190,120,255,.5);
-    border-radius:20px 20px 4px 20px;
-    padding:13px 17px 12px;
-    box-shadow:0 8px 32px rgba(140,60,255,.2);
-    color:#eedeff; font:14px/1.6 'Segoe UI',sans-serif; position:relative;
-  }
-  .bubble-box::after  { content:''; position:absolute; bottom:-11px; right:28px; border:11px solid transparent; border-top-color:rgba(190,120,255,.5); }
-  .bubble-box::before { content:''; position:absolute; bottom:-9px;  right:30px; border:9px  solid transparent; border-top-color:#100820; z-index:1; }
-  .bubble-name { font:700 9px/1 monospace; letter-spacing:3px; color:#bb77ff; margin-bottom:7px; }
-  .cursor { display:inline-block; width:2px; height:14px; background:#bb77ff; margin-left:2px; vertical-align:middle; animation:bc .5s step-end infinite; }
-  @keyframes bc { 0%,100%{opacity:1} 50%{opacity:0} }
-  .t-dots { display:flex; gap:5px; padding:4px 0; }
-  .t-dots span { width:8px; height:8px; border-radius:50%; background:#bb77ff; animation:td .88s infinite ease-in-out; }
-  .t-dots span:nth-child(2){animation-delay:.15s} .t-dots span:nth-child(3){animation-delay:.3s}
-  @keyframes td { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(.3);opacity:.25} }
-
-  /* ── Status ── */
-  .status { position:absolute; top:14px; left:14px; display:flex; align-items:center; gap:7px; background:rgba(8,4,20,.85); border:1px solid rgba(190,120,255,.22); border-radius:24px; padding:5px 16px; backdrop-filter:blur(10px); }
-  .s-dot  { width:7px; height:7px; border-radius:50%; background:#bb77ff; box-shadow:0 0 8px #bb77ff; animation:sp 2s infinite; }
-  @keyframes sp { 0%,100%{opacity:1} 50%{opacity:.3} }
-  .s-txt  { font:700 10px/1 monospace; color:#bb77ff; letter-spacing:2.5px; }
-
   /* ── Wave ── */
   .wave { position:absolute; bottom:14px; right:14px; display:none; align-items:center; gap:3px; background:rgba(8,4,20,.85); border:1px solid rgba(190,120,255,.22); border-radius:24px; padding:7px 14px; }
   .wave.show { display:flex; }
@@ -88,23 +56,11 @@
 <body>
 <div class="scene">
 
-  <div class="status">
-    <div class="s-dot" id="sDot"></div>
-    <span class="s-txt" id="sTxt">ONLINE</span>
-  </div>
   <div class="wave" id="wave">
     <span></span><span></span><span></span><span></span><span></span>
   </div>
 
   <div class="avatar idle" id="avatar">
-
-    <!-- Burbuja de diálogo -->
-    <div class="bubble" id="bubble">
-      <div class="bubble-box">
-        <div class="bubble-name">// NYRA</div>
-        <div id="bubTxt"></div>
-      </div>
-    </div>
 
     <!-- ✅ Una imagen por expresión, se crossfadean -->
     <img id="expr-idle"     class="expr active" src="nyra_idle.png"     alt="idle">
@@ -132,10 +88,6 @@
 <script>
   const overlay  = document.getElementById('audio-overlay');
   const avatar   = document.getElementById('avatar');
-  const bubble   = document.getElementById('bubble');
-  const bubTxt   = document.getElementById('bubTxt');
-  const sDot     = document.getElementById('sDot');
-  const sTxt     = document.getElementById('sTxt');
   const wave     = document.getElementById('wave');
 
   // Mapa de expresiones
@@ -148,7 +100,6 @@
   };
 
   let currentExpr = 'idle';
-  let bubTimer    = null;
   let streamBuf   = '';
   let blinkLoop   = null;
   let talkLoop    = null;
@@ -195,12 +146,6 @@
     avatar.className = 'avatar ' + s;
     wave.classList.toggle('show', s === 'speaking');
 
-    const C = { speaking:'#ff5599', thinking:'#9944ff', idle:'#bb77ff' };
-    const L = { speaking:'HABLANDO', thinking:'PENSANDO...', idle:'ONLINE' };
-    sDot.style.background = C[s] || C.idle;
-    sDot.style.boxShadow  = `0 0 10px ${C[s] || C.idle}`;
-    sTxt.textContent      = L[s] || 'ONLINE';
-
     if (s === 'speaking') {
       stopBlinkLoop();
       startTalkLoop();
@@ -215,21 +160,6 @@
     }
   }
 
-  // ── Burbuja ──
-  function showBubble(txt, typing = false) {
-    clearTimeout(bubTimer);
-    bubble.classList.add('show');
-    if (typing) {
-      bubTxt.innerHTML = '<div class="t-dots"><span></span><span></span><span></span></div>';
-    } else {
-      bubTxt.textContent = txt;
-      bubTimer = setTimeout(() => {
-        bubble.classList.remove('show');
-        setState('idle');
-      }, Math.max(4500, txt.length * 68));
-    }
-  }
-
   // ── WebSocket ──
   const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const ws = new WebSocket(`${wsProto}//${location.host}`);
@@ -238,43 +168,31 @@
     const m = JSON.parse(data);
 
     if (m.type === 'welcome') {
-      setTimeout(() => { setExpr('surprise'); showBubble(m.text); }, 900);
+      setTimeout(() => { setExpr('surprise'); }, 900);
       setTimeout(() => setExpr('idle'), 2000);
     }
     if (m.type === 'thinking') {
       setState('thinking');
-      showBubble('', true);
     }
     if (m.type === 'stream_start') {
       streamBuf = '';
       setState('speaking');
-      clearTimeout(bubTimer);
-      bubble.classList.add('show');
-      bubTxt.innerHTML = '';
     }
     if (m.type === 'stream_chunk') {
       streamBuf += m.chunk;
-      bubTxt.innerHTML = streamBuf + '<span class="cursor"></span>';
     }
     if (m.type === 'stream_end') {
       stopTalkLoop();
       setExpr('idle');
-      bubTxt.textContent = m.fullText;
-      bubTimer = setTimeout(() => {
-        bubble.classList.remove('show');
-        setState('idle');
-      }, Math.max(5000, m.fullText.length * 70));
+      setTimeout(() => setState('idle'), Math.max(5000, m.fullText.length * 70));
     }
     if (m.type === 'tts_play') {
       playTTS(m.url);
     }
   };
 
-  ws.onclose = () => {
-    sTxt.textContent = 'OFFLINE';
-    sDot.style.background = '#444';
-    sDot.style.boxShadow = 'none';
-  };
+  ws.onclose = () => {};
+
 
   // ── AudioContext (evita bloqueo autoplay en browsers normales) ──
   let _actx = null;
@@ -308,15 +226,36 @@
     document.addEventListener('keydown', _unlock, { once: false });
   }
 
-  async function playTTS(url) {
+  // Cola de audio: garantiza que nunca se superpongan dos audios
+  const _audioQueue = [];
+  let   _audioPlaying = false;
+
+  function _sendTTSDone() {
+    if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tts_done' }));
+    _audioPlaying = false;
+    if (_audioQueue.length > 0) _playNext(_audioQueue.shift());
+  }
+
+  function playTTS(url) {
+    if (_audioPlaying) {
+      _audioQueue.push(url);  // encolar: espera a que termine el audio actual
+    } else {
+      _playNext(url);
+    }
+  }
+
+  async function _playNext(url) {
+    _audioPlaying = true;
     try {
       if (_isOBS) {
-        // En OBS el autoplay está permitido directamente
+        // OBS: autoplay sin restricciones — onended envía tts_done
         const audio = new Audio(url);
+        audio.onended = _sendTTSDone;
+        audio.onerror = _sendTTSDone;
         await audio.play();
-        return;
+        return;  // _sendTTSDone se llama vía onended, no aquí
       }
-      // Fuera de OBS: usar AudioContext para evitar bloqueo de autoplay
+      // Browser normal: AudioContext para evitar bloqueo de autoplay
       const ctx = _getCtx();
       if (ctx.state === 'suspended') await ctx.resume();
       const res     = await fetch(url);
@@ -326,12 +265,13 @@
       src.buffer    = decoded;
       src.connect(ctx.destination);
       src.start(0);
-      src.onended = () => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tts_done' })); };
+      src.onended = _sendTTSDone;
     } catch(e) {
       console.warn('TTS audio error:', e);
       const a = new Audio(url);
-      a.onended = () => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tts_done' })); };
-      a.play().catch(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tts_done' })); });
+      a.onended = _sendTTSDone;
+      a.onerror = _sendTTSDone;
+      a.play().catch(_sendTTSDone);
     }
   }
 

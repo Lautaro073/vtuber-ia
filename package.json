@@ -11,6 +11,7 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.18.2",
+    "msedge-tts": "^2.0.4",
     "node-fetch": "^3.3.2",
     "say": "^0.16.0",
     "tiktok-live-connector": "^2.1.1-beta1",

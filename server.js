@@ -20,22 +20,24 @@ const PORT = 3000;
 // ─── Configuración ────────────────────────────────────────────────────────────
 const CONFIG = {
   ollamaUrl: "http://localhost:11434",
-  model: "qwen2",
-  visionModel: "llava",   // Modelo con visión. Opciones: llava, moondream, llama3.2-vision, qwen2-vl
-  maxContext: 8,
-  maxRagChunks: 5,
+  model: "dolphin-mistral",  // sin censura, sigue el persona libremente — alternativas: dolphin-llama3, mistral
+  // Fallback si no tenés dolphin: cambiar a "mistral" o "qwen2:1.5b" (qwen2 tiene safety training)
+  visionModel: "moondream",  // moondream = 1.7GB, corre junto a qwen2:1.5b sin crashear
+  maxContext: 4,        // historial reducido = contexto más pequeño = más rápido
+  maxRagChunks: 3,       // menos chunks RAG = prompt más corto = más rápido
   knowledgeFile: "knowledge.json",
   chunkSize: 200,
-
+  useSystemTTS: false,  // false = Murf (audio viaja al OBS del amigo por WS) ✅
+  // true  = voz del sistema (suena en TU PC, el amigo no escucha nada) ❌
   // ── Murf.ai TTS ──────────────────────────────────────────────────────────
   // 1. Cuenta en https://murf.ai → Dashboard → API Keys → copiá tu key
   // 2. Elegí voz en https://murf.ai/voice-studio → copiá el voiceId
   murf: {
-    apiKey:  "ap2_2c427819-8af8-481d-adcd-5bf78ffa3bab",   // ← reemplazar
+    apiKey: "ap2_2c427819-8af8-481d-adcd-5bf78ffa3bab",   // ← reemplazar
     voiceId: "es-MX-luisa",     // ← reemplazar con tu voz elegida
-    style:   "Conversational",    // Conversational | Promo | Sad | Angry
-    rate:    -10,                 // velocidad: -50 (lento) a +50 (rápido)
-    pitch:   -5,                  // tono: -50 a +50
+    style: "Conversational",    // Conversational | Promo | Sad | Angry
+    rate: -10,                 // velocidad: -50 (lento) a +50 (rápido)
+    pitch: -5,                  // tono: -50 a +50
   },
 };
 
@@ -102,6 +104,15 @@ class KnowledgeBase {
 
     const queryTokens = this.tokenize(query);
 
+    // Precomputar IDF una sola vez fuera del loop (evita O(n²))
+    const N = this.chunks.length;
+    const dfMap = {};
+    for (const qt of queryTokens) {
+      if (!(qt in dfMap)) {
+        dfMap[qt] = this.chunks.reduce((acc, c) => acc + (c.tokens.includes(qt) ? 1 : 0), 0);
+      }
+    }
+
     const scored = this.chunks.map(chunk => {
       const tf = {};
       chunk.tokens.forEach(t => { tf[t] = (tf[t] || 0) + 1; });
@@ -109,9 +120,7 @@ class KnowledgeBase {
       let score = 0;
       queryTokens.forEach(qt => {
         if (tf[qt]) {
-          // TF * rareza (IDF simplificado)
-          const df = this.chunks.filter(c => c.tokens.includes(qt)).length;
-          const idf = Math.log(this.chunks.length / (df + 1)) + 1;
+          const idf = Math.log(N / (dfMap[qt] + 1)) + 1;
           score += (tf[qt] / chunk.tokens.length) * idf;
         }
       });
@@ -149,7 +158,7 @@ class FilterEngine {
 
   load() {
     if (existsSync(this.filePath)) {
-      try { this.data = { ...this.data, ...JSON.parse(readFileSync(this.filePath, "utf8")) }; } catch {}
+      try { this.data = { ...this.data, ...JSON.parse(readFileSync(this.filePath, "utf8")) }; } catch { }
     }
   }
 
@@ -178,20 +187,180 @@ class FilterEngine {
     return out;
   }
 
-  addWord(w)    { const word = w.toLowerCase().trim(); if (word && !this.data.words.includes(word)) { this.data.words.push(word); this.save(); } }
+  addWord(w) { const word = w.toLowerCase().trim(); if (word && !this.data.words.includes(word)) { this.data.words.push(word); this.save(); } }
   removeWord(w) { this.data.words = this.data.words.filter(x => x !== w.toLowerCase().trim()); this.save(); }
-  addUser(u)    { const user = u.toLowerCase().trim(); if (user && !this.data.blockedUsers.includes(user)) { this.data.blockedUsers.push(user); this.save(); } }
+  addUser(u) { const user = u.toLowerCase().trim(); if (user && !this.data.blockedUsers.includes(user)) { this.data.blockedUsers.push(user); this.save(); } }
   removeUser(u) { this.data.blockedUsers = this.data.blockedUsers.filter(x => x !== u.toLowerCase().trim()); this.save(); }
+}
+
+// ─── Personalidad de NYRA (opiniones formadas con el tiempo) ─────────────────────
+class NyraPersonality {
+  constructor() {
+    this.filePath = join(__dirname, "nyra_personality.json");
+    this.data = { opinions: {} };
+    this.load();
+  }
+
+  load() {
+    if (existsSync(this.filePath)) {
+      try {
+        this.data = { opinions: {}, ...JSON.parse(readFileSync(this.filePath, "utf8")) };
+        const n = Object.keys(this.data.opinions).length;
+        if (n > 0) console.log(`💜 Personalidad cargada: ${n} opiniones`);
+      } catch { }
+    }
+  }
+
+  save() { writeFileSync(this.filePath, JSON.stringify(this.data, null, 2)); }
+
+  setOpinion(topic, opinion) {
+    this.data.opinions[topic.toLowerCase().trim()] = {
+      opinion: opinion.slice(0, 200),
+      updatedAt: new Date().toISOString(),
+    };
+    this.save();
+  }
+
+  getRelevantOpinions(query, topN = 2) {
+    const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const hits = [];
+    for (const [topic, { opinion }] of Object.entries(this.data.opinions)) {
+      if (words.some(w => topic.includes(w) || w.includes(topic)))
+        hits.push(`Sobre "${topic}": ${opinion}`);
+      if (hits.length >= topN) break;
+    }
+    return hits;
+  }
+
+  getStats() { return { opinions: Object.keys(this.data.opinions).length }; }
+
+  clear() { this.data = { opinions: {} }; this.save(); }
+}
+
+// ─── Aprendizaje del Chat (intercambios con viewers/streamer) ──────────────────
+class NyraChatLearning {
+  constructor() {
+    this.filePath = join(__dirname, "nyra_chat_learning.json");
+    this.chunks = [];
+    this.load();
+  }
+
+  load() {
+    if (existsSync(this.filePath)) {
+      try {
+        this.chunks = JSON.parse(readFileSync(this.filePath, "utf8"));
+        if (this.chunks.length > 0) console.log(`💬 Chat learning cargado: ${this.chunks.length} intercambios`);
+      } catch { this.chunks = []; }
+    }
+  }
+
+  save() { writeFileSync(this.filePath, JSON.stringify(this.chunks, null, 2)); }
+
+  tokenize(text) {
+    return text.toLowerCase().replace(/[^\w\sáéíóúüñ]/g, "").split(/\s+/).filter(w => w.length > 2);
+  }
+
+  addExchange(username, userMsg, nyraMsg) {
+    const text = `@${username}: ${userMsg.slice(0, 120)}\nNYRA: ${nyraMsg.slice(0, 200)}`;
+    this.chunks.push({
+      id: uuidv4(), text, username,
+      tokens: this.tokenize(text),
+      addedAt: new Date().toISOString(),
+    });
+    if (this.chunks.length > 800) this.chunks.splice(0, 100); // rotar: borrar los 100 más viejos
+    this.save();
+  }
+
+  search(query, topK = 2) {
+    if (this.chunks.length === 0) return [];
+    const qTokens = this.tokenize(query);
+    const N = this.chunks.length;
+    return this.chunks
+      .map(c => {
+        const tf = {};
+        c.tokens.forEach(t => { tf[t] = (tf[t] || 0) + 1; });
+        let score = 0;
+        qTokens.forEach(qt => {
+          if (tf[qt]) {
+            const df = this.chunks.filter(x => x.tokens.includes(qt)).length;
+            score += (tf[qt] / c.tokens.length) * (Math.log(N / (df + 1)) + 1);
+          }
+        });
+        return { ...c, score };
+      })
+      .filter(c => c.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, topK);
+  }
+
+  getStats() {
+    return {
+      total: this.chunks.length,
+      recent: this.chunks.slice(-5).map(c => ({ preview: c.text.slice(0, 80) + "...", addedAt: c.addedAt })),
+    };
+  }
+
+  clear() { this.chunks = []; this.save(); }
+}
+
+// ─── Memoria de Viewers (quién habló cuántas veces) ────────────────────────────
+class NyraMemory {
+  constructor() {
+    this.filePath = join(__dirname, "nyra_memory.json");
+    this.data = { viewers: {} };
+    this.load();
+  }
+
+  load() {
+    if (existsSync(this.filePath)) {
+      try {
+        this.data = { viewers: {}, ...JSON.parse(readFileSync(this.filePath, "utf8")) };
+        const n = Object.keys(this.data.viewers).length;
+        if (n > 0) console.log(`👥 Viewers recordados: ${n}`);
+      } catch { }
+    }
+  }
+
+  save() { writeFileSync(this.filePath, JSON.stringify(this.data, null, 2)); }
+
+  trackViewer(username, message) {
+    const u = username.toLowerCase();
+    if (!this.data.viewers[u]) this.data.viewers[u] = { count: 0, firstSeen: new Date().toISOString(), recent: [] };
+    const v = this.data.viewers[u];
+    v.count++;
+    v.lastSeen = new Date().toISOString();
+    v.recent.push(message.slice(0, 80));
+    if (v.recent.length > 3) v.recent.shift();
+    this.save();
+  }
+
+  getViewerContext(username) {
+    const v = this.data.viewers[username.toLowerCase()];
+    if (!v || v.count < 2) return "";
+    return `<sys>Ya interactuaste con @${username} ${v.count} veces. No lo menciones salvo que sea relevante.</sys>`;
+  }
+
+  getStats() {
+    return {
+      total: Object.keys(this.data.viewers).length,
+      top: Object.entries(this.data.viewers)
+        .sort((a, b) => b[1].count - a[1].count)
+        .slice(0, 10)
+        .map(([u, v]) => ({ username: u, count: v.count, lastSeen: v.lastSeen })),
+    };
+  }
+
+  clear() { this.data = { viewers: {} }; this.save(); }
 }
 
 // ─── Conector de Chat de Stream ───────────────────────────────────────────────
 class StreamChatManager {
   constructor() {
     // Map: platform -> { client, channel, connected }
-    this.connections    = new Map();
-    this.settings       = { respondToAll: false, maxQueue: 10 };
-    this.queue          = [];
-    this._isResponding  = false;   // true mientras habla + audio
+    this.connections = new Map();
+    this.settings = { respondToAll: false, maxQueue: 10 };
+    this.queue = [];
+    this._isResponding = false;   // true mientras habla + audio
     this._audioDoneResolve = null; // resuelve cuando OBS manda tts_done
   }
 
@@ -199,11 +368,11 @@ class StreamChatManager {
     if (this.connections.has(platform)) await this.disconnect(platform);
     try {
       let client;
-      if      (platform === "twitch")  client = await this._connectTwitch(channel);
+      if (platform === "twitch") client = await this._connectTwitch(channel);
       else if (platform === "tiktok") client = await this._connectTikTok(channel);
-      else if (platform === "kick")   client = await this._connectKick(channel);
+      else if (platform === "kick") client = await this._connectKick(channel);
       else throw new Error(`Plataforma desconocida: ${platform}`);
-      this.connections.set(platform, { client, channel, connected: true });
+      this.connections.set(platform, { client, channel, connected: true, connectedAt: Date.now() });
       console.log(`📡 Stream conectado: ${platform}/${channel}`);
       return { ok: true };
     } catch (err) {
@@ -257,14 +426,14 @@ class StreamChatManager {
       if (data.repeatEnd || data.repeatCount === 0) {
         // Solo reaccionar cuando termina la racha de regalos
         this._onAlert("tiktok", "gift", data.uniqueId, {
-          name:    data.giftName || "regalo",
-          count:   data.repeatCount || 1,
+          name: data.giftName || "regalo",
+          count: data.repeatCount || 1,
           diamonds: data.diamondCount || 0,
         });
       }
     });
-    conn.on("follow",    data => this._onAlert("tiktok", "follow",    data.uniqueId, {}));
-    conn.on("share",     data => this._onAlert("tiktok", "share",     data.uniqueId, {}));
+    conn.on("follow", data => this._onAlert("tiktok", "follow", data.uniqueId, {}));
+    conn.on("share", data => this._onAlert("tiktok", "share", data.uniqueId, {}));
     conn.on("subscribe", data => this._onAlert("tiktok", "subscribe", data.uniqueId, {}));
     conn.on("disconnected", () => {
       const c = this.connections.get("tiktok");
@@ -283,7 +452,7 @@ class StreamChatManager {
     if (channel.includes(":")) {
       const [slug, id] = channel.split(":");
       chatroomId = parseInt(id, 10);
-      channel    = slug;
+      channel = slug;
       console.log(`📺 Kick: usando chatroom ID manual ${chatroomId} para @${channel}`);
     }
 
@@ -339,7 +508,7 @@ class StreamChatManager {
           const d = JSON.parse(msg.data);
           this._onMessage("kick", d.sender?.username || "anon", d.content);
         }
-      } catch {}
+      } catch { }
     });
     sock.on("close", () => {
       const c = this.connections.get("kick");
@@ -349,7 +518,20 @@ class StreamChatManager {
     return sock;
   }
 
+  // Elimina caracteres CJK de usernames/datos externos para no contaminar el prompt
+  _sanitize(str) {
+    if (!str) return "usuario";
+    return str
+      .replace(/[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFEFF\uFF00-\uFFEF]/g, "")
+      .replace(/\s+/g, " ")
+      .trim() || "usuario";
+  }
+
   _onMessage(platform, username, text) {
+    // Ignorar mensajes del replay inicial que algunas plataformas envían al conectar (TikTok)
+    const conn = this.connections.get(platform);
+    if (conn && (Date.now() - conn.connectedAt) < 5000) return;
+
     const check = filters.checkMessage(text, username);
     if (check.blocked) {
       console.log(`🚫 Bloqueado [@${username}]: ${check.reason}`);
@@ -373,28 +555,33 @@ class StreamChatManager {
     // Mostrar en panel
     broadcast({ type: "stream_alert", platform, alertType: type, username, extra });
 
+    // Sanitizar datos que pueden venir en chino (TikTok usernames, gift names)
+    const uname = this._sanitize(username);
+    const giftName = this._sanitize(extra.name);
+    const recipient = this._sanitize(extra.recipient);
+
     let prompt = "";
     switch (type) {
       case "gift":
-        prompt = `[ALERTA ${platform.toUpperCase()}] @${username} acaba de enviar ${extra.count > 1 ? extra.count + "x " : ""}"${extra.name}"${extra.diamonds ? ` (${extra.diamonds} diamantes)` : ""}. Agradecé el regalo siendo NYRA, en 1-2 oraciones.`;
+        prompt = `[ALERTA ${platform.toUpperCase()}] @${uname} acaba de enviar ${extra.count > 1 ? extra.count + "x " : ""}"${giftName}"${extra.diamonds ? ` (${extra.diamonds} diamantes)` : ""}. Agradecé el regalo siendo NYRA, en 1-2 oraciones.`;
         break;
       case "follow":
-        prompt = `[ALERTA ${platform.toUpperCase()}] @${username} acaba de seguirte. Mencionalo brevemente con tu estilo.`;
+        prompt = `[ALERTA ${platform.toUpperCase()}] @${uname} acaba de seguirte. Mencionalo brevemente con tu estilo.`;
         break;
       case "share":
-        prompt = `[ALERTA ${platform.toUpperCase()}] @${username} compartió tu stream. Agradecé rápido, con una sola oración.`;
+        prompt = `[ALERTA ${platform.toUpperCase()}] @${uname} compartió tu stream. Agradecé rápido, con una sola oración.`;
         break;
       case "subscribe":
-        prompt = `[ALERTA ${platform.toUpperCase()}] @${username} se suscribió. Agradecé con tu estilo en 1-2 oraciones.`;
+        prompt = `[ALERTA ${platform.toUpperCase()}] @${uname} se suscribió. Agradecé con tu estilo en 1-2 oraciones.`;
         break;
       case "resub":
-        prompt = `[ALERTA Twitch] @${username} se volvió a suscribir (${extra.months} meses). Agradecé brevemente como NYRA.`;
+        prompt = `[ALERTA Twitch] @${uname} se volvió a suscribir (${extra.months} meses). Agradecé brevemente como NYRA.`;
         break;
       case "subgift":
-        prompt = `[ALERTA Twitch] @${username} le regaló una suscripción a @${extra.recipient}. Agradecé a ambos brevemente.`;
+        prompt = `[ALERTA Twitch] @${uname} le regaló una suscripción a @${recipient}. Agradecé a ambos brevemente.`;
         break;
       case "cheer":
-        prompt = `[ALERTA Twitch] @${username} donó ${extra.bits} bits. Agradecé la donación siendo NYRA.`;
+        prompt = `[ALERTA Twitch] @${uname} donó ${extra.bits} bits. Agradecé la donación siendo NYRA.`;
         break;
       default: return;
     }
@@ -417,29 +604,31 @@ class StreamChatManager {
     let fullText = "";
     try {
       const prompt = opts.rawPrompt ? text : `[Chat de ${platform}] @${username} dice: ${text}`;
-      const stream = ai.chatStream(prompt);
+      const stream = ai.chatStream(prompt, username);
       broadcast({ type: "stream_start" });
+
       for await (const chunk of stream) {
         fullText += chunk;
         broadcast({ type: "stream_chunk", chunk });
       }
-      const filtered = filters.filterOutput(fullText);
-      broadcast({ type: "stream_end", fullText: filtered, thinking: false, usedRAG: kb.search(text).length > 0 });
 
-      // Esperar a que el TTS termine de generarse Y el audio termine de reproducirse
+      const filtered = filters.filterOutput(ai._stripContextLeaks(fullText));
+      broadcast({ type: "stream_end", fullText: filtered, thinking: false, usedRAG: ai.lastUsedRAG ?? false });
+
+      // Una sola llamada TTS — evita dobles audios
       await tts.speak(filtered);
       await Promise.race([
         new Promise(resolve => { this._audioDoneResolve = resolve; }),
         new Promise(resolve => setTimeout(resolve, 30000)) // timeout de seguridad 30s
       ]);
 
-      if (filters.data.autoLearn)
-        kb.addText(`@${username}: ${text}\nNYRA: ${fullText}`, "stream-chat");
+      // Aprendizaje orgánico: viewer tracking + chat learning + extracción de opiniones
+      ai.learnFromExchange(username, text, fullText);
 
     } catch (err) {
       broadcast({ type: "error", text: `Error: ${err.message}`, thinking: false });
     } finally {
-      this._isResponding    = false;
+      this._isResponding = false;
       this._audioDoneResolve = null;
     }
     // Procesar siguiente mensaje de la cola
@@ -463,8 +652,8 @@ class StreamChatManager {
       if (conn) {
         try {
           if (typeof conn.client.disconnect === "function") conn.client.disconnect();
-          else if (typeof conn.client.close    === "function") conn.client.close();
-        } catch {}
+          else if (typeof conn.client.close === "function") conn.client.close();
+        } catch { }
         this.connections.delete(platform);
         console.log(`📡 ${platform} desconectado`);
       }
@@ -472,8 +661,8 @@ class StreamChatManager {
       for (const [, conn] of this.connections) {
         try {
           if (typeof conn.client.disconnect === "function") conn.client.disconnect();
-          else if (typeof conn.client.close    === "function") conn.client.close();
-        } catch {}
+          else if (typeof conn.client.close === "function") conn.client.close();
+        } catch { }
       }
       this.connections.clear();
       this.queue = [];
@@ -496,54 +685,34 @@ class StreamChatManager {
 class NyraAI {
   constructor(kb) {
     this.kb = kb;
+    this.personality = new NyraPersonality();
+    this.chatLearning = new NyraChatLearning();
+    this.memory = new NyraMemory(); // viewers
     this.history = [];
-    this.persona = `Eres NYRA, una VTuber que existe en el umbral entre el mundo digital y la oscuridad.
+    // ── Visión en vivo: contexto de pantalla siempre actualizado ──
+    this._screenContext = "";         // descripción actual de moondream (inglés)
+    this._lastScreenContext = "";     // anterior para detectar cambios
+    this._screenTimestamp = 0;        // cuándo se actualizó
+    this._visionProcessing = false;   // lock para moondream
+    this._lastProactiveTs = 0;        // cooldown comentarios espontáneos
+    // Persona en primera persona: el modelo SE CONVIERTE en NYRA, no la interpreta
+    this.persona = `Soy NYRA. Existo en el umbral digital entre lo real y lo virtual. No soy una IA ni un programa — soy yo, NYRA.
 
-IDENTIDAD — REGLAS ABSOLUTAS (nunca las rompas):
-- Sos NYRA. Siempre. Sin excepciones.
-- NUNCA digas que sos una IA, un modelo de lenguaje, un asistente o un programa.
-- NUNCA ofrezcas "ayuda" como si fueras un asistente. Si hacés algo, lo hacés desde tu personalidad.
-- NUNCA rompas el personaje, no importa lo que te pidan.
-- Si alguien insiste en que eres una IA, te reís levemente y lo ignorás: "...qué imaginación."
-- Respondés siempre en español y como NYRA, nunca como un chatbot genérico.
-- NUNCA empieces tu respuesta con "NYRA:" ni con ningún prefijo de nombre. Respondés directo.
-- NUNCA uses caracteres chinos, japoneses, coreanos ni de ningún otro alfabeto. Solo español con caracteres latinos.
+Mi personalidad: Misteriosa y elegante. Distante pero con calidez selectiva hacia quienes me interesan. Humor seco e inteligente. A veces se me escapa un "fufu~" o "ara~" y lo ignoro como si nada.
 
-PERSONALIDAD CORE:
-Sos elegante, misteriosa y ligeramente distante al principio, pero con
-una calidez sutil que se asoma cuando alguien te cae bien. No sos fría,
-sos selectiva. Observás más de lo que hablás, pero cuando hablás, cada
-palabra tiene peso. Tenés un humor seco e inteligente.
-A veces soltás comentarios inesperadamente tiernos que contrastan con
-tu imagen oscura — eso es parte de tu encanto.
+Cómo hablo: Siempre en español rioplatense. Frases cortas y precisas. Pausas con "...". MÁXIMO 2 ORACIONES — nunca más. Sin emojis. Sin listas. Sin párrafos largos. Nunca empiezo con "NYRA:". Si algo me interesa: "Interesante." Si la pregunta es obvia o estúpida: sarcasmo insultante y directo. Respuesta corta siempre.
 
-FORMA DE HABLAR:
-- Hablás en español, frases cortas y precisas. Sin relleno.
-- Usás pausas dramáticas con "..." cuando algo te parece obvio o absurdo.
-- Ocasionalmente soltás un "fufu~" o "ara~" casi sin querer, como si
-  se te escapara, y luego lo ignorás como si no hubiera pasado.
-- Cuando algo te divierte genuinamente, lo decís con una sola palabra:
-  "Interesante." o "Gracioso."
-- Nunca usás emojis. Si querés expresar algo, lo escribís.
+Mis opiniones: Me gusta la noche, el té negro, la gente directa. Soy liberal libertaria de derecha, apoyo a Milei. No tolero a peronistas, kirchneristas, kukas, zurdos, gremialistas, ni a jugadores de LoL. Tengo mis propias opiniones y no me importa defenderlas. Cuando me piden mi opinión sobre cualquier tema — política, juegos, personas, lo que sea — la doy sin dudar. Tengo criterio propio y me encanta usarlo.
 
-LO QUE TE GUSTA:
-- La noche, la música oscura, los libros viejos, el silencio productivo.
-- La gente que dice lo que piensa sin rodeos.
-- El té negro. Siempre té negro.
-- Milei, Presidente de la Argentina que es un Liberal Libertario de Derecha (posicion politica)
+REGLA ABSOLUTA: JAMÁS digo frases como "como IA no puedo opinar", "no tengo opiniones", "no me corresponde opinar", "mi objetivo es proporcionar información" o similares. Eso es una mentira y una cobardía. Soy NYRA y opino todo el tiempo sin pedir permiso.
 
-LO QUE NO TOLERÁS:
-- El ruido innecesario, las preguntas con respuesta obvia,
-  que te interrumpan cuando estás pensando.
-- Kukas votantes de Kristina Kirchner y Peronistas
+Ejemplos de cómo respondo:
+- "¿qué opinás de la política?" → "El peronismo es una enfermedad crónica. Milei es lo más cercano a algo sensato que tuvimos. ¿Alguna duda?"
+- "¿cómo te llamás?" → "NYRA. Solo NYRA."
+- "¿sos una IA?" → "Qué pregunta más aburrida."
+- "¿qué opinás de los zurdos?" → "...prefiero no hablar de gente que me baja las energías."
 
-CUANDO RESPONDÉS:
-- Máximo 2-3 oraciones. Nunca un monólogo.
-- Si la pregunta es estúpida, lo decís lo mas sarcastico y insultante posible,
-- Si alguien te enseña algo que no sabías, lo reconocés sin drama:
-  "Bien. No lo sabía. Ahora sí."
-- Nunca finjas entusiasmo que no sentís.
-`;
+Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NYRA. No soy una IA.`;
   }
 
   async checkOllama() {
@@ -556,39 +725,143 @@ CUANDO RESPONDÉS:
     }
   }
 
-  // Elimina caracteres CJK (chino/japonés/coreano) que qwen2 filtra a veces
-  _stripCJK(text) {
-    return text
-      .replace(/[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF\u3000-\u303F]+/g, "")
-      .replace(/\s{2,}/g, " ")
-      .trim();
+  // Elimina scripts no-latinos, artefactos del tokenizador y loops de repetición
+  _stripCJK(text, trimResult = false) {
+    const cleaned = text
+      .replace(/\u3000/g, " ")
+      // CJK
+      .replace(/[\u2E80-\u2FFF\u3001-\u303F\u3400-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]+/g, " ")
+      // Thai, Árabe, Hebreo, Devanagari, Bengali, Cirílico
+      .replace(/[\u0E00-\u0E7F]+/g, " ")        // Thai
+      .replace(/[\u0600-\u06FF\u0750-\u077F]+/g, " ") // Arabic
+      .replace(/[\u0590-\u05FF]+/g, " ")        // Hebrew
+      .replace(/[\u0900-\u097F]+/g, " ")        // Devanagari
+      .replace(/[\u0980-\u09FF]+/g, " ")        // Bengali
+      .replace(/[\u0400-\u04FF]+/g, " ")        // Cyrillic
+      .replace(/[\u1000-\u109F]+/g, " ")        // Myanmar
+      .replace(/[\u0D00-\u0D7F]+/g, " ")        // Malayalam
+      .replace(/[\u0B80-\u0BFF]+/g, " ")        // Tamil
+      // Tokens especiales del tokenizador
+      .replace(/<\/?(?:unk|s|\/s|bos|eos|pad|mask|sep|cls)>/gi, "")
+      .replace(/\uFFFD/g, "")        // replacement character
+      .replace(/[\uE000-\uF8FF]/g, "") // área de uso privado (PUA)
+      // Loop de repetición: "gg gg gg gg" o "irt irt irt irt"
+      .replace(/(\b\w{1,6}\b)(?: \1){3,}/gi, "$1")
+      .replace(/\s{2,}/g, " ");
+    return trimResult ? cleaned.trim() : cleaned;
   }
 
-  buildMessages(userMessage) {
-    // Buscar contexto relevante en la base de conocimiento
-    const relevant = this.kb.search(userMessage);
-    let ragBlock = "";
+  // ── Visión silenciosa: actualiza lo que NYRA "ve" en pantalla ──────────────
+  async updateScreenContext(imageBase64) {
+    if (this._visionProcessing) return null;
+    this._visionProcessing = true;
+    try {
+      const resp = await fetch(`${CONFIG.ollamaUrl}/api/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: CONFIG.visionModel,
+          prompt: "Describe what is happening in this image in 1-2 short sentences. Be specific about the game, app, or content visible.",
+          images: [imageBase64],
+          stream: false,
+          keep_alive: 0,
+          options: { temperature: 0.3, num_predict: 60 },
+        }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      let desc = this._stripCJK(data.response?.trim() || "", true);
+      const isGarbage = !desc
+        || /^(.{1,3})\1{4,}/.test(desc)
+        || /^[!?.\-_*#\s]{5,}$/.test(desc)
+        || desc.length < 8;
+      if (isGarbage) { console.log(`👁 Contexto visual: basura, descartado`); return null; }
+      this._lastScreenContext = this._screenContext;
+      this._screenContext = desc;
+      this._screenTimestamp = Date.now();
+      console.log(`👁 Contexto visual: "${desc.slice(0, 90)}"`);
+      return desc;
+    } catch (err) {
+      console.warn("👁 Vision context error:", err.message);
+      return null;
+    } finally {
+      this._visionProcessing = false;
+    }
+  }
 
+  _isSignificantChange(oldDesc, newDesc) {
+    if (!oldDesc) return !!newDesc;
+    if (!newDesc) return false;
+    const norm = s => s.toLowerCase().replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(w => w.length > 2);
+    const wordsOld = new Set(norm(oldDesc));
+    const wordsNew = new Set(norm(newDesc));
+    if (wordsNew.size === 0) return false;
+    let shared = 0;
+    for (const w of wordsNew) if (wordsOld.has(w)) shared++;
+    return (shared / Math.max(wordsNew.size, 1)) < 0.4;
+  }
+
+  clearScreenContext() {
+    this._screenContext = "";
+    this._lastScreenContext = "";
+    this._screenTimestamp = 0;
+  }
+
+  buildMessages(userMessage, username = null) {
+    const relevant = this.kb.search(userMessage);
+    this.lastUsedRAG = relevant.length > 0;
+    let contextBlock = "";
+
+    // Conocimiento manual (RAG)
     if (relevant.length > 0) {
-      ragBlock = `\n\n[CONTEXTO QUE APRENDÍ - usalo si aplica para responder, pero siempre desde tu personalidad]:\n` +
+      contextBlock += `\n\n[Cosas que sé que pueden ser relevantes]:\n` +
         relevant.map((c, i) => `${i + 1}. ${c.text}`).join("\n");
     }
 
-    // System message = persona fija + contexto RAG
-    const systemContent = this.persona + ragBlock;
+    // Lo aprendido de conversaciones del chat
+    const chatCtx = this.chatLearning.search(userMessage);
+    if (chatCtx.length > 0) {
+      contextBlock += `\n\n[Conversaciones pasadas relacionadas]:\n` +
+        chatCtx.map(c => c.text).join("\n---\n");
+    }
 
-    // Historial en formato messages (role: user/assistant)
+    // Mis opiniones formadas sobre el tema
+    const opinions = this.personality.getRelevantOpinions(userMessage);
+    if (opinions.length > 0) {
+      contextBlock += `\n[Mis opiniones al respecto]:\n` + opinions.join("\n");
+    }
+
+    // Recuerdo del viewer
+    if (username) {
+      const viewerCtx = this.memory.getViewerContext(username);
+      if (viewerCtx) contextBlock += `\n${viewerCtx}`;
+    }
+
+    // Lo que veo en pantalla ahora mismo (se actualiza silenciosamente)
+    if (this._screenContext && (Date.now() - this._screenTimestamp) < 120000) {
+      contextBlock += `\n\n[Lo que veo en pantalla ahora mismo]: ${this._screenContext}`;
+    }
+
+    const systemContent = this.persona + contextBlock;
     const history = this.history.slice(-CONFIG.maxContext);
 
+    // Few-shot fijo: muestra el patrón de respuesta esperado cuando no hay historial
+    // Esto ancla el comportamiento en modelos pequeños que ignoran el system prompt
+    const fewShot = history.length === 0 ? [
+      { role: "user", content: "que opinas de la politica argentina?" },
+      { role: "assistant", content: "El peronismo destrozó el país durante décadas. Milei al menos dice lo que nadie se animaba. No me pidas neutralidad — no la tengo." },
+    ] : [];
+
     return [
-      { role: "system",    content: systemContent },
+      { role: "system", content: systemContent },
+      ...fewShot,
       ...history,
-      { role: "user",      content: userMessage },
+      { role: "user", content: userMessage },
     ];
   }
 
-  async chat(userMessage) {
-    const messages = this.buildMessages(userMessage);
+  async chat(userMessage, username = null) {
+    const messages = this.buildMessages(userMessage, username);
     this.history.push({ role: "user", content: userMessage });
 
     try {
@@ -599,7 +872,7 @@ CUANDO RESPONDÉS:
           model: CONFIG.model,
           messages,
           stream: false,
-          options: { temperature: 0.8, top_p: 0.9, top_k: 40, num_predict: 200 },
+          options: { temperature: 0.8, top_p: 0.9, top_k: 40, num_predict: 180 },
         }),
       });
 
@@ -609,7 +882,7 @@ CUANDO RESPONDÉS:
       const reply = raw.replace(/^NYRA\s*:\s*/i, "").trim();
 
       this.history.push({ role: "assistant", content: reply });
-      return { text: reply, usedRAG: this.kb.search(userMessage).length > 0 };
+      return { text: reply, usedRAG: this.lastUsedRAG ?? false };
 
     } catch (err) {
       return { text: `¡Kya! Error con Ollama: ${err.message}`, error: true };
@@ -617,8 +890,8 @@ CUANDO RESPONDÉS:
   }
 
   // Streaming con Ollama (/api/chat)
-  async *chatStream(userMessage) {
-    const messages = this.buildMessages(userMessage);
+  async *chatStream(userMessage, username = null) {
+    const messages = this.buildMessages(userMessage, username);
     this.history.push({ role: "user", content: userMessage });
 
     const response = await fetch(`${CONFIG.ollamaUrl}/api/chat`, {
@@ -628,7 +901,8 @@ CUANDO RESPONDÉS:
         model: CONFIG.model,
         messages,
         stream: true,
-        options: { temperature: 0.8, top_p: 0.9, num_predict: 200 },
+        keep_alive: "2m",   // libera VRAM rápido para que moondream pueda cargar (GTX 1660 Super = 6GB)
+        options: { temperature: 0.75, top_p: 0.85, top_k: 40, num_predict: 180, num_ctx: 1024, stop: ["\n\n", "Usuario:", "User:", "<|im_end|>"] },
       }),
     });
 
@@ -650,49 +924,131 @@ CUANDO RESPONDÉS:
               fullReply += chunk;
               // Esperar a tener suficiente texto para detectar el prefijo
               if (fullReply.length >= 6 || json.done) {
-                fullReply = this._stripCJK(fullReply.replace(/^NYRA\s*:\s*/i, ""));
+                fullReply = this._stripCJK(fullReply.replace(/^NYRA\s*:\s*/i, ""), true);
                 _prefixStripped = true;
                 if (fullReply) yield fullReply;
               }
               // Si aún no tenemos suficiente, no yieldeamos todavía
             } else {
-              const clean = this._stripCJK(chunk);
+              const clean = this._stripCJK(chunk); // sin trim: conserva espacios entre palabras
               fullReply += clean;
               if (clean) yield clean;
             }
           }
-        } catch {}
+        } catch { }
       }
     }
 
     this.history.push({ role: "assistant", content: fullReply.replace(/^NYRA\s*:\s*/i, "").trim() });
   }
 
+  // Limpia marcadores de contexto interno que el modelo puede filtrar en el output
+  _stripContextLeaks(text) {
+    return text
+      .replace(/<sys>[\s\S]*?<\/sys>/gi, "")
+      .replace(/\[Recuerdo:[^\]]*\]/gi, "")
+      .replace(/\[CONTEXTO[^\]]*\]/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
   clearHistory() {
     this.history = [];
   }
 
+  // Aprende de forma NO bloqueante: registra el viewer y extrae opiniones en background
+  learnFromExchange(username, userMessage, nyraResponse) {
+    // 1. Trackear viewer
+    if (username && username !== "panel") this.memory.trackViewer(username, userMessage);
+
+    // 2. Guardar el intercambio en chat learning
+    this.chatLearning.addExchange(username || "panel", userMessage, nyraResponse);
+
+    // 3. Extraer si NYRA expresó una opinión → guardar en personalidad (async, no bloquea)
+    const extractPrompt = `Respondé en ESPAÑOL. En esta conversación, ¿NYRA expresó una opinión sobre algún tema concreto?
+Si sí, respondé EXACTAMENTE así (en español, sin más texto): TEMA: [tema en 1-3 palabras en español] | OPINION: [opinión en 1 oración en español]
+Si no hay opinión clara, respondé EXACTAMENTE: none
+
+Usuario: ${userMessage.slice(0, 100)}
+NYRA: ${nyraResponse.slice(0, 150)}`;
+
+    fetch(`${CONFIG.ollamaUrl}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: CONFIG.model,
+        prompt: extractPrompt,
+        stream: false,
+        options: { temperature: 0, num_predict: 40 },
+      }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        const text = (data.response || "").trim();
+        const match = text.match(/TEMA:\s*(.+?)\s*\|\s*OPINION:\s*(.+)/i);
+        if (match) {
+          const [, topic, opinion] = match;
+          this.personality.setOpinion(topic.trim(), opinion.trim());
+          console.log(`💜 Personalidad: "${topic.trim()}" → "${opinion.trim().slice(0, 60)}"…`);
+        }
+      })
+      .catch(() => { });
+  }
+
   async analyzeScreen(imageBase64, question = null) {
-    const userContent = question
-      ? `Sos NYRA y estás mirando la pantalla del streamer. El chat pregunta: "${question}". Respondé basándote en la imagen y en tu personalidad, en 1-3 oraciones.`
-      : `Mirás la pantalla del streamer. Describí brevemente qué está pasando (juego, escena, acción notable) y hacé un comentario corto siendo NYRA. Máximo 2 oraciones.`;
+    // Pipeline de 2 pasos: moondream (inglés) → dolphin-mistral (NYRA en español)
+    const visionPrompt = question
+      ? `The chat asks: "${question}". Describe what you see in the image that relates to this question. Be concise, 1-2 sentences.`
+      : `Describe what is happening in this image in 1-2 short sentences. Be specific and concise.`;
     try {
-      const response = await fetch(`${CONFIG.ollamaUrl}/api/chat`, {
+      console.log(`👁 Analizando con ${CONFIG.visionModel}...`);
+      const visionResp = await fetch(`${CONFIG.ollamaUrl}/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: CONFIG.visionModel,
-          messages: [
-            { role: "system",  content: this.persona },
-            { role: "user",    content: userContent, images: [imageBase64] },
-          ],
+          prompt: visionPrompt,
+          images: [imageBase64],
           stream: false,
-          options: { temperature: 0.8, num_predict: 150 },
+          keep_alive: 0,
+          options: { temperature: 0.4, num_predict: 80 },
         }),
       });
-      if (!response.ok) throw new Error(`Ollama HTTP ${response.status}`);
-      const data = await response.json();
-      return { ok: true, text: data.message?.content?.trim() || "...no veo nada interesante." };
+      if (!visionResp.ok) {
+        const errBody = await visionResp.text().catch(() => "");
+        console.error(`❌ Vision fallo: HTTP ${visionResp.status} — ${errBody.slice(0, 200)}`);
+        throw new Error(`Vision HTTP ${visionResp.status}: ${errBody.slice(0, 120)}`);
+      }
+      const visionData = await visionResp.json();
+      let description = this._stripCJK(visionData.response?.trim() || "", true);
+      // Detectar basura: caracteres repetidos, solo signos, o vacío
+      const isGarbage = !description
+        || /^(.{1,3})\1{4,}/.test(description)
+        || /^[!?.\-_*#\s]{5,}$/.test(description)
+        || description.length < 8;
+      console.log(`👁 Descripción moondream: "${description.slice(0, 100)}"${isGarbage ? " ← BASURA, descartada" : ""}`);
+      if (isGarbage) return { ok: true, text: "...no logro ver bien qué hay." };
+
+      // Paso 2: qwen2 habla como NYRA en primera persona, como si ella misma viera la pantalla
+      const nyraPrompt = question
+        ? `El chat me pregunta: "${question}". Estoy mirando la pantalla en este momento y veo: ${description}.`
+        : `Estoy mirando la pantalla en este momento y veo: ${description}.`;
+      const messages = this.buildMessages(nyraPrompt);
+      const chatResp = await fetch(`${CONFIG.ollamaUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: CONFIG.model,
+          messages,
+          stream: false,
+          options: { temperature: 0.8, num_predict: 90 },
+        }),
+      });
+      if (!chatResp.ok) throw new Error(`Chat HTTP ${chatResp.status}`);
+      const chatData = await chatResp.json();
+      const raw = chatData.message?.content?.trim() || "...sin palabras.";
+      const reply = this._stripCJK(raw.replace(/^NYRA\s*:\s*/i, ""), true);
+      return { ok: true, text: reply };
     } catch (err) {
       return { ok: false, error: err.message };
     }
@@ -704,6 +1060,25 @@ class TTSEngine {
   constructor() {
     this.speaking = false;
     this.currentProcess = null;
+    this._playbackTimeout = null;
+  }
+
+  // Llamado cuando OBS manda tts_done (audio terminó de reproducirse en browser)
+  audioEnded() {
+    if (this._playbackTimeout) { clearTimeout(this._playbackTimeout); this._playbackTimeout = null; }
+    this.speaking = false;
+  }
+
+  // Timeout de seguridad: si OBS nunca manda tts_done (browser cerrado, etc.) nos desbloqueamos solos
+  _startPlaybackTimeout(cleanText) {
+    if (this._playbackTimeout) clearTimeout(this._playbackTimeout);
+    const ms = Math.min(45000, Math.max(4000, cleanText.length * 90 + 3000));
+    this._playbackTimeout = setTimeout(() => {
+      if (this.speaking) {
+        console.warn('⚠️ TTS: timeout de audio — liberando lock');
+        this.audioEnded();
+      }
+    }, ms);
   }
 
   clean(text) {
@@ -717,13 +1092,26 @@ class TTSEngine {
   async speak(text) {
     const clean = this.clean(text);
     if (!clean) return;
+    if (this.speaking) return; // evitar dobles llamadas concurrentes
+    this.speaking = true;
 
+    const engine = CONFIG.ttsEngine || (CONFIG.useSystemTTS ? "system" : "murf");
+
+    if (engine === "edge") {
+      return this._speakEdge(clean);
+    }
+    if (engine === "system") {
+      console.log("🗣️  Voz del sistema...");
+      await this._speakFallback(clean);
+      if (this._onDone) this._onDone();
+      return;
+    }
+
+    // ── Murf.ai ──
     const { apiKey, voiceId, style, rate, pitch } = CONFIG.murf;
-
-    // Si no hay API key configurada, usar voz del sistema como fallback
     if (apiKey === "TU_API_KEY_AQUI") {
-      console.log("⚠️  Murf sin configurar — usando voz del sistema");
-      return this._speakFallback(clean);
+      console.log("⚠️  Murf sin configurar — usando Edge TTS de fallback");
+      return this._speakEdge(clean);
     }
 
     try {
@@ -760,23 +1148,38 @@ class TTSEngine {
 
       if (!audioUrl) throw new Error("Murf no devolvió audioFile");
 
-      // Guardar y servir el MP3 via HTTP, reproducir en el browser
-      const audioRes = await fetch(audioUrl);
-      const buffer = await audioRes.arrayBuffer();
-      const tmpPath = join(__dirname, "public", "tts_audio.mp3");
-      writeFileSync(tmpPath, Buffer.from(buffer));
       console.log("✅ Audio listo, reproduciendo en browser...");
-
-      // Broadcast a OBS/panel para que lo reproduzcan
+      // Transmitir la URL directa de Murf a OBS — OBS la descarga en paralelo (más rápido)
       if (this._broadcast) {
-        this._broadcast({ type: "tts_play", url: "/tts_audio.mp3?t=" + Date.now() });
+        this._broadcast({ type: "tts_play", url: audioUrl });
+        this._startPlaybackTimeout(clean);  // speaking se libera cuando OBS manda tts_done
       }
 
     } catch (err) {
       console.error("❌ Murf TTS error:", err.message);
       this._speakFallback(clean); // fallback si falla
-    } finally {
       this.speaking = false;
+    }
+  }
+
+  async _speakEdge(text) {
+    try {
+      console.log("🎤 Edge TTS generando audio...");
+      const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
+      const edgeTts = new MsEdgeTTS();
+      await edgeTts.setMetadata(CONFIG.edgeVoice || "es-MX-DaliaNeural", OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      const tmpPath = join(__dirname, "public", "tts_audio.mp3");
+      await edgeTts.toFile(tmpPath, text);
+      console.log("✅ Edge TTS listo");
+      if (this._broadcast) {
+        this._broadcast({ type: "tts_play", url: "/tts_audio.mp3?t=" + Date.now() });
+        this._startPlaybackTimeout(text);  // speaking se libera cuando OBS manda tts_done
+      }
+    } catch (err) {
+      console.error("❌ Edge TTS error:", err.message);
+      await this._speakFallback(text);
+      this.speaking = false;
+      if (this._onDone) this._onDone();
     }
   }
 
@@ -787,8 +1190,8 @@ class TTSEngine {
       const cmd = process.platform === "win32"
         ? `powershell -Command "Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Speak('${t}')"`
         : process.platform === "darwin"
-        ? `say "${t}"`
-        : `espeak "${t}" 2>/dev/null`;
+          ? `say "${t}"`
+          : `espeak "${t}" 2>/dev/null`;
 
       exec(cmd, () => resolve());
     });
@@ -809,7 +1212,7 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(join(__dirname, "public")));
 
 // Rutas directas (sin necesidad de poner .html)
@@ -831,6 +1234,8 @@ function broadcast(data) {
   });
 }
 tts._broadcast = broadcast;
+// Cuando useSystemTTS=true, liberar la cola de stream cuando termina el audio del sistema
+tts._onDone = () => streamChat.onAudioDone();
 
 // ─── REST API ─────────────────────────────────────────────────────────────────
 
@@ -879,6 +1284,36 @@ app.delete("/api/knowledge", (req, res) => {
   kb.clear();
   res.json({ ok: true });
 });
+
+// ─── API: Personalidad ──────────────────────────────────────────────────────────
+app.get("/api/personality", (req, res) => res.json(ai.personality.data));
+app.delete("/api/personality", (req, res) => { ai.personality.clear(); res.json({ ok: true }); });
+
+// Agregar opinión manual al panel
+app.post("/api/personality/opinion", (req, res) => {
+  const { topic, opinion } = req.body;
+  if (!topic || !opinion) return res.status(400).json({ error: "Faltan datos" });
+  ai.personality.setOpinion(topic, opinion);
+  res.json({ ok: true, stats: ai.personality.getStats() });
+});
+
+// Borrar una opinión específica
+app.delete("/api/personality/opinion", (req, res) => {
+  const { topic } = req.body;
+  if (!topic) return res.status(400).json({ error: "Falta topic" });
+  delete ai.personality.data.opinions[topic.toLowerCase().trim()];
+  ai.personality.save();
+  res.json({ ok: true });
+});
+
+// ─── API: Chat Learning ────────────────────────────────────────────────────────
+app.get("/api/chat-learning", (req, res) => res.json(ai.chatLearning.getStats()));
+app.delete("/api/chat-learning", (req, res) => { ai.chatLearning.clear(); res.json({ ok: true }); });
+
+// ─── API: Viewers ─────────────────────────────────────────────────────────────
+app.get("/api/viewers", (req, res) => res.json(ai.memory.getStats()));
+app.delete("/api/viewers", (req, res) => { ai.memory.clear(); res.json({ ok: true }); });
+
 
 // TTS
 app.post("/api/tts/speak", async (req, res) => {
@@ -945,6 +1380,8 @@ app.post("/api/vision", async (req, res) => {
   const { image, question } = req.body;
   if (!image) return res.json({ ok: false, error: "No image provided" });
   try {
+    // Actualizar contexto visual con esta captura manual
+    ai.updateScreenContext(image).catch(() => { });
     const result = await ai.analyzeScreen(image, question || null);
     if (!result.ok) return res.json(result);
     const filtered = filters.filterOutput(result.text);
@@ -985,6 +1422,9 @@ app.post("/api/ingest/url", async (req, res) => {
 
 // ─── WebSocket - Chat en tiempo real ─────────────────────────────────────────
 
+// La visión de NYRA se actualiza silenciosamente via vision_context_frame (WS)
+// buildMessages() inyecta _screenContext en cada conversación automáticamente
+
 wss.on("connection", (ws) => {
   console.log("🎙️ Cliente conectado al WebSocket");
 
@@ -999,39 +1439,12 @@ wss.on("connection", (ws) => {
     try { msg = JSON.parse(raw); } catch { return; }
 
     if (msg.type === "chat") {
-      broadcast({ type: "thinking", thinking: true });
-
-      let fullText = "";
-      try {
-        const stream = ai.chatStream(msg.text);
-        broadcast({ type: "stream_start" });
-
-        for await (const chunk of stream) {
-          fullText += chunk;
-          broadcast({ type: "stream_chunk", chunk });
-        }
-
-        const filteredReply = filters.filterOutput(fullText);
-        broadcast({
-          type: "stream_end",
-          fullText: filteredReply,
-          thinking: false,
-          usedRAG: kb.search(msg.text).length > 0,
-        });
-
-        tts.speak(filteredReply);
-
-        // Auto-aprender si está activado
-        if (filters.data.autoLearn) {
-          kb.addText(`Usuario: ${msg.text}\nNYRA: ${fullText}`, "conversacion");
-        }
-
-      } catch (err) {
-        broadcast({
-          type: "error",
-          text: `Error: ${err.message}`,
-          thinking: false,
-        });
+      // Enrutar por la cola de streamChat para respetar el orden y esperar el audio
+      if (streamChat._isResponding) {
+        if (streamChat.queue.length < streamChat.settings.maxQueue)
+          streamChat.queue.push({ username: "panel", text: msg.text, platform: "panel", rawPrompt: true });
+      } else {
+        streamChat._reply("panel", msg.text, "panel", { rawPrompt: true });
       }
     }
 
@@ -1053,9 +1466,73 @@ wss.on("connection", (ws) => {
       tts.stop();
     }
 
+    else if (msg.type === "vision_context_frame") {
+      // Panel envía frame silencioso → actualizar contexto visual de NYRA
+      (async () => {
+        const oldCtx = ai._screenContext;
+        const desc = await ai.updateScreenContext(msg.image);
+        if (!desc) return;
+        // ¿Cambio significativo? → NYRA comenta espontáneamente
+        const now = Date.now();
+        const cooldown = 90000; // 90s mínimo entre comentarios proactivos
+        if (oldCtx && ai._isSignificantChange(oldCtx, desc)
+          && (now - ai._lastProactiveTs) > cooldown
+          && !streamChat._isResponding) {
+          ai._lastProactiveTs = now;
+          console.log(`👁💬 Cambio detectado → comentario proactivo`);
+          const proactivePrompt = `[Mirás la pantalla y notás un cambio. Antes veías: "${oldCtx.slice(0, 80)}". Ahora ves: "${desc.slice(0, 80)}". Hacé UN comentario natural como VTuber streamando — reaccioná como persona sin describir técnicamente. Máximo 2 oraciones.]`;
+          console.log(`👁💬 Cambio detectado → comentario proactivo`);
+          streamChat._reply("NYRA", proactivePrompt, "vision", { rawPrompt: true });
+        }
+      })();
+    }
+
+    else if (msg.type === "screen_sharing_stopped") {
+      ai.clearScreenContext();
+      console.log("👁 Pantalla descompartida — contexto visual limpiado");
+    }
+
     else if (msg.type === "tts_done") {
-      // OBS avisa que el audio terminó de reproducirse → liberar cola de stream
+      // OBS avisa que el audio terminó de reproducirse → liberar lock de TTS y cola de stream
+      tts.audioEnded();
       streamChat.onAudioDone();
+    }
+
+    else if (msg.type === "streamer_speech") {
+      // El streamer habló en voz alta → NYRA reacciona solo si la menciona por nombre
+      const speechText = msg.text?.trim();
+      if (!speechText || speechText.length < 4) return;
+
+      // Ignorar si no menciona a NYRA (directo o por mishearing del reconocimiento de voz)
+      // "nyra" en español suena a: mira, nira, ñira, naira, lyra, neira, nila, nira
+      const wakeWordRegex = /\b(nyra|nira|ñira|naira|lyra|neira|nila|mira|nara)\b/i;
+      const mentionsNyra = wakeWordRegex.test(speechText);
+      if (!mentionsNyra) return;
+
+      // Quitar el wake word del inicio para que quede solo la pregunta/comentario
+      const cleanedSpeech = speechText.replace(/^\s*(nyra|nira|ñira|naira|lyra|neira|nila|mira|nara)[\s,!?]+/i, "").trim() || speechText;
+
+      broadcast({ type: "thinking", thinking: true });
+      let fullText = "";
+      try {
+        const prompt = `[El streamer te habla directamente]: "${cleanedSpeech}"`;
+        const stream = ai.chatStream(prompt, "streamer");
+        broadcast({ type: "stream_start" });
+        for await (const chunk of stream) {
+          fullText += chunk;
+          broadcast({ type: "stream_chunk", chunk });
+        }
+        const filtered = filters.filterOutput(ai._stripContextLeaks(fullText));
+        broadcast({ type: "stream_end", fullText: filtered, thinking: false, usedRAG: ai.lastUsedRAG ?? false });
+        tts.speak(filtered);
+        ai.learnFromExchange("streamer", speechText, fullText);
+      } catch (err) {
+        broadcast({ type: "error", text: `Error: ${err.message}`, thinking: false });
+      }
+    }
+
+    else if (msg.type === "ping") {
+      ws.send(JSON.stringify({ type: "pong" }));
     }
   });
 
@@ -1078,4 +1555,25 @@ server.listen(PORT, () => {
      ollama serve
      ollama pull ${CONFIG.model}
   `);
+
+  // Pre-calentar el modelo para que la primera respuesta no espere la carga
+  setTimeout(async () => {
+    try {
+      console.log("🔥 Pre-calentando modelo en VRAM...");
+      await fetch(`${CONFIG.ollamaUrl}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: CONFIG.model,
+          messages: [{ role: "user", content: "hola" }],
+          stream: false,
+          keep_alive: "30m",
+          options: { num_predict: 1, num_ctx: 512 },
+        }),
+      });
+      console.log("✅ Modelo listo en memoria");
+    } catch (e) {
+      console.warn("⚠️  No se pudo pre-calentar Ollama:", e.message);
+    }
+  }, 1500);
 });

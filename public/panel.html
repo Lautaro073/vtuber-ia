@@ -179,6 +179,7 @@
     <div class="tabs">
       <div class="tab active" onclick="switchTab('chat')">// CHAT</div>
       <div class="tab" onclick="switchTab('learn')">// ENSEÑAR</div>
+      <div class="tab" onclick="switchTab('memoria')">// MEMORIA</div>
       <div class="tab" onclick="switchTab('stream')">// STREAM</div>
       <div class="tab" onclick="switchTab('vision')">// PANTALLA</div>
     </div>
@@ -198,6 +199,10 @@
     <!-- Learn tab -->
     <div class="tab-content" id="tab-learn">
       <div class="learn-section">
+        <div style="font-size:11px;color:var(--dim);line-height:1.7;padding:4px 0 8px">
+          Acá soló vas vos: enseñále info, URLs o textos a NYRA.<br>
+          Las conversaciones del chat se guardan automáticamente en <strong style="color:var(--cyan)">MEMORIA</strong>.
+        </div>
         <div class="form-group">
           <label class="label">TEXTO A APRENDER</label>
           <textarea id="learnText" placeholder="Pegá cualquier texto aquí...&#10;&#10;• Artículos de Wikipedia&#10;• Noticias&#10;• Cualquier información que quieras que NYRA sepa"></textarea>
@@ -221,6 +226,50 @@
           <button class="btn btn-sm btn-cyan" onclick="ingestUrl()">&#x2B07; IMPORTAR URL</button>
           <div id="ingestResult" style="font-size:11px;color:var(--dim);margin-top:6px;display:none"></div>
         </div>
+      </div>
+    </div>
+
+    <!-- Memoria tab -->
+    <div class="tab-content" id="tab-memoria">
+      <div class="learn-section">
+
+        <!-- Personalidad -->
+        <div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div class="label">💜 PERSONALIDAD <span id="statPersonality" style="color:var(--cyan)">0 opiniones</span></div>
+            <button class="btn btn-sm" onclick="clearPersonality()" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3);font-size:9px">BORRAR TODO</button>
+          </div>
+          <div style="font-size:10px;color:var(--dim);margin-bottom:8px">Opiniones que NYRA formó automáticamente por sus conversaciones.</div>
+          <div id="personalityList" style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent"></div>
+          <div style="border-top:1px solid var(--border);padding-top:8px;margin-top:8px">
+            <div class="label" style="margin-bottom:6px;font-size:10px">AGREGAR OPINIÓN MANUAL</div>
+            <div style="display:flex;gap:6px;margin-bottom:4px">
+              <input type="text" id="opinionTopic" placeholder="tema (ej: música)" style="flex:1;font-size:11px;padding:5px 8px">
+              <input type="text" id="opinionText" placeholder="opinión de NYRA..." style="flex:2;font-size:11px;padding:5px 8px">
+              <button class="btn btn-sm btn-cyan" onclick="addOpinion()">+</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Chat Learning -->
+        <div style="border-top:1px solid var(--border);padding-top:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div class="label">💬 CHAT APRENDIDO <span id="statChatLearning" style="color:var(--cyan)">0 intercambios</span></div>
+            <button class="btn btn-sm" onclick="clearChatLearning()" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3);font-size:9px">BORRAR TODO</button>
+          </div>
+          <div style="font-size:10px;color:var(--dim);margin-bottom:8px">Conversaciones del stream que NYRA recuerda automáticamente.</div>
+          <div id="chatLearningList" style="display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent"></div>
+        </div>
+
+        <!-- Viewers -->
+        <div style="border-top:1px solid var(--border);padding-top:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div class="label">👥 VIEWERS <span id="statViewers" style="color:var(--cyan)">0</span></div>
+            <button class="btn btn-sm" onclick="clearViewers()" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3);font-size:9px">BORRAR TODO</button>
+          </div>
+          <div id="viewersList" style="display:flex;flex-direction:column;gap:3px;max-height:140px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent"></div>
+        </div>
+
       </div>
     </div>
 
@@ -308,9 +357,14 @@
       <div class="learn-section">
 
         <div style="font-size:11px;color:var(--dim);line-height:1.7">
-          Compartís la pantalla del streamer desde acá.<br>
-          NYRA la analiza con visión IA y comenta en vivo.<br>
-          <strong style="color:var(--cyan)">El streamer puede abrir este panel via Cloudflare.</strong>
+          Compartí la pantalla y NYRA <strong style="color:var(--cyan)">siempre sabe</strong> lo que hay en ella.<br>
+          Usa esa info naturalmente en cualquier conversación y comenta cambios importantes sola.
+        </div>
+
+        <!-- Live status indicator -->
+        <div id="liveVisionStatus" style="display:none;background:rgba(0,255,100,.08);border:1px solid rgba(0,255,100,.3);border-radius:6px;padding:8px 12px;font-size:11px;color:#0f0;align-items:center;gap:8px">
+          <span style="animation:blink 1.2s step-end infinite">●</span>
+          NYRA ve la pantalla — usa el contexto en cada conversación
         </div>
 
         <!-- Share button + preview -->
@@ -322,24 +376,29 @@
           </div>
         </div>
 
-        <!-- Auto-capture -->
+        <!-- Intervalo auto-comentario -->
         <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div class="label" style="margin-bottom:8px">AUTO-COMENTARIO</div>
+          <div class="label" style="margin-bottom:8px">FRECUENCIA DE OBSERVACIÓN</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);cursor:pointer">
-              <input type="checkbox" id="autoVisionToggle" onchange="toggleAutoVision(this.checked)"
-                style="accent-color:var(--cyan);width:14px;height:14px" disabled>
-              Cada
-            </label>
-            <select id="visionInterval" class="model-select" style="width:auto;padding:4px 8px">
-              <option value="30">30 seg</option>
-              <option value="60" selected>1 min</option>
+            <select id="visionInterval" class="model-select" style="width:auto;padding:4px 8px" onchange="if(typeof _visionTimer!=='undefined'&&_visionTimer)startLiveVision()">
+              <option value="15">15 seg</option>
+              <option value="30" selected>30 seg</option>
+              <option value="60">1 min</option>
               <option value="120">2 min</option>
-              <option value="180">3 min</option>
               <option value="300">5 min</option>
             </select>
-            <span style="font-size:11px;color:var(--dim)">NYRA comenta sola</span>
+            <span style="font-size:11px;color:var(--dim)">Cada cuánto NYRA mira — comenta cambios sola</span>
           </div>
+        </div>
+
+        <!-- Micrófono del streamer -->
+        <div style="border-top:1px solid var(--border);padding-top:12px">
+          <div class="label" style="margin-bottom:8px">MICRÓFONO DEL STREAMER</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-sm" id="micBtn" onclick="toggleMic()" style="background:rgba(0,200,255,.1);color:var(--cyan);border:1px solid rgba(0,200,255,.3)">🎤 ACTIVAR MIC</button>
+            <span id="micStatus" style="font-size:11px;color:var(--dim)">Inactivo</span>
+          </div>
+          <div id="speechTranscript" style="font-size:11px;color:var(--dim);margin-top:6px;min-height:18px;font-style:italic"></div>
         </div>
 
         <!-- Manual capture + pregunta -->
@@ -476,7 +535,7 @@
   }
 
   // ─ Tabs ─
-  const TAB_NAMES = ['chat', 'learn', 'stream', 'vision'];
+  const TAB_NAMES = ['chat', 'learn', 'memoria', 'stream', 'vision'];
   function switchTab(name) {
     document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', TAB_NAMES[i] === name));
     document.querySelectorAll('.tab-content').forEach((c, i) => c.classList.toggle('active', TAB_NAMES[i] === name.replace('tab-', '')));
@@ -495,6 +554,18 @@
       document.getElementById('ollamaDot').style.cssText = 'background:#00f5ff;box-shadow:0 0 8px #00f5ff;width:7px;height:7px;border-radius:50%';
       document.getElementById('ollamaStatus').textContent = 'CONECTADO';
       document.getElementById('ollamaStatus').style.color = 'var(--cyan)';
+      // Keepalive: ping cada 25s para que Cloudflare/proxies no cierren la conexión idle
+      if (ws._pingInterval) clearInterval(ws._pingInterval);
+      ws._pingInterval = setInterval(() => {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'ping' }));
+      }, 25000);
+    };
+
+    ws.onclose = () => {
+      if (ws._pingInterval) clearInterval(ws._pingInterval);
+      document.getElementById('ollamaDot').style.background = '#ff4444';
+      document.getElementById('ollamaStatus').textContent = 'DESCONECTADO - reconectando...';
+      setTimeout(connectWS, 3000);
     };
 
     ws.onmessage = (e) => {
@@ -593,11 +664,6 @@
       }
     };
 
-    ws.onclose = () => {
-      document.getElementById('ollamaDot').style.background = '#ff4444';
-      document.getElementById('ollamaStatus').textContent = 'DESCONECTADO - recargá la página';
-      setTimeout(connectWS, 3000);
-    };
   }
 
   function addMsg(role, text) {
@@ -682,6 +748,91 @@
     `).join('');
   }
 
+  // ─ Memoria ─────────────────────────────────────────────────────────────────
+  async function loadMemoria() {
+    const [pers, chat, view] = await Promise.all([
+      fetch('/api/personality').then(r => r.json()),
+      fetch('/api/chat-learning').then(r => r.json()),
+      fetch('/api/viewers').then(r => r.json()),
+    ]);
+
+    // Personalidad
+    const opinions = Object.entries(pers.opinions || {});
+    document.getElementById('statPersonality').textContent = `${opinions.length} opiniones`;
+    const pl = document.getElementById('personalityList');
+    if (!opinions.length) {
+      pl.innerHTML = '<div style="font-size:11px;color:var(--dim)">Sin opiniones aún.</div>';
+    } else {
+      pl.innerHTML = opinions.map(([topic, { opinion }]) =>
+        `<div style="display:flex;gap:6px;align-items:flex-start;padding:5px 8px;background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.2);border-radius:6px">
+          <span style="color:var(--purple);font-size:10px;white-space:nowrap;padding-top:1px">${topic}</span>
+          <span style="color:var(--text);font-size:11px;flex:1">${opinion}</span>
+          <span onclick="deleteOpinion('${topic}')" style="cursor:pointer;color:var(--pink);opacity:.6;font-size:13px;line-height:1">×</span>
+        </div>`
+      ).join('');
+    }
+
+    // Chat Learning
+    document.getElementById('statChatLearning').textContent = `${chat.total} intercambios`;
+    const cl = document.getElementById('chatLearningList');
+    if (!chat.total) {
+      cl.innerHTML = '<div style="font-size:11px;color:var(--dim)">Sin intercambios aún.</div>';
+    } else {
+      cl.innerHTML = (chat.recent || []).map(c =>
+        `<div style="padding:4px 8px;background:rgba(0,245,255,.03);border-left:2px solid rgba(0,245,255,.3);border-radius:0 4px 4px 0;font-size:10px;color:var(--dim)">${c.preview}</div>`
+      ).join('');
+    }
+
+    // Viewers
+    document.getElementById('statViewers').textContent = view.total || 0;
+    const vl = document.getElementById('viewersList');
+    if (!view.total) {
+      vl.innerHTML = '<div style="font-size:11px;color:var(--dim)">Sin viewers aún.</div>';
+    } else {
+      vl.innerHTML = (view.top || []).map(v =>
+        `<div style="display:flex;align-items:center;gap:8px;padding:3px 8px;font-size:11px">
+          <span style="color:var(--cyan)">@${v.username}</span>
+          <span style="color:var(--dim)">x${v.count}</span>
+          <span style="color:var(--dim);font-size:9px;margin-left:auto">${v.lastSeen ? new Date(v.lastSeen).toLocaleDateString('es') : ''}</span>
+        </div>`
+      ).join('');
+    }
+  }
+
+  async function addOpinion() {
+    const topic   = document.getElementById('opinionTopic').value.trim();
+    const opinion = document.getElementById('opinionText').value.trim();
+    if (!topic || !opinion) return toast('Completá tema y opinión');
+    await fetch('/api/personality/opinion', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ topic, opinion }) });
+    document.getElementById('opinionTopic').value = '';
+    document.getElementById('opinionText').value = '';
+    loadMemoria();
+    toast('✓ Opinión agregada');
+  }
+
+  async function deleteOpinion(topic) {
+    await fetch('/api/personality/opinion', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ topic }) });
+    loadMemoria();
+  }
+
+  async function clearPersonality() {
+    if (!confirm('¿Borrar todas las opiniones de NYRA?')) return;
+    await fetch('/api/personality', { method:'DELETE' });
+    loadMemoria(); toast('Personalidad borrada');
+  }
+
+  async function clearChatLearning() {
+    if (!confirm('¿Borrar todo el aprendizaje del chat?')) return;
+    await fetch('/api/chat-learning', { method:'DELETE' });
+    loadMemoria(); toast('Chat learning borrado');
+  }
+
+  async function clearViewers() {
+    if (!confirm('¿Borrar historial de viewers?')) return;
+    await fetch('/api/viewers', { method:'DELETE' });
+    loadMemoria(); toast('Viewers borrados');
+  }
+
   async function checkOllama() {
     const res = await fetch('/api/status');
     const data = await res.json();
@@ -732,16 +883,17 @@
     if (log) log.innerHTML = '<div style="font-size:11px;color:var(--dim)">Sin mensajes aún.</div>';
   }
 
-  // ─ Visión / Screen capture ─
+  // ─ Visión en tiempo real ────────────────────────────────────────────────────
   let _visionStream = null;
-  let _autoVisionTimer = null;
+  let _visionTimer  = null;
+  let _captureInProgress = false;
+  let _lastFrameSig = 0;
 
   async function toggleScreenShare() {
-    const btn   = document.getElementById('shareScreenBtn');
+    const btn     = document.getElementById('shareScreenBtn');
     const preview = document.getElementById('visionScreenPreview');
-    const video = document.getElementById('visionVideo');
+    const video   = document.getElementById('visionVideo');
     const capBtn  = document.getElementById('captureBtn');
-    const autoChk = document.getElementById('autoVisionToggle');
 
     if (_visionStream) {
       _visionStream.getTracks().forEach(t => t.stop());
@@ -751,50 +903,93 @@
       btn.textContent = '▶ COMPARTIR PANTALLA';
       btn.className = 'btn btn-cyan';
       capBtn.disabled = true;
-      autoChk.disabled = true;
-      autoChk.checked = false;
-      toggleAutoVision(false);
+      stopLiveVision();
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'screen_sharing_stopped' }));
       return;
     }
     try {
       _visionStream = await navigator.mediaDevices.getDisplayMedia({
-        video: { width: 1280, height: 720, frameRate: 5 },
-        audio: false
+        video: { width: 1280, height: 720, frameRate: 5 }, audio: false
       });
-      _visionStream.getVideoTracks()[0].onended = () => toggleScreenShare();
+      _visionStream.getVideoTracks()[0].onended = () => {
+        _visionStream = null;
+        video.srcObject = null;
+        preview.style.display = 'none';
+        btn.textContent = '▶ COMPARTIR PANTALLA';
+        btn.className = 'btn btn-cyan';
+        capBtn.disabled = true;
+        stopLiveVision();
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'screen_sharing_stopped' }));
+      };
       video.srcObject = _visionStream;
       preview.style.display = 'block';
       btn.textContent = '■ DEJAR DE COMPARTIR';
       btn.className = 'btn btn-sm btn-pink';
       capBtn.disabled = false;
-      autoChk.disabled = false;
-      toast('✓ Pantalla compartida. Presioná Capturar o activá el auto-comentario.');
+      startLiveVision();
+      toast('✓ Pantalla compartida — NYRA ahora sabe lo que hay en pantalla.');
     } catch (e) {
       if (e.name !== 'NotAllowedError') toast('Error al compartir pantalla: ' + e.message);
     }
   }
 
-  function toggleAutoVision(enabled) {
-    if (_autoVisionTimer) { clearInterval(_autoVisionTimer); _autoVisionTimer = null; }
-    if (enabled && _visionStream) {
-      const secs = parseInt(document.getElementById('visionInterval').value, 10) * 1000;
-      _autoVisionTimer = setInterval(() => captureAndSend(), secs);
-      toast(`Auto-comentario cada ${document.getElementById('visionInterval').value}s activado`);
-    }
+  function startLiveVision() {
+    stopLiveVision();
+    const secs = parseInt(document.getElementById('visionInterval').value, 10) * 1000;
+    _lastFrameSig = 0;
+    // Captura silenciosa: envía frames por WS para que NYRA actualice su contexto visual
+    // No genera respuesta — NYRA simplemente "sabe" lo que hay en pantalla
+    _visionTimer = setInterval(() => {
+      if (!_visionStream) return;
+      const video = document.getElementById('visionVideo');
+      if (!video.videoWidth) return;
+      // Frame diff rápido para no enviar frames idénticos
+      const c = document.createElement('canvas');
+      c.width = 80; c.height = 45;
+      c.getContext('2d').drawImage(video, 0, 0, 80, 45);
+      const d = c.getContext('2d').getImageData(0, 0, 80, 45).data;
+      let sig = 0;
+      for (let i = 0; i < d.length; i += 20) sig += d[i];
+      const diff = _lastFrameSig ? Math.abs(sig - _lastFrameSig) / _lastFrameSig : 1;
+      if (diff < 0.01 && _lastFrameSig > 0) return;
+      _lastFrameSig = sig;
+      // Capturar y enviar silenciosamente por WS
+      try {
+        const canvas = document.createElement('canvas');
+        const scale = Math.min(1, 854 / (video.videoWidth || 854));
+        canvas.width  = Math.round((video.videoWidth  || 854) * scale);
+        canvas.height = Math.round((video.videoHeight || 480) * scale);
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        const image = canvas.toDataURL('image/jpeg', 0.65).split(',')[1];
+        if (ws && ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'vision_context_frame', image }));
+        }
+      } catch (e) { console.warn('Silent vision capture error:', e); }
+    }, secs);
+    document.getElementById('liveVisionStatus').style.display = 'flex';
+  }
+
+  function stopLiveVision() {
+    if (_visionTimer) { clearInterval(_visionTimer); _visionTimer = null; }
+    const st = document.getElementById('liveVisionStatus');
+    if (st) st.style.display = 'none';
+    _lastFrameSig = 0;
   }
 
   async function captureAndSend() {
-    if (!_visionStream) return toast('Primero compartí la pantalla');
-    const video = document.getElementById('visionVideo');
+    if (!_visionStream || _captureInProgress) return;
+    _captureInProgress = true;
+    const video  = document.getElementById('visionVideo');
     const canvas = document.createElement('canvas');
-    canvas.width  = video.videoWidth  || 1280;
-    canvas.height = video.videoHeight || 720;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    // Comprimir a JPEG ~50% para reducir tamaño
-    const base64 = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
+    const scale  = Math.min(1, 854 / (video.videoWidth || 854));
+    canvas.width  = Math.round((video.videoWidth  || 854) * scale);
+    canvas.height = Math.round((video.videoHeight || 480) * scale);
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    const base64   = canvas.toDataURL('image/jpeg', 1.00).split(',')[1];
     const question = document.getElementById('visionQuestion').value.trim() || null;
     const btn = document.getElementById('captureBtn');
-    btn.disabled = true; btn.textContent = 'Analizando...';
+    btn.disabled = true; btn.textContent = '⏳';
+    addVisionLog('👁 Analizando pantalla...', true);
     try {
       const res  = await fetch('/api/vision', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -803,8 +998,8 @@
       const data = await res.json();
       addVisionLog(data.text || data.error, !!data.ok);
       if (!data.ok) toast('Error de visión: ' + data.error);
-    } catch (e) { toast('Error de red'); }
-    finally { btn.disabled = false; btn.textContent = '📷 CAPTURAR'; }
+    } catch (e) { addVisionLog('Error de red: ' + e.message, false); }
+    finally { btn.disabled = !_visionStream; btn.textContent = '📷 CAPTURAR'; _captureInProgress = false; }
   }
 
   function addVisionLog(text, ok = true) {
@@ -824,6 +1019,112 @@
   function clearVisionLog() {
     const log = document.getElementById('visionLog');
     if (log) log.innerHTML = '<div style="font-size:11px;color:var(--dim)">Sin capturas aún.</div>';
+  }
+
+  // ─ Mic / Speech Recognition ────────────────────────────────────────────────
+  let _speechRec    = null;
+  let _isListening  = false;
+  let _speechBuffer = '';
+  let _speechTimer  = null;
+
+  function toggleMic() { _isListening ? stopMic() : startMic(); }
+
+  function _createSpeechRec() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return null;
+    const rec = new SR();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'es-AR';
+    return rec;
+  }
+
+  function startMic() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { toast('Reconocimiento de voz no disponible. Usá Chrome o Edge.'); return; }
+
+    _isListening = true;
+    document.getElementById('micBtn').textContent = '🔴 PARAR ESCUCHAR';
+    document.getElementById('micBtn').className = 'btn btn-sm btn-pink';
+    const micStatus = document.getElementById('micStatus');
+    micStatus.textContent = '🎤 Escuchando...';
+    micStatus.style.color = 'var(--cyan)';
+    const transcript = document.getElementById('speechTranscript');
+    transcript.style.display = 'block';
+    transcript.textContent = 'Esperando que hables...';
+
+    function _launch() {
+      if (!_isListening) return;
+      _speechRec = _createSpeechRec();
+      if (!_speechRec) return;
+
+      _speechRec.onresult = (e) => {
+        let interim = '', final = '';
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          if (e.results[i].isFinal) final += e.results[i][0].transcript + ' ';
+          else interim += e.results[i][0].transcript;
+        }
+        transcript.textContent = interim || final || 'Esperando que hables...';
+        if (final.trim()) {
+          clearTimeout(_speechTimer);
+          _speechBuffer += ' ' + final.trim();
+          // Debounce: esperar 1.8s de silencio antes de enviar
+          _speechTimer = setTimeout(() => {
+            const text = _speechBuffer.trim();
+            const wakeWords = /\b(nyra|nira|ñira|naira|lyra|neira|nila|mira|nara)\b/i;
+            if (text.length > 3) {
+              if (ws && ws.readyState === 1) {
+                ws.send(JSON.stringify({ type: 'streamer_speech', text }));
+                const triggered = wakeWords.test(text);
+                addVisionLog('🎤 ' + (triggered ? '✓' : '✗ sin wake word') + ' "' + text + '"', triggered);
+                transcript.textContent = (triggered ? '✓ Enviado' : '✗ ignorado (sin wake word)') + ': ' + text.slice(0, 60);
+              } else {
+                transcript.textContent = '⚠ Sin conexión WS';
+              }
+            }
+            _speechBuffer = '';
+          }, 1800);
+        }
+      };
+
+      _speechRec.onerror = (e) => {
+        if (e.error === 'not-allowed') {
+          toast('Permiso de micrófono denegado');
+          stopMic();
+        }
+        // no-speech es normal, se ignora
+      };
+
+      // Al terminar: reiniciar con delay para evitar InvalidStateError en Chrome
+      _speechRec.onend = () => {
+        if (_isListening) setTimeout(_launch, 250);
+      };
+
+      try {
+        _speechRec.start();
+      } catch(e) {
+        // si falla al iniciar, reintentamos
+        if (_isListening) setTimeout(_launch, 500);
+      }
+    }
+
+    _launch();
+    toast('🎤 Escuchando al streamer...');
+  }
+
+  function stopMic() {
+    _isListening = false;
+    if (_speechRec) { try { _speechRec.stop(); } catch(e) {} _speechRec = null; }
+    _speechBuffer = '';
+    clearTimeout(_speechTimer);
+    document.getElementById('micBtn').textContent = '🎤 ACTIVAR MIC';
+    document.getElementById('micBtn').className = 'btn btn-sm';
+    const micStatus = document.getElementById('micStatus');
+    micStatus.textContent = 'Inactivo';
+    micStatus.style.color = 'var(--dim)';
+    const t = document.getElementById('speechTranscript');
+    t.textContent = '';
+    t.style.display = 'none';
   }
 
   function hexToRgb(hex) {
@@ -986,6 +1287,7 @@
   // ─ Init ─
   connectWS();
   loadMemories();
+  loadMemoria();
   checkOllama();
   loadFilters();
 

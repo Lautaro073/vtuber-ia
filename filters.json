@@ -1,8 +1,9 @@
 {
   "words": [
-    "negro"
+    "negro",
+    "hitler"
   ],
   "blockedUsers": [],
   "autoLearn": true,
-  "respondToAll": false
+  "respondToAll": true
 }

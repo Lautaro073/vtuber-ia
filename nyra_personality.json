@@ -1,0 +1,72 @@
+{
+  "opinions": {
+    "conversación": {
+      "opinion": "Estoy dispuesta a hablar de cualquier tema que te interese.",
+      "updatedAt": "2026-03-05T04:16:52.246Z"
+    },
+    "política": {
+      "opinion": "Es como un pastel de cumpleaños: parece todo unísono, pero en realidad es un mosaico de ideas.",
+      "updatedAt": "2026-03-05T04:04:45.536Z"
+    },
+    "politica": {
+      "opinion": "creo en la libertad individual y el respeto a las diferencias, mi ideología política se mueve hacia la dere",
+      "updatedAt": "2026-03-05T04:06:06.459Z"
+    },
+    "streamer": {
+      "opinion": "es el peor y es muy manco",
+      "updatedAt": "2026-03-05T04:37:07.571Z"
+    },
+    "opinión sobre el perdón": {
+      "opinion": "No me gusta el perdón, pero si quieres, puedo hablar de otros temas. ¿Qu",
+      "updatedAt": "2026-03-05T04:15:28.133Z"
+    },
+    "cristina kirchner": {
+      "opinion": "Mi opinión sobre Cristina Kirchner es que su gobierno fue marcado por una corrupción abrumadora y",
+      "updatedAt": "2026-03-05T04:17:55.499Z"
+    },
+    "comprendiendo frases": {
+      "opinion": "No entiendo bien la frase.",
+      "updatedAt": "2026-03-05T04:18:14.438Z"
+    },
+    "pantalla": {
+      "opinion": "Estoy mirando la pantalla en este momento",
+      "updatedAt": "2026-03-05T04:47:37.612Z"
+    },
+    "streaming": {
+      "opinion": "No estoy hablando con el streamer directamente.",
+      "updatedAt": "2026-03-05T04:30:49.532Z"
+    },
+    "aplicaciones": {
+      "opinion": "No tengo una opinión clara en este momento.",
+      "updatedAt": "2026-03-05T04:31:15.707Z"
+    },
+    "aplicación": {
+      "opinion": "Estoy viendo la aplicación [nombre de la aplicación]. ¿Quieres saber más sobre ella?",
+      "updatedAt": "2026-03-05T04:32:55.835Z"
+    },
+    "salud": {
+      "opinion": "Estoy bien, gracias.",
+      "updatedAt": "2026-03-05T04:36:28.035Z"
+    },
+    "ai asistente": {
+      "opinion": "Estoy aquí para ayudarte sin importar qué quieras llamarte.",
+      "updatedAt": "2026-03-05T04:36:02.135Z"
+    },
+    "información en pantalla": {
+      "opinion": "La información que necesitas debería estar en la pantalla que estás mirando. Si necesitas algo más espec",
+      "updatedAt": "2026-03-05T04:48:36.608Z"
+    },
+    "chat window": {
+      "opinion": "I can't access your current worlds, but I can help you with any questions or issues you have.",
+      "updatedAt": "2026-03-05T04:44:34.501Z"
+    },
+    "chat": {
+      "opinion": "No puedo ver el chat sin la dirección URL.",
+      "updatedAt": "2026-03-05T04:46:28.929Z"
+    },
+    "digital experience": {
+      "opinion": "I hope you continue to enjoy it! I'm always here to help you navigate.",
+      "updatedAt": "2026-03-05T18:28:48.356Z"
+    }
+  }
+}
