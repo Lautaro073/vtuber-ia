@@ -69,13 +69,14 @@
   const _preload = [];
   for (const eye of ['open', 'half', 'closed']) for (const v of VISEMES) _preload.push(file('neutral', eye, v));
   for (const emo of EMOTIONS) for (const m of ['closed', 'open']) _preload.push(file(emo, 'open', m));
+  _preload.push(file('thinking', 'open', 'closed'));
   _preload.forEach(src => { const i = new Image(); i.src = src; });
 
   const face = { emo: 'neutral', eye: 'open', mouth: 'closed' };
   function render() {
-    const src = face.emo === 'neutral'
-      ? file('neutral', face.eye, face.mouth)
-      : file(face.emo, 'open', (face.mouth === 'closed' || face.mouth === 'mbp') ? 'closed' : 'open');
+    const src = face.emo === 'neutral'  ? file('neutral', face.eye, face.mouth)
+              : face.emo === 'thinking' ? file('thinking', 'open', 'closed') // solo existe con boca cerrada
+              : file(face.emo, 'open', (face.mouth === 'closed' || face.mouth === 'mbp') ? 'closed' : 'open');
     if (!sprite.src.endsWith(src)) sprite.src = src;
   }
   function setFace(changes) { Object.assign(face, changes); render(); }
@@ -143,7 +144,7 @@
     if (s === 'thinking') {
       stopLipsync();
       blinkEnabled = false;
-      setFace({ emo: 'neutral', eye: 'half' });  // mirada pensativa
+      setFace({ emo: 'thinking', eye: 'open', mouth: 'closed' });
     } else if (s === 'speaking') {
       blinkEnabled = true;
       setFace({ eye: 'open' });
