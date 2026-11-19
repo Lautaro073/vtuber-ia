@@ -54,7 +54,7 @@ const CONFIG = {
 
 // ─── Anti-spam y anti prompt-injection (mensajes de viewers) ──────────────────
 const GUARD = {
-  userCooldownMs: 30000,  // una respuesta cada 30s por viewer
+  userCooldownMs: 15000,  // una respuesta cada 15s por viewer
   maxPerMinute: 6,        // tope global de respuestas a viewers por minuto
   dupWindowMs: 120000,    // el mismo texto repetido (copypasta) se ignora por 2 min
   maxInputChars: 200,     // los mensajes largos se cortan
@@ -695,7 +695,7 @@ class StreamChatManager {
       console.log(`📡 Stream conectado: ${platform}/${channel}`);
       return { ok: true };
     } catch (err) {
-      console.error("❌ Stream connect error:", err.message);
+      console.error("❌ Stream connect error:", err?.message || err);
       return { ok: false, error: err.message };
     }
   }
@@ -752,6 +752,7 @@ class StreamChatManager {
         points: (data.diamondCount || 0) * count,
       });
     });
+    conn.on("member", data => this._greetJoin(data.uniqueId, "tiktok"));
     conn.on("follow", data => this._onAlert("tiktok", "follow", data.uniqueId, {}));
     conn.on("share", data => this._onAlert("tiktok", "share", data.uniqueId, {}));
     conn.on("subscribe", data => this._onAlert("tiktok", "subscribe", data.uniqueId, {}));
@@ -805,7 +806,7 @@ class StreamChatManager {
       if (now - (this._recentTexts.get(norm) || 0) < GUARD.dupWindowMs) return "mensaje repetido";
       this._recentTexts.set(norm, now); // aunque después lo frene el cooldown: la copypasta queda marcada
     }
-    if (now - (this._lastByUser.get(key) || 0) < GUARD.userCooldownMs) return "cooldown de 30s";
+    if (now - (this._lastByUser.get(key) || 0) < GUARD.userCooldownMs) return `cooldown de ${GUARD.userCooldownMs / 1000}s`;
     this._acceptedTs = this._acceptedTs.filter(t => now - t < 60000);
     if (this._acceptedTs.length >= GUARD.maxPerMinute) return `tope de ${GUARD.maxPerMinute} por minuto`;
     this._lastByUser.set(key, now);
@@ -820,6 +821,7 @@ class StreamChatManager {
     // Ignorar mensajes del replay inicial que algunas plataformas envían al conectar (TikTok)
     const conn = this.connections.get(platform);
     if (conn && (Date.now() - conn.connectedAt) < 5000) return;
+    console.log(`💬 [${platform}] @${rawUsername}: ${String(rawText).slice(0, 80)}`);
 
     const check = filters.checkMessage(rawText, rawUsername);
     if (check.blocked) {
@@ -875,6 +877,27 @@ class StreamChatManager {
         { fixed: true, emotion: "happy" }, true);
     };
     if (s.users.size >= 5) flush(); else s.timer = setTimeout(flush, 6000);
+  }
+
+  // Saludo a los que entran: una vez por persona, agrupado cada 25s, frase fija (sin IA).
+  // Es lo de menor prioridad: si hay preguntas en cola, el saludo se descarta.
+  _greetJoin(username, platform) {
+    const uname = this._sanitize(username);
+    const g = this._joins ??= { seen: new Set(), users: [], timer: null };
+    if (!uname || g.seen.has(uname.toLowerCase())) return;
+    g.seen.add(uname.toLowerCase());
+    g.users.push(uname);
+    if (g.timer) return;
+    g.timer = setTimeout(() => {
+      const names = g.users.slice(0, 3).map(u => `@${u}`);
+      const rest = g.users.length - names.length;
+      g.users = []; g.timer = null;
+      if (this.queue.length) return;
+      const list = rest > 0 ? `${names.join(", ")} y ${rest} más` :
+        names.length > 1 ? `${names.slice(0, -1).join(", ")} y ${names.at(-1)}` : names[0];
+      const lines = [`Hola ${list}, bienvenidos.`, `Ah, llegó ${list}. Pónganse cómodos.`, `${list}... los estaba esperando. Fufu~`];
+      this._enqueue("NYRA", lines[Math.floor(Math.random() * lines.length)], platform, { fixed: true, emotion: "happy" });
+    }, 25000);
   }
 
   _onAlert(platform, type, username, extra = {}) {
@@ -1429,6 +1452,8 @@ class TTSEngine {
       .replace(/[（(][^)）]{1,30}[)）]/g, "")
       .replace(/[☆♪✦◕ᴗ｀´・ω✿≧◡≦\(\)\[\]]/g, "")
       .replace(/\.{2,}/g, " ")
+      // @usuarios: la voz los deletrea → sin @, sin números del final y _ . como espacios ("@matias_p99" → "matias p")
+      .replace(/@([\w.]+)/g, (_, u) => u.replace(/\d+$/, "").replace(/[_.]+/g, " ").trim() || u)
       .trim();
   }
 
