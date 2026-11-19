@@ -47,7 +47,7 @@ npm start
 
 1. En OBS: **Fuentes → + → Navegador**
 2. URL: `http://localhost:3000/obs`
-3. Ancho: `400` / Alto: `480`
+3. Ancho: `1024` / Alto: `1536` (tamaño nativo de los sprites; achicala o recortala desde OBS)
 4. **Sin chroma key** — el fondo ya es transparente
 5. Activar: **"Actualizar el navegador cuando la escena se active"**
 

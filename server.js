@@ -12,11 +12,13 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { tmpdir } from "os";
 import { exec, execFile, spawn } from "child_process";
+import { randomBytes, createHash, verify as cryptoVerify } from "crypto";
 import cors from "cors";
 import { v4 as uuidv4 } from "uuid";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 3000;
+try { process.loadEnvFile(join(__dirname, ".env")); } catch { } // .env es opcional
 
 // ─── Configuración ────────────────────────────────────────────────────────────
 const CONFIG = {
@@ -359,6 +361,150 @@ class NyraMemory {
   clear() { this.data = { viewers: {} }; this.save(); }
 }
 
+// ─── Kick: API oficial (OAuth + webhooks) ─────────────────────────────────────
+// Kick no tiene WebSocket público: manda cada evento por POST a PUBLIC_URL/webhooks/kick
+const KICK_EVENTS = [
+  "chat.message.sent", "channel.followed", "channel.subscription.new",
+  "channel.subscription.renewal", "channel.subscription.gifts", "kicks.gifted",
+];
+
+class KickAPI {
+  constructor() {
+    this.clientId = process.env.KICK_CLIENT_ID || "";
+    this.clientSecret = process.env.KICK_CLIENT_SECRET || "";
+    this.redirectUri = `http://localhost:${PORT}/auth/kick/callback`;
+    this.filePath = join(__dirname, "kick_tokens.json");
+    this.tokens = null;          // { access_token, refresh_token, expires_at, user_id, username }
+    this.pending = new Map();    // state → code_verifier (PKCE)
+    this.publicKey = null;
+    this.publicKeyFetchedAt = 0;
+    this.seen = new Set();       // message ids ya procesados (Kick puede reintentar)
+    if (existsSync(this.filePath)) {
+      try { this.tokens = JSON.parse(readFileSync(this.filePath, "utf8")); } catch { }
+    }
+  }
+
+  get configured() { return !!(this.clientId && this.clientSecret); }
+
+  status() {
+    const base = process.env.PUBLIC_URL?.replace(/\/$/, "");
+    return {
+      configured: this.configured,
+      loggedIn: !!this.tokens?.user_id,
+      username: this.tokens?.username || null,
+      webhookUrl: base ? `${base}/webhooks/kick` : null,
+    };
+  }
+
+  _save() { writeFileSync(this.filePath, JSON.stringify(this.tokens, null, 2)); }
+
+  authUrl() {
+    const state = randomBytes(16).toString("hex");
+    const verifier = randomBytes(32).toString("base64url");
+    this.pending.set(state, verifier);
+    setTimeout(() => this.pending.delete(state), 10 * 60 * 1000);
+    const q = new URLSearchParams({
+      client_id: this.clientId, response_type: "code", redirect_uri: this.redirectUri, state,
+      scope: "user:read events:subscribe",
+      code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+      code_challenge_method: "S256",
+    });
+    return `https://id.kick.com/oauth/authorize?${q}`;
+  }
+
+  async _token(params) {
+    const r = await fetch("https://id.kick.com/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: this.clientId, client_secret: this.clientSecret, ...params }),
+    });
+    if (!r.ok) throw new Error(`Kick OAuth HTTP ${r.status}: ${(await r.text()).slice(0, 150)}`);
+    const t = await r.json();
+    this.tokens = {
+      ...this.tokens,
+      access_token: t.access_token,
+      refresh_token: t.refresh_token || this.tokens?.refresh_token,
+      expires_at: Date.now() + (t.expires_in || 3600) * 1000,
+    };
+    this._save();
+  }
+
+  async handleCallback(code, state) {
+    const verifier = this.pending.get(state);
+    if (!verifier || !code) throw new Error("Login inválido o vencido. Volvé a iniciar sesión desde el panel.");
+    this.pending.delete(state);
+    await this._token({ grant_type: "authorization_code", redirect_uri: this.redirectUri, code_verifier: verifier, code });
+    const me = (await this._api("GET", "/public/v1/users")).data?.[0];
+    if (!me) throw new Error("No pude leer tu usuario de Kick");
+    this.tokens.user_id = me.user_id;
+    this.tokens.username = me.name;
+    this._save();
+  }
+
+  async _api(method, path, body) {
+    if (!this.tokens?.access_token) throw new Error("Iniciá sesión con Kick desde el panel");
+    if (Date.now() > this.tokens.expires_at - 60000) {
+      await this._token({ grant_type: "refresh_token", refresh_token: this.tokens.refresh_token });
+    }
+    const r = await fetch(`https://api.kick.com${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${this.tokens.access_token}`, "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!r.ok) throw new Error(`Kick API HTTP ${r.status}: ${(await r.text()).slice(0, 150)}`);
+    return r.status === 204 ? {} : r.json();
+  }
+
+  // Idempotente: solo crea las suscripciones que falten (si no, llegarían eventos duplicados)
+  async subscribe() {
+    const have = new Set(((await this._api("GET", "/public/v1/events/subscriptions")).data || []).map(s => s.event));
+    const events = KICK_EVENTS.filter(e => !have.has(e)).map(name => ({ name, version: 1 }));
+    if (events.length === 0) return;
+    const res = await this._api("POST", "/public/v1/events/subscriptions", { events, method: "webhook" });
+    const failed = (res.data || []).filter(s => s.error);
+    if (failed.length) console.warn("⚠️  Kick: no se suscribió a", failed.map(s => `${s.name} (${s.error})`).join(", "));
+  }
+
+  async _getPublicKey(refresh) {
+    if (!this.publicKey || refresh) {
+      const r = await fetch("https://api.kick.com/public/v1/public-key");
+      if (!r.ok) throw new Error(`Kick public key HTTP ${r.status}`);
+      this.publicKey = (await r.json()).data?.public_key;
+      this.publicKeyFetchedAt = Date.now();
+    }
+    return this.publicKey;
+  }
+
+  // Firma RSA-SHA256 (PKCS#1 v1.5) sobre "messageId.timestamp.body", según docs.kick.com/events/webhook-security
+  async verify(headers, rawBody) {
+    const id = headers["kick-event-message-id"];
+    const ts = headers["kick-event-message-timestamp"];
+    const sig = headers["kick-event-signature"];
+    if (!id || !ts || !sig || !Buffer.isBuffer(rawBody)) return false;
+    if (!(Math.abs(Date.now() - Date.parse(ts)) < 5 * 60 * 1000)) return false; // anti-replay (y rechaza fechas inválidas)
+    const data = Buffer.concat([Buffer.from(`${id}.${ts}.`), rawBody]);
+    const signature = Buffer.from(sig, "base64");
+    try {
+      if (cryptoVerify("RSA-SHA256", data, await this._getPublicKey(false), signature)) return true;
+      // Kick puede rotar la clave: reintentar con una nueva, como mucho una vez por minuto
+      if (Date.now() - this.publicKeyFetchedAt > 60000) {
+        return cryptoVerify("RSA-SHA256", data, await this._getPublicKey(true), signature);
+      }
+    } catch (err) {
+      console.warn("⚠️  Kick verify error:", err.message);
+    }
+    return false;
+  }
+
+  // true si el mensaje es nuevo (Kick reintenta entregas con el mismo id)
+  markSeen(id) {
+    if (this.seen.has(id)) return false;
+    this.seen.add(id);
+    if (this.seen.size > 500) this.seen.delete(this.seen.values().next().value);
+    return true;
+  }
+}
+
 // ─── Conector de Chat de Stream ───────────────────────────────────────────────
 class StreamChatManager {
   constructor() {
@@ -449,79 +595,32 @@ class StreamChatManager {
     return conn;
   }
 
-  async _connectKick(channel) {
-    let chatroomId = null;
+  // Kick: los eventos llegan por webhook (ver KickAPI). Conectar = asegurar las suscripciones.
+  async _connectKick() {
+    if (!kick.configured) throw new Error("Falta KICK_CLIENT_ID / KICK_CLIENT_SECRET en .env");
+    await kick.subscribe();
+    return { close() { } }; // al desconectar, los webhooks que sigan llegando se ignoran
+  }
 
-    // Soporte para ID directo: "nombredcanal:12345"
-    // El usuario puede obtener el ID abriendo en el navegador:
-    // https://kick.com/api/v2/channels/NOMBREDCANAL
-    if (channel.includes(":")) {
-      const [slug, id] = channel.split(":");
-      chatroomId = parseInt(id, 10);
-      channel = slug;
-      console.log(`📺 Kick: usando chatroom ID manual ${chatroomId} para @${channel}`);
+  // Traduce eventos del webhook de Kick al mismo flujo que Twitch/TikTok
+  onKickEvent(type, ev) {
+    switch (type) {
+      case "chat.message.sent":
+        return this._onMessage("kick", ev.sender?.username || "anon",
+          (ev.content || "").replace(/\[emote:\d+:([^\]]+)\]/g, "$1"));
+      case "channel.followed":
+        return this._onAlert("kick", "follow", ev.follower?.username);
+      case "channel.subscription.new":
+        return this._onAlert("kick", "subscribe", ev.subscriber?.username);
+      case "channel.subscription.renewal":
+        return this._onAlert("kick", "resub", ev.subscriber?.username, { months: ev.duration });
+      case "channel.subscription.gifts":
+        return this._onAlert("kick", "subgift", ev.gifter?.is_anonymous ? "anónimo" : ev.gifter?.username,
+          { recipient: (ev.giftees || []).map(g => g.username).join(", ") });
+      case "kicks.gifted":
+        return this._onAlert("kick", "gift", ev.sender?.username,
+          { name: `${ev.gift?.amount ?? ""} kicks (${ev.gift?.name || "regalo"})`, count: 1 });
     }
-
-    if (!chatroomId) {
-      // Kick usa Cloudflare → necesitamos headers de browser real
-      const headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "es-AR,es;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Referer": `https://kick.com/${channel}`,
-        "Origin": "https://kick.com",
-      };
-
-      // Intentar v2, luego v1 como fallback
-      for (const apiUrl of [
-        `https://kick.com/api/v2/channels/${channel}`,
-        `https://kick.com/api/v1/channels/${channel}`,
-      ]) {
-        try {
-          console.log(`📺 Kick: consultando ${apiUrl}`);
-          const r = await fetch(apiUrl, { headers });
-          if (r.ok) {
-            const info = await r.json();
-            chatroomId = info.chatroom?.id;
-            if (chatroomId) { console.log(`✅ Kick chatroom ID: ${chatroomId}`); break; }
-          } else {
-            console.warn(`⚠️  Kick API respondió HTTP ${r.status}`);
-          }
-        } catch (e) {
-          console.warn("⚠️  Kick API error:", e.message);
-        }
-      }
-    }
-
-    if (!chatroomId) {
-      throw new Error(
-        `Kick bloqueó la consulta (Cloudflare). ` +
-        `Abrí en tu navegador: https://kick.com/api/v2/channels/${channel} ` +
-        `y buscá "chatroom":{"id":XXXXX}. ` +
-        `Luego ingresá el canal como:  ${channel}:XXXXX`
-      );
-    }
-
-    const { WebSocket: WS } = await import("ws");
-    const sock = new WS(`wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=7.4.0&flash=false`);
-    sock.on("open", () => {
-      sock.send(JSON.stringify({ event: "pusher:subscribe", data: { auth: "", channel: `chatrooms.${chatroomId}.v2` } }));
-    });
-    sock.on("message", (raw) => {
-      try {
-        const msg = JSON.parse(raw);
-        if (msg.event === "App\\Events\\ChatMessageEvent") {
-          const d = JSON.parse(msg.data);
-          this._onMessage("kick", d.sender?.username || "anon", d.content);
-        }
-      } catch { }
-    });
-    sock.on("close", () => {
-      const c = this.connections.get("kick");
-      if (c) c.connected = false;
-      broadcast({ type: "stream_status", ...this.getStatus() });
-    });
-    return sock;
   }
 
   // Elimina caracteres CJK de usernames/datos externos para no contaminar el prompt
@@ -581,10 +680,10 @@ class StreamChatManager {
         prompt = `[ALERTA ${platform.toUpperCase()}] @${uname} se suscribió. Agradecé con tu estilo en 1-2 oraciones.`;
         break;
       case "resub":
-        prompt = `[ALERTA Twitch] @${uname} se volvió a suscribir (${extra.months} meses). Agradecé brevemente como NYRA.`;
+        prompt = `[ALERTA ${platform.toUpperCase()}] @${uname} se volvió a suscribir (${extra.months} meses). Agradecé brevemente como NYRA.`;
         break;
       case "subgift":
-        prompt = `[ALERTA Twitch] @${uname} le regaló una suscripción a @${recipient}. Agradecé a ambos brevemente.`;
+        prompt = `[ALERTA ${platform.toUpperCase()}] @${uname} le regaló una suscripción a @${recipient}. Agradecé a ambos brevemente.`;
         break;
       case "cheer":
         prompt = `[ALERTA Twitch] @${uname} donó ${extra.bits} bits. Agradecé la donación siendo NYRA.`;
@@ -1193,6 +1292,18 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
 app.use(cors());
+
+// Webhook de Kick: va antes de express.json porque la firma se calcula sobre el body crudo
+app.post("/webhooks/kick", express.raw({ type: "*/*", limit: "1mb" }), async (req, res) => {
+  if (!(await kick.verify(req.headers, req.body))) return res.status(401).end();
+  res.status(200).end(); // responder rápido; el procesamiento sigue en background
+  if (!kick.markSeen(req.headers["kick-event-message-id"])) return;
+  if (!streamChat.connections.has("kick")) return; // Kick desconectado desde el panel
+  let ev;
+  try { ev = JSON.parse(req.body.toString("utf8")); } catch { return; }
+  streamChat.onKickEvent(req.headers["kick-event-type"], ev);
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(join(__dirname, "public")));
 
@@ -1206,6 +1317,26 @@ const ai = new NyraAI(kb);
 const tts = new TTSEngine();
 const filters = new FilterEngine();
 const streamChat = new StreamChatManager();
+streamChat.settings.respondToAll = !!filters.data.respondToAll; // respetar lo guardado (el panel lo muestra desde filters.json)
+const kick = new KickAPI();
+
+// ─── Kick OAuth ───────────────────────────────────────────────────────────────
+app.get("/api/kick/status", (req, res) => res.json(kick.status()));
+
+app.get("/auth/kick", (req, res) => {
+  if (!kick.configured) return res.status(400).type("text/plain").send("Falta KICK_CLIENT_ID / KICK_CLIENT_SECRET en .env");
+  res.redirect(kick.authUrl());
+});
+
+app.get("/auth/kick/callback", async (req, res) => {
+  try {
+    await kick.handleCallback(String(req.query.code || ""), String(req.query.state || ""));
+    console.log(`✅ Kick: sesión iniciada como ${kick.tokens.username}`);
+    res.redirect("/panel?kick=ok");
+  } catch (err) {
+    res.status(400).type("text/plain").send(`Error de Kick: ${err.message}`);
+  }
+});
 
 // Conectar broadcast al TTS para que pueda enviar audio al browser
 function broadcast(data) {

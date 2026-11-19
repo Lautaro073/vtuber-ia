@@ -314,9 +314,11 @@
             <span id="status-kick" class="platform-badge platform-badge--off">&#x25CF; OFF</span>
           </div>
           <div style="display:flex;gap:8px">
-            <input type="text" id="channel-kick" placeholder="nombre_canal" style="flex:1">
+            <input type="text" id="channel-kick" placeholder="iniciá sesión →" style="flex:1" readonly>
             <button class="btn btn-sm" style="background:#53b93422;color:#53b934;border:1px solid #53b93455"
               onclick="connectPlatform('kick')">CONECTAR</button>
+            <a class="btn btn-sm" href="/auth/kick" id="login-kick" title="Iniciar sesión con Kick (API oficial)"
+              style="background:#53b93422;color:#53b934;border:1px solid #53b93455;text-decoration:none">LOGIN</a>
             <button class="btn btn-sm" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3)"
               id="disc-kick" onclick="disconnectPlatform('kick')" title="Desconectar">✕</button>
           </div>
@@ -862,6 +864,16 @@
     finally { if (btn) { btn.disabled = false; btn.textContent = 'CONECTAR'; } }
   }
 
+  // Kick usa la API oficial: el canal es el de la cuenta logueada
+  async function loadKickStatus() {
+    const s = await fetch('/api/kick/status').then(r => r.json()).catch(() => null);
+    if (!s) return;
+    const input = document.getElementById('channel-kick');
+    if (!s.configured)      input.placeholder = 'falta configurar .env';
+    else if (s.loggedIn)    { input.value = s.username; document.getElementById('login-kick').title = 'Cambiar de cuenta'; }
+    if (new URLSearchParams(location.search).get('kick') === 'ok') { toast(`✓ Kick: sesión iniciada como ${s.username}`); switchTab('stream'); }
+  }
+
   async function disconnectPlatform(platform) {
     await fetch('/api/stream/disconnect', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -1289,6 +1301,7 @@
 
   // Chequear estado del stream al cargar
   fetch('/api/stream/status').then(r => r.json()).then(updateStreamStatus);
+  loadKickStatus();
 </script>
 </body>
 </html>

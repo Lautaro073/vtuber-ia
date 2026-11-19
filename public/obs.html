@@ -5,73 +5,41 @@
 <title>NYRA VTuber - OBS</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  html, body { background: transparent; width: 500px; height: 600px; overflow: hidden; }
+  /* La página ocupa todo el Browser Source: el tamaño se elige en OBS (recomendado 1024x1536) */
+  html, body { background: transparent; width: 100%; height: 100%; overflow: hidden; }
 
-  .scene {
-    width:500px; height:600px; position:relative;
-    display:flex; align-items:flex-end; justify-content:center;
-  }
+  .scene { width:100%; height:100%; position:relative; display:flex; align-items:flex-end; justify-content:center; }
 
-  .avatar {
-    position:relative; width:460px; height:560px;
-    display:flex; align-items:flex-end; justify-content:center;
-  }
-
-  /* ── Cada expresión es un <img> apilado ── */
-  .expr {
-    position: absolute;
-    bottom: 0; left: 0;
-    width: 100%; height: 100%;
-    object-fit: contain;
-    object-position: bottom center;
-    opacity: 0;
-    transition: opacity 0.12s ease;
-    pointer-events: none;
-  }
-  .expr.active { opacity: 1; }
-  /* Blink se superpone instantáneamente sobre idle, sin fade */
-  #expr-blink { z-index: 2; transition: opacity 0.02s ease; }
+  .avatar { position:relative; width:100%; height:100%; transform-origin: bottom center; }
+  /* Un solo <img>: todos los sprites comparten silueta, así que cambiar el src no hace saltos */
+  #sprite { width:100%; height:100%; object-fit:contain; object-position:bottom center; pointer-events:none; }
 
   /* Animaciones por estado — se aplican al wrapper */
   .avatar.idle     { animation: breathe 4s ease-in-out infinite; }
   .avatar.speaking { animation: speak-bob .3s ease-in-out infinite alternate; }
   .avatar.thinking { animation: think-sway 1.5s ease-in-out infinite; }
-  .avatar.blinking { animation: breathe 4s ease-in-out infinite; } /* misma que idle */
 
-  @keyframes breathe   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
-  @keyframes speak-bob { from{transform:translateY(0) rotate(-.25deg)} to{transform:translateY(-5px) rotate(.25deg)} }
-  @keyframes think-sway{ 0%,100%{transform:rotate(-1.8deg)} 50%{transform:rotate(1.8deg) translateY(-6px)} }
+  @keyframes breathe   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-1%)} }
+  @keyframes speak-bob { from{transform:translateY(0) rotate(-.25deg)} to{transform:translateY(-.7%) rotate(.25deg)} }
+  @keyframes think-sway{ 0%,100%{transform:rotate(-1deg)} 50%{transform:rotate(1deg) translateY(-.8%)} }
 
   /* ── Wave ── */
-  .wave { position:absolute; bottom:14px; right:14px; display:none; align-items:center; gap:3px; background:rgba(8,4,20,.85); border:1px solid rgba(190,120,255,.22); border-radius:24px; padding:7px 14px; }
+  .wave { position:absolute; bottom:14px; right:14px; display:none; align-items:center; gap:3px; background:rgba(8,4,20,.85); border:1px solid rgba(190,120,255,.22); border-radius:24px; padding:7px 14px; z-index:3; }
   .wave.show { display:flex; }
   .wave span { width:3px; background:#bb77ff; border-radius:3px; animation:wv .75s ease-in-out infinite; }
   .wave span:nth-child(1){height:5px} .wave span:nth-child(2){height:12px;animation-delay:.1s}
   .wave span:nth-child(3){height:7px;animation-delay:.2s} .wave span:nth-child(4){height:15px;animation-delay:.14s} .wave span:nth-child(5){height:5px;animation-delay:.06s}
   @keyframes wv { 0%,100%{transform:scaleY(1)} 50%{transform:scaleY(.18)} }
-
-  .ground-shadow { position:absolute; bottom:4px; left:50%; transform:translateX(-50%); width:180px; height:22px; background:radial-gradient(ellipse,rgba(130,50,255,.2) 0%,transparent 70%); border-radius:50%; }
 </style>
 </head>
 <body>
 <div class="scene">
-
   <div class="wave" id="wave">
     <span></span><span></span><span></span><span></span><span></span>
   </div>
-
   <div class="avatar idle" id="avatar">
-
-    <!-- ✅ Una imagen por expresión, se crossfadean -->
-    <img id="expr-idle"     class="expr active" src="nyra_idle.png"     alt="idle">
-    <img id="expr-talking"  class="expr"        src="nyra_talking.png"  alt="talking">
-    <img id="expr-thinking" class="expr"        src="nyra_thinking.png" alt="thinking">
-    <img id="expr-blink"    class="expr"        src="nyra_blink.png"    alt="blink">
-    <img id="expr-surprise" class="expr"        src="nyra_sorprais.png" alt="surprise">
-
+    <img id="sprite" src="avatar/cecilia_neutral_eye-open_mouth-closed.png" alt="NYRA">
   </div>
-
-  <div class="ground-shadow"></div>
 </div>
 
 <!-- Overlay para desbloquear autoplay en browsers con restricción -->
@@ -86,112 +54,145 @@
 </div>
 
 <script>
-  const overlay  = document.getElementById('audio-overlay');
-  const avatar   = document.getElementById('avatar');
-  const wave     = document.getElementById('wave');
+  const overlay = document.getElementById('audio-overlay');
+  const avatar  = document.getElementById('avatar');
+  const wave    = document.getElementById('wave');
+  const sprite  = document.getElementById('sprite');
 
-  // Mapa de expresiones
-  const EXPRS = {
-    idle:     document.getElementById('expr-idle'),
-    talking:  document.getElementById('expr-talking'),
-    thinking: document.getElementById('expr-thinking'),
-    blink:    document.getElementById('expr-blink'),
-    surprise: document.getElementById('expr-surprise'),
-  };
+  // ── Sprites ──────────────────────────────────────────────────────────────
+  // neutral: ojos open/half/closed × 8 bocas (visemas). Emociones: solo ojos abiertos, boca closed/open.
+  const VISEMES  = ['closed', 'mbp', 'a', 'ei', 'o', 'u', 'fv', 'l'];
+  const EMOTIONS = ['happy', 'sad', 'angry', 'surprised'];
+  const file = (emo, eye, mouth) => `avatar/cecilia_${emo}_eye-${eye}_mouth-${mouth}.png`;
 
-  let currentExpr = 'idle';
-  let streamBuf   = '';
-  let blinkLoop   = null;
-  let talkLoop    = null;
+  // Precargar todo para que los cambios de frame sean instantáneos
+  const _preload = [];
+  for (const eye of ['open', 'half', 'closed']) for (const v of VISEMES) _preload.push(file('neutral', eye, v));
+  for (const emo of EMOTIONS) for (const m of ['closed', 'open']) _preload.push(file(emo, 'open', m));
+  _preload.forEach(src => { const i = new Image(); i.src = src; });
 
-  // ── Cambiar expresión con crossfade ──
-  function setExpr(name) {
-    if (!EXPRS[name]) return;
-    EXPRS[currentExpr]?.classList.remove('active');
-    EXPRS[name].classList.add('active');
-    currentExpr = name;
+  const face = { emo: 'neutral', eye: 'open', mouth: 'closed' };
+  function render() {
+    const src = face.emo === 'neutral'
+      ? file('neutral', face.eye, face.mouth)
+      : file(face.emo, 'open', (face.mouth === 'closed' || face.mouth === 'mbp') ? 'closed' : 'open');
+    if (!sprite.src.endsWith(src)) sprite.src = src;
+  }
+  function setFace(changes) { Object.assign(face, changes); render(); }
+
+  // ── Emoción según el tono de la respuesta (heurística simple) ──
+  function detectEmotion(text) {
+    const t = text.toLowerCase();
+    // (^|[^a-zñ]) en vez de \b porque \b no entiende acentos ni ñ
+    const has = words => new RegExp(`(^|[^a-záéíóúñ])(${words})`).test(t);
+    if (has('idiot|estúpid|estupid|cállate|callate|kuka|zurd|peronist|asco|odio|ridícul|ridicul')) return 'angry';
+    if (has('¿qué\\?|en serio|no puede ser|wow|increíble|increible') || /!\?|\?!/.test(t)) return 'surprised';
+    if (has('triste|lástima|lastima|qué pena|extraño|aburrid')) return 'sad';
+    if (has('fufu|ara~|ara\\b|jaja|gracias|interesante|me gusta|lindo|bien hecho|genial')) return 'happy';
+    return 'neutral';
   }
 
-  // ── Parpadeo automático cada ~4s ──
-  // Blink se superpone SOBRE idle (no la reemplaza), así nunca hay frame vacío
-  function startBlinkLoop() {
-    stopBlinkLoop();
-    blinkLoop = setInterval(() => {
-      if (currentExpr !== 'idle') return;
-      EXPRS.blink.classList.add('active');
-      setTimeout(() => {
-        EXPRS.blink.classList.remove('active');
-      }, 150);
-    }, 3500 + Math.random() * 2000);
-  }
-  function stopBlinkLoop() {
-    clearInterval(blinkLoop);
-    EXPRS.blink.classList.remove('active');
+  // ── Parpadeo: open → half → closed → half → open (solo en neutral) ──
+  let blinkTimer = null, blinkEnabled = true;
+  function scheduleBlink() {
+    clearTimeout(blinkTimer);
+    blinkTimer = setTimeout(() => {
+      if (blinkEnabled && face.emo === 'neutral' && face.eye === 'open') {
+        const steps = ['half', 'closed', 'half', 'open'];
+        steps.forEach((eye, i) => setTimeout(() => { if (face.emo === 'neutral' && blinkEnabled) setFace({ eye }); }, i * 45));
+        setTimeout(() => setFace({ eye: 'open' }), steps.length * 45 + 10); // por si algo cambió a mitad
+      }
+      scheduleBlink();
+    }, 2800 + Math.random() * 3200);
   }
 
-  // ── Animación boca al hablar (alterna idle ↔ talking) ──
-  function startTalkLoop() {
-    stopTalkLoop();
-    talkLoop = setInterval(() => {
-      setExpr(currentExpr === 'talking' ? 'idle' : 'talking');
-    }, 200);
+  // ── Lip-sync: recorre el texto repartido en la duración del audio ──
+  function charToViseme(ch, prev) {
+    const c = ch.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    if ('a'.includes(c)) return 'a';
+    if ('ei'.includes(c)) return 'ei';
+    if ('o'.includes(c)) return 'o';
+    if ('uw'.includes(c)) return 'u';
+    if ('mbp'.includes(c)) return 'mbp';
+    if ('fv'.includes(c)) return 'fv';
+    if ('l'.includes(c)) return 'l';
+    if (/[a-zñ]/.test(c)) return prev === 'closed' ? 'ei' : prev; // otras consonantes: mantener la forma
+    return 'closed';                                               // espacios y puntuación
   }
-  function stopTalkLoop() {
-    clearInterval(talkLoop);
-    setExpr('idle');
+  let lipTimer = null;
+  function startLipsync(text, durationMs) {
+    stopLipsync();
+    const chars = [...text];
+    if (!chars.length) return;
+    const dur = durationMs > 0 ? durationMs : chars.length * 70;
+    const t0 = performance.now();
+    let prev = 'closed';
+    lipTimer = setInterval(() => {
+      const idx = Math.floor((performance.now() - t0) / dur * chars.length);
+      if (idx >= chars.length) return stopLipsync();
+      prev = charToViseme(chars[idx], prev);
+      setFace({ mouth: prev });
+    }, 60);
   }
+  function stopLipsync() { clearInterval(lipTimer); lipTimer = null; setFace({ mouth: 'closed' }); }
 
   // ── Estado general ──
   function setState(s) {
     avatar.className = 'avatar ' + s;
     wave.classList.toggle('show', s === 'speaking');
-
-    if (s === 'speaking') {
-      stopBlinkLoop();
-      startTalkLoop();
-    } else if (s === 'thinking') {
-      stopTalkLoop();
-      stopBlinkLoop();
-      setExpr('thinking');
-    } else {
-      stopTalkLoop();
-      startBlinkLoop();
-      setExpr('idle');
+    if (s === 'thinking') {
+      stopLipsync();
+      blinkEnabled = false;
+      setFace({ emo: 'neutral', eye: 'half' });  // mirada pensativa
+    } else if (s === 'speaking') {
+      blinkEnabled = true;
+      setFace({ eye: 'open' });
+    } else { // idle
+      stopLipsync();
+      blinkEnabled = true;
+      setFace({ emo: 'neutral', eye: 'open', mouth: 'closed' });
     }
   }
 
   // ── WebSocket ──
   const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const ws = new WebSocket(`${wsProto}//${location.host}`);
+  let lastText = '';
+  let idleTimer = null;
 
   ws.onmessage = ({ data }) => {
     const m = JSON.parse(data);
 
     if (m.type === 'welcome') {
-      setTimeout(() => { setExpr('surprise'); }, 900);
-      setTimeout(() => setExpr('idle'), 2000);
+      setTimeout(() => setFace({ emo: 'surprised' }), 900);
+      setTimeout(() => setFace({ emo: 'neutral' }), 2000);
     }
-    if (m.type === 'thinking') {
-      setState('thinking');
-    }
-    if (m.type === 'stream_start') {
-      streamBuf = '';
-      setState('speaking');
-    }
-    if (m.type === 'stream_chunk') {
-      streamBuf += m.chunk;
-    }
+    if (m.type === 'thinking') setState('thinking');
+    if (m.type === 'stream_alert') setFace({ emo: 'happy' });
     if (m.type === 'stream_end') {
-      stopTalkLoop();
-      setExpr('idle');
-      setTimeout(() => setState('idle'), Math.max(5000, m.fullText.length * 70));
+      lastText = m.fullText || '';
+      setState('speaking');
+      setFace({ emo: detectEmotion(lastText), mouth: 'closed' });
+      // Si no llega audio (TTS caído), volver a idle solo
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => { if (!_audioPlaying) setState('idle'); }, 8000);
     }
-    if (m.type === 'tts_play') {
-      playTTS(m.url);
-    }
+    if (m.type === 'tts_play') playTTS(m.url);
+    if (m.type === 'error') setState('idle');
   };
 
   ws.onclose = () => {};
+
+  // Llamados por el reproductor cuando el audio empieza/termina de sonar
+  function onAudioStart(durationSec) {
+    clearTimeout(idleTimer);
+    setState('speaking');
+    startLipsync(lastText, durationSec * 1000);
+  }
+  function onAudioEnd() {
+    stopLipsync();
+    setTimeout(() => { if (!_audioPlaying) setState('idle'); }, 600);
+  }
 
 
   // ── AudioContext (evita bloqueo autoplay en browsers normales) ──
@@ -233,6 +234,7 @@
   function _sendTTSDone() {
     if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tts_done' }));
     _audioPlaying = false;
+    onAudioEnd();
     if (_audioQueue.length > 0) _playNext(_audioQueue.shift());
   }
 
@@ -244,15 +246,21 @@
     }
   }
 
+  // <audio> simple (OBS y fallback): arranca el lip-sync cuando suena de verdad
+  function _playElement(url) {
+    const a = new Audio(url);
+    a.onplaying = () => onAudioStart(a.duration);
+    a.onended = _sendTTSDone;
+    a.onerror = _sendTTSDone;
+    return a.play();
+  }
+
   async function _playNext(url) {
     _audioPlaying = true;
     try {
       if (_isOBS) {
         // OBS: autoplay sin restricciones — onended envía tts_done
-        const audio = new Audio(url);
-        audio.onended = _sendTTSDone;
-        audio.onerror = _sendTTSDone;
-        await audio.play();
+        await _playElement(url);
         return;  // _sendTTSDone se llama vía onended, no aquí
       }
       // Browser normal: AudioContext para evitar bloqueo de autoplay
@@ -264,19 +272,18 @@
       const src     = ctx.createBufferSource();
       src.buffer    = decoded;
       src.connect(ctx.destination);
-      src.start(0);
       src.onended = _sendTTSDone;
+      src.start(0);
+      onAudioStart(decoded.duration);
     } catch(e) {
       console.warn('TTS audio error:', e);
-      const a = new Audio(url);
-      a.onended = _sendTTSDone;
-      a.onerror = _sendTTSDone;
-      a.play().catch(_sendTTSDone);
+      _playElement(url).catch(_sendTTSDone);
     }
   }
 
   // ── Arrancar ──
   setState('idle');
+  scheduleBlink();
 </script>
 </body>
 </html>
