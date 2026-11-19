@@ -41,7 +41,7 @@ const CONFIG = {
   // 1. Cuenta en https://murf.ai → Dashboard → API Keys → copiá tu key
   // 2. Elegí voz en https://murf.ai/voice-studio → copiá el voiceId
   murf: {
-    apiKey: "ap2_2c427819-8af8-481d-adcd-5bf78ffa3bab",   // ← reemplazar
+    apiKey: process.env.MURF_API_KEY || "",   // en .env (sin key → se usa Edge TTS gratis)
     voiceId: "es-MX-luisa",     // ← reemplazar con tu voz elegida
     style: "Conversational",    // Conversational | Promo | Sad | Angry
     rate: -10,                 // velocidad: -50 (lento) a +50 (rápido)
@@ -1189,7 +1189,7 @@ class TTSEngine {
 
     // ── Murf.ai ──
     const { apiKey, voiceId, style, rate, pitch } = CONFIG.murf;
-    if (apiKey === "TU_API_KEY_AQUI") {
+    if (!apiKey) {
       console.log("⚠️  Murf sin configurar — usando Edge TTS de fallback");
       return this._speakEdge(clean);
     }
