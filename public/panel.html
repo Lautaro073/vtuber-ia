@@ -324,6 +324,35 @@
           </div>
         </div>
 
+        <!-- Live: metas de regalos y tribunal -->
+        <div style="border-top:1px solid var(--border);padding-top:12px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="label">LIVE · METAS DE REGALOS</div>
+            <span id="liveProgress" style="font-size:11px;color:var(--cyan)">0 puntos</span>
+          </div>
+          <div style="font-size:10px;color:var(--dim)">Una meta por línea: <b>puntos | recompensa</b>. Puntos = diamantes de TikTok (kicks en Kick, bits en Twitch). Overlay para OBS: <b>localhost:3000/overlay</b> (720×420).</div>
+          <textarea id="liveGoals" style="min-height:70px" placeholder="1000 | NYRA cuenta su historia secreta&#10;5000 | NYRA canta una canción&#10;20000 | NYRA habla como abuela por 5 minutos"></textarea>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-sm btn-cyan" onclick="saveGoals()">GUARDAR METAS</button>
+            <input type="text" id="liveAdd" placeholder="+ puntos" style="width:90px">
+            <button class="btn btn-sm" style="background:transparent;color:var(--text);border:1px solid var(--border)" onclick="addPoints()">SUMAR</button>
+            <button class="btn btn-sm" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3)" onclick="resetProgress()">REINICIAR</button>
+          </div>
+
+          <div class="label" style="margin-top:6px">TRIBUNAL NYRA</div>
+          <input type="text" id="tribTopic" placeholder="Tema: ¿la pizza con ananá es aceptable?">
+          <div style="display:flex;gap:8px">
+            <input type="text" id="tribA" placeholder="Lado A: Sí, es rica" style="flex:1">
+            <input type="text" id="tribB" placeholder="Lado B: Es un crimen" style="flex:1">
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-sm btn-cyan" onclick="openTribunal()">ABRIR</button>
+            <button class="btn btn-sm" style="background:#53b93422;color:#53b934;border:1px solid #53b93455" onclick="closeTribunal()">DAR SENTENCIA</button>
+            <button class="btn btn-sm" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3)" onclick="cancelTribunal()">CANCELAR</button>
+          </div>
+          <div id="tribStatus" style="font-size:11px;color:var(--dim)">Sin tribunal abierto. El chat vota con !a / !b.</div>
+        </div>
+
         <!-- Respond mode -->
         <div style="border-top:1px solid var(--border);padding-top:12px">
           <div class="label" style="margin-bottom:8px">MODO DE RESPUESTA</div>
@@ -586,6 +615,8 @@
 
     ws.onmessage = (e) => {
       const data = JSON.parse(e.data);
+
+      if (data.type === 'live_state') renderLive(data);
 
       if (data.type === 'welcome') {
         addMsg('ai', data.text);
@@ -883,6 +914,55 @@
       else         { toast(`Error: ${data.error || 'desconocido'}`); }
     } catch(e) { toast('Error de red'); }
     finally { if (btn) { btn.disabled = false; btn.textContent = 'CONECTAR'; } }
+  }
+
+  // ─ Live: metas y tribunal ─
+  let _goalsLoaded = false;
+  function renderLive(s) {
+    const next = s.next ? ` · próxima: ${s.next.points} (${s.next.reward})` : (s.goals.length ? ' · ¡todas cumplidas!' : '');
+    document.getElementById('liveProgress').textContent = `${s.progress} puntos · humor ${s.mood}${next}`;
+    if (!_goalsLoaded) { // no pisar lo que estás escribiendo
+      document.getElementById('liveGoals').value = s.goals.map(g => `${g.points} | ${g.reward}`).join('\n');
+      _goalsLoaded = true;
+    }
+    const t = s.tribunal;
+    document.getElementById('tribStatus').textContent = t
+      ? `⚖ "${t.topic}" — A (${t.a}): ${t.total.a} [${t.votes.a} votos] · B (${t.b}): ${t.total.b} [${t.votes.b} votos]`
+      : 'Sin tribunal abierto. El chat vota con !a / !b.';
+  }
+  const postJSON = (url, body, method = 'POST') =>
+    fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(r => r.json());
+
+  async function saveGoals() {
+    const goals = document.getElementById('liveGoals').value.split('\n')
+      .map(l => l.split('|')).filter(p => p.length >= 2)
+      .map(([points, ...reward]) => ({ points: Number(points.replace(/\D/g, '')), reward: reward.join('|').trim() }));
+    const r = await postJSON('/api/live/goals', { goals });
+    if (r.ok) { _goalsLoaded = false; renderLive(r); toast(`✓ ${r.goals.length} metas guardadas`); } else toast(`Error: ${r.error}`);
+  }
+  async function addPoints() {
+    const n = Number(document.getElementById('liveAdd').value);
+    if (!n) return toast('Ingresá cuántos puntos sumar');
+    const r = await postJSON('/api/live/progress', { add: n });
+    if (r.ok) { document.getElementById('liveAdd').value = ''; toast(`✓ +${n} puntos`); }
+  }
+  async function resetProgress() {
+    if (!confirm('¿Reiniciar el progreso de metas a 0?')) return;
+    await postJSON('/api/live/progress', { reset: true });
+    toast('Progreso reiniciado');
+  }
+  async function openTribunal() {
+    const v = id => document.getElementById(id).value.trim();
+    const r = await postJSON('/api/live/tribunal', { topic: v('tribTopic'), a: v('tribA'), b: v('tribB') });
+    toast(r.ok ? '⚖ Tribunal abierto' : `Error: ${r.error}`);
+  }
+  async function closeTribunal() {
+    const r = await postJSON('/api/live/tribunal/close');
+    toast(r.ok ? '⚖ NYRA está dictando sentencia…' : `Error: ${r.error}`);
+  }
+  async function cancelTribunal() {
+    await postJSON('/api/live/tribunal', null, 'DELETE');
+    toast('Tribunal cancelado');
   }
 
   // Kick usa la API oficial: el canal es el de la cuenta logueada
@@ -1313,9 +1393,9 @@
     }
   }
 
-  // ─ Init ─ (primero validar la contraseña, así el WS se conecta ya con la clave)
+  // ─ Init ─ (primero validar la contraseña con una llamada rápida, así el WS se conecta ya con la clave)
   (async () => {
-    await fetch('/api/status');
+    await fetch('/api/live').then(r => r.json()).then(renderLive).catch(() => {});
     connectWS();
     loadMemories();
     loadMemoria();

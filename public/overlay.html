@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>NYRA - Overlay Live</title>
+<style>
+  /* Fuente de navegador para OBS (recomendado 720x420). Fondo transparente. */
+  :root {
+    --bg: rgba(10, 6, 24, .82); --border: rgba(190, 120, 255, .35);
+    --text: #f1eaff; --dim: #b9a8d8; --violet: #bb77ff; --pink: #ff4fa3; --cyan: #00e5ff; --lime: #c6f26b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: transparent; width: 100%; height: 100%; overflow: hidden;
+    font-family: "Segoe UI", system-ui, sans-serif; color: var(--text); }
+  .wrap { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+  .card { background: var(--bg); border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px;
+    box-shadow: 0 0 18px rgba(130, 60, 255, .25); }
+  .label { font-size: 12px; letter-spacing: 3px; color: var(--violet); font-weight: 700; text-transform: uppercase; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .big { font-size: 20px; font-weight: 700; text-shadow: 0 0 10px rgba(187, 119, 255, .6); }
+  .num { font-variant-numeric: tabular-nums; font-size: 15px; color: var(--dim); white-space: nowrap; }
+  .bar { position: relative; height: 16px; margin-top: 7px; border-radius: 9px; background: rgba(255, 255, 255, .08); overflow: hidden; }
+  .fill { height: 100%; width: 0; border-radius: 9px; transition: width .8s cubic-bezier(.2, .8, .2, 1); }
+  #goalFill { background: linear-gradient(90deg, var(--violet), var(--pink)); box-shadow: 0 0 12px var(--pink); }
+  #moodFill { background: linear-gradient(90deg, #5b7cff, var(--violet), var(--pink)); }
+  .hidden { display: none !important; }
+
+  /* Tribunal: tira y afloja entre A y B */
+  .tug { position: relative; height: 22px; margin-top: 8px; border-radius: 11px; overflow: hidden; display: flex; }
+  #tugA { background: linear-gradient(90deg, #00b8d4, var(--cyan)); transition: flex-basis .8s ease; flex-basis: 50%; }
+  #tugB { background: linear-gradient(90deg, var(--pink), #ff2d6f); flex: 1; }
+  .tug::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,.6); }
+  .sides { display: flex; justify-content: space-between; margin-top: 6px; font-size: 15px; font-weight: 700; }
+  .sideA { color: var(--cyan); } .sideB { color: var(--pink); text-align: right; }
+  .hint { font-size: 13px; color: var(--lime); margin-top: 4px; text-align: center; letter-spacing: 1px; }
+
+  /* Avisos: regalos, metas, sentencia */
+  #toast { position: fixed; left: 50%; bottom: 14px; transform: translate(-50%, 200%); opacity: 0; transition: transform .45s cubic-bezier(.2, .9, .3, 1.2), opacity .3s;
+    max-width: 92%; padding: 12px 22px; border-radius: 16px; text-align: center; font-size: 20px; font-weight: 800;
+    background: var(--bg); border: 2px solid var(--violet); box-shadow: 0 0 24px rgba(187, 119, 255, .6); }
+  #toast.show { transform: translate(-50%, 0); opacity: 1; }
+  #toast.big  { border-color: var(--pink); box-shadow: 0 0 30px var(--pink); }
+  #toast.epic { border-color: var(--lime); box-shadow: 0 0 40px var(--lime); font-size: 26px; animation: shake .5s 2; }
+  @keyframes shake { 0%,100% { margin-left: 0 } 25% { margin-left: -8px } 75% { margin-left: 8px } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card" id="goalCard">
+    <div class="row"><span class="label">Meta</span><span class="num" id="goalNum">0 / 0</span></div>
+    <div class="big" id="goalReward">Sin metas configuradas</div>
+    <div class="bar"><div class="fill" id="goalFill"></div></div>
+  </div>
+
+  <div class="card">
+    <div class="row"><span class="label">Humor de NYRA</span><span class="num" id="moodText">Neutral</span></div>
+    <div class="bar"><div class="fill" id="moodFill"></div></div>
+  </div>
+
+  <div class="card hidden" id="tribCard">
+    <div class="label">⚖ Tribunal NYRA</div>
+    <div class="big" id="tribTopic"></div>
+    <div class="tug"><div id="tugA"></div><div id="tugB"></div></div>
+    <div class="sides">
+      <span class="sideA" id="tribA"></span>
+      <span class="sideB" id="tribB"></span>
+    </div>
+    <div class="hint">Escribí <b>!a</b> o <b>!b</b> + tu argumento · tus regalos suman pruebas</div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const fmt = n => Number(n || 0).toLocaleString('es-AR');
+  const votos = n => `${n} voto${n === 1 ? "" : "s"}`;
+
+  function moodLabel(m) {
+    if (m >= 85) return 'Enamorada 💗';
+    if (m >= 65) return 'Contenta';
+    if (m >= 35) return 'Neutral';
+    if (m >= 15) return 'Fría';
+    return 'Helada ❄';
+  }
+
+  function render(s) {
+    // Meta: progreso hacia la próxima meta sin cumplir
+    if (!s.goals?.length) {
+      $('goalReward').textContent = 'Sin metas configuradas';
+      $('goalNum').textContent = fmt(s.progress);
+      $('goalFill').style.width = '0%';
+    } else if (s.next) {
+      $('goalReward').textContent = s.next.reward;
+      $('goalNum').textContent = `${fmt(s.progress)} / ${fmt(s.next.points)}`;
+      $('goalFill').style.width = Math.min(100, s.progress / s.next.points * 100) + '%';
+    } else {
+      $('goalReward').textContent = '¡Todas las metas cumplidas! ✨';
+      $('goalNum').textContent = fmt(s.progress);
+      $('goalFill').style.width = '100%';
+    }
+    $('moodFill').style.width = s.mood + '%';
+    $('moodText').textContent = moodLabel(s.mood);
+
+    // Tribunal
+    const t = s.tribunal;
+    $('tribCard').classList.toggle('hidden', !t);
+    if (t) {
+      $('tribTopic').textContent = t.topic;
+      const sum = t.total.a + t.total.b;
+      $('tugA').style.flexBasis = (sum ? t.total.a / sum * 100 : 50) + '%';
+      $('tribA').textContent = `A · ${t.a} — ${fmt(t.total.a)} (${votos(t.votes.a)})`;
+      $('tribB').textContent = `${fmt(t.total.b)} (${votos(t.votes.b)}) — ${t.b} · B`;
+    }
+  }
+
+  // Cola de avisos: uno por vez
+  const toasts = [];
+  let showing = false;
+  function toast(text, cls = '', ms = 3500) {
+    toasts.push({ text, cls, ms });
+    if (!showing) nextToast();
+  }
+  function nextToast() {
+    const t = toasts.shift();
+    if (!t) { showing = false; return; }
+    showing = true;
+    const el = $('toast');
+    el.className = t.cls;
+    el.textContent = t.text;
+    requestAnimationFrame(() => el.classList.add('show'));
+    setTimeout(() => { el.classList.remove('show'); setTimeout(nextToast, 450); }, t.ms);
+  }
+
+  function onEvent(e) {
+    if (e.kind === 'gift') {
+      const what = `${e.count > 1 ? e.count + 'x ' : ''}${e.gift}`;
+      if (e.tier === 'epic')   toast(`💥 ¡@${e.username} mandó ${what}! 💥`, 'epic', 6000);
+      else if (e.tier === 'big') toast(`🎉 @${e.username} mandó ${what}`, 'big', 4500);
+      else toast(`🎁 @${e.username} · ${what}`, '', 2500);
+    }
+    if (e.kind === 'goal') toast(`✨ META DESBLOQUEADA: ${e.reward} ✨`, 'epic', 7000);
+    if (e.kind === 'verdict') toast(e.winner ? `⚖ Ganó: ${e.winner}` : '⚖ ¡Empate! NYRA decide…', 'big', 6000);
+  }
+
+  function connect() {
+    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}`);
+    ws.onmessage = ({ data }) => {
+      const m = JSON.parse(data);
+      if (m.type === 'live_state') render(m);
+      if (m.type === 'live_event') onEvent(m);
+    };
+    ws.onclose = () => setTimeout(connect, 2000); // reconectar si se reinicia el server
+  }
+  connect();
+</script>
+</body>
+</html>

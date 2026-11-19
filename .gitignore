@@ -44,3 +44,6 @@ next-env.d.ts
 
 # tokens de Kick (OAuth)
 kick_tokens.json
+
+# estado del live (metas y progreso)
+live_state.json

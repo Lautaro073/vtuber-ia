@@ -148,12 +148,14 @@
     } else if (s === 'speaking') {
       blinkEnabled = true;
       setFace({ eye: 'open' });
-    } else { // idle
+    } else { // idle: la cara en reposo refleja el humor del live
       stopLipsync();
       blinkEnabled = true;
-      setFace({ emo: 'neutral', eye: 'open', mouth: 'closed' });
+      setFace({ emo: idleEmotion(), eye: 'open', mouth: 'closed' });
     }
   }
+  let mood = 50;
+  const idleEmotion = () => mood >= 80 ? 'happy' : mood <= 20 ? 'sad' : 'neutral';
 
   // ── WebSocket ──
   const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -169,11 +171,16 @@
       setTimeout(() => setFace({ emo: 'neutral' }), 2000);
     }
     if (m.type === 'thinking') setState('thinking');
-    if (m.type === 'stream_alert') setFace({ emo: 'happy' });
+    if (m.type === 'stream_alert') setFace({ emo: (m.tier === 'big' || m.tier === 'epic') ? 'surprised' : 'happy' });
+    if (m.type === 'live_state') {
+      mood = m.mood;
+      if (avatar.classList.contains('idle')) setFace({ emo: idleEmotion() });
+    }
     if (m.type === 'stream_end') {
       lastText = m.fullText || '';
       setState('speaking');
-      setFace({ emo: detectEmotion(lastText), mouth: 'closed' });
+      // El server manda la emoción en regalos/metas; si no, se deduce del texto
+      setFace({ emo: m.emotion || detectEmotion(lastText), mouth: 'closed' });
       // Si no llega audio (TTS caído), volver a idle solo
       clearTimeout(idleTimer);
       idleTimer = setTimeout(() => { if (!_audioPlaying) setState('idle'); }, 8000);
