@@ -516,6 +516,27 @@
 <div class="toast" id="toast"></div>
 
 <script>
+  // ─ Contraseña del panel: se manda en cada llamada a /api y al WebSocket ─
+  const panelKey = () => { try { return localStorage.getItem('panelKey') || ''; } catch { return ''; } };
+  let _askingKey = null; // si varias llamadas reciben 401 a la vez, preguntar una sola vez
+  function askPanelKey() {
+    _askingKey ??= Promise.resolve().then(() => {
+      const k = prompt('Contraseña del panel (PANEL_PASSWORD del .env):');
+      if (k) { try { localStorage.setItem('panelKey', k); } catch {} }
+      if (ws) ws.close(); // reconectar el WS con la clave nueva
+      setTimeout(() => { _askingKey = null; }, 0);
+      return !!k;
+    });
+    return _askingKey;
+  }
+  const _fetch = window.fetch.bind(window);
+  window.fetch = async (url, opts = {}) => {
+    if (typeof url !== 'string' || !url.startsWith('/api')) return _fetch(url, opts);
+    const send = () => _fetch(url, { ...opts, headers: { ...(opts.headers || {}), 'x-panel-key': panelKey() } });
+    const r = await send();
+    return (r.status === 401 && await askPanelKey()) ? send() : r;
+  };
+
   let ws;
   let msgCount = 0;
   let isThinking = false;
@@ -543,7 +564,7 @@
   // ─ WebSocket ─
   function connectWS() {
     const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${wsProto}//${location.host}`);
+    ws = new WebSocket(`${wsProto}//${location.host}/?key=${encodeURIComponent(panelKey())}`);
 
     ws.onopen = () => {
       document.getElementById('ollamaDot').style.cssText = 'background:#00f5ff;box-shadow:0 0 8px #00f5ff;width:7px;height:7px;border-radius:50%';
@@ -1292,16 +1313,18 @@
     }
   }
 
-  // ─ Init ─
-  connectWS();
-  loadMemories();
-  loadMemoria();
-  checkOllama();
-  loadFilters();
-
-  // Chequear estado del stream al cargar
-  fetch('/api/stream/status').then(r => r.json()).then(updateStreamStatus);
-  loadKickStatus();
+  // ─ Init ─ (primero validar la contraseña, así el WS se conecta ya con la clave)
+  (async () => {
+    await fetch('/api/status');
+    connectWS();
+    loadMemories();
+    loadMemoria();
+    checkOllama();
+    loadFilters();
+    // Chequear estado del stream al cargar
+    fetch('/api/stream/status').then(r => r.json()).then(updateStreamStatus);
+    loadKickStatus();
+  })();
 </script>
 </body>
 </html>
