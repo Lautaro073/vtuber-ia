@@ -20,7 +20,7 @@
     background-size: 40px 40px; pointer-events: none;
   }
 
-  .app { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 340px; grid-template-rows: 56px 1fr; height: 100vh; }
+  .app { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 340px; grid-template-rows: 56px minmax(0, 1fr); height: 100vh; } /* minmax(0,…): que las columnas no crezcan con el chat y scrollee solo .messages */
 
   .topbar {
     grid-column: 1 / -1;
@@ -37,7 +37,7 @@
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 
   /* chat */
-  .chat-col { display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+  .chat-col { display: flex; flex-direction: column; border-right: 1px solid var(--border); min-height: 0; }
 
   .tabs { display: flex; border-bottom: 1px solid var(--border); }
   .tab {
