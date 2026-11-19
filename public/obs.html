@@ -19,7 +19,10 @@
   .avatar.speaking { animation: speak-bob .3s ease-in-out infinite alternate; }
   .avatar.thinking { animation: think-sway 1.5s ease-in-out infinite; }
 
-  @keyframes breathe   { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-1%)} }
+  /* Check "Efecto de flotar" apagado en el panel: avatar quieto */
+  body.no-float .avatar { animation: none !important; }
+
+  @keyframes breathe  { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-1%)} }
   @keyframes speak-bob { from{transform:translateY(0) rotate(-.25deg)} to{transform:translateY(-.7%) rotate(.25deg)} }
   @keyframes think-sway{ 0%,100%{transform:rotate(-1deg)} 50%{transform:rotate(1deg) translateY(-.8%)} }
 
@@ -159,11 +162,11 @@
 
   // ── WebSocket ──
   const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${wsProto}//${location.host}`);
+  let ws;
   let lastText = '';
   let idleTimer = null;
 
-  ws.onmessage = ({ data }) => {
+  function onWsMessage({ data }) {
     const m = JSON.parse(data);
 
     if (m.type === 'welcome') {
@@ -174,6 +177,7 @@
     if (m.type === 'stream_alert') setFace({ emo: (m.tier === 'big' || m.tier === 'epic') ? 'surprised' : 'happy' });
     if (m.type === 'live_state') {
       mood = m.mood;
+      document.body.classList.toggle('no-float', m.float === false);
       // Fondo elegido en el panel ("none" = transparente, para usar el fondo de OBS/TikTok Studio)
       document.body.style.background = m.background && m.background !== 'none'
         ? `#000 url(backgrounds/${m.background}.png) center / cover no-repeat` : 'transparent';
@@ -192,7 +196,13 @@
     if (m.type === 'error') setState('idle');
   };
 
-  ws.onclose = () => {};
+  // Reconectar si se reinicia el server (si no, la fuente de OBS/TikTok Studio queda "muda" hasta recargarla)
+  function connectWS() {
+    ws = new WebSocket(`${wsProto}//${location.host}`);
+    ws.onmessage = onWsMessage;
+    ws.onclose = () => setTimeout(connectWS, 2000);
+  }
+  connectWS();
 
   // Llamados por el reproductor cuando el audio empieza/termina de sonar
   function onAudioStart(durationSec) {
@@ -210,7 +220,9 @@
   let _actx = null;
 
   // Detectar si estamos dentro de OBS Browser Source
-  const _isOBS = typeof window.obsstudio !== 'undefined';
+  // Fuentes embebidas donde no se puede hacer clic (OBS, TikTok LIVE Studio con /obs?autoplay):
+  // sin cartel de "click para activar audio" y reproducción directa con <audio>
+  const _isOBS = typeof window.obsstudio !== 'undefined' || new URLSearchParams(location.search).has('autoplay');
 
   function _getCtx() {
     if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();

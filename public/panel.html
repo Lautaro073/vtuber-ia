@@ -346,6 +346,11 @@
             <option value="singularity-lab">Laboratorio Singularity</option>
             <option value="lofi-bedroom">Cuarto lo-fi (lluvia)</option>
           </select>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="liveFloat" onchange="setFloat(this.checked)"
+              style="accent-color:var(--cyan);width:14px;height:14px">
+            Efecto de flotar (respirar, balancearse al hablar/pensar)
+          </label>
 
           <div class="label" style="margin-top:6px">TRIBUNAL NYRA</div>
           <input type="text" id="tribTopic" placeholder="Tema: ¿la pizza con ananá es aceptable?">
@@ -552,17 +557,40 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- Login del panel: formulario propio porque prompt() no existe en navegadores embebidos -->
+<div id="keyModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.75);align-items:center;justify-content:center">
+  <form id="keyForm" style="background:#0d0a1c;border:1px solid var(--cyan);border-radius:12px;padding:22px;width:min(360px,90vw);display:flex;flex-direction:column;gap:12px;box-shadow:0 0 24px rgba(0,245,255,.25)">
+    <div class="label" style="color:var(--cyan)">🔒 CONTRASEÑA DEL PANEL</div>
+    <div style="font-size:12px;color:var(--dim)">Es el valor de <b>PANEL_PASSWORD</b> en tu archivo <b>.env</b>. Se guarda en este navegador.</div>
+    <input type="password" id="keyInput" autocomplete="current-password" placeholder="Contraseña" required>
+    <div id="keyError" style="font-size:11px;color:var(--pink);display:none">Contraseña incorrecta, probá de nuevo.</div>
+    <button class="btn btn-cyan" type="submit">ENTRAR</button>
+  </form>
+</div>
+
 <script>
   // ─ Contraseña del panel: se manda en cada llamada a /api y al WebSocket ─
   const panelKey = () => { try { return localStorage.getItem('panelKey') || ''; } catch { return ''; } };
   let _askingKey = null; // si varias llamadas reciben 401 a la vez, preguntar una sola vez
+  // Muestra el formulario y no resuelve hasta que la contraseña sea correcta
   function askPanelKey() {
-    _askingKey ??= Promise.resolve().then(() => {
-      const k = prompt('Contraseña del panel (PANEL_PASSWORD del .env):');
-      if (k) { try { localStorage.setItem('panelKey', k); } catch {} }
-      if (ws) ws.close(); // reconectar el WS con la clave nueva
-      setTimeout(() => { _askingKey = null; }, 0);
-      return !!k;
+    _askingKey ??= new Promise(resolve => {
+      const modal = document.getElementById('keyModal'), input = document.getElementById('keyInput');
+      const err = document.getElementById('keyError');
+      modal.style.display = 'flex';
+      input.value = ''; input.focus();
+      document.getElementById('keyForm').onsubmit = async (e) => {
+        e.preventDefault();
+        const k = input.value.trim();
+        const ok = (await _fetch('/api/live', { headers: { 'x-panel-key': k } })).ok;
+        if (!ok) { err.style.display = 'block'; input.select(); return; }
+        try { localStorage.setItem('panelKey', k); } catch {}
+        err.style.display = 'none';
+        modal.style.display = 'none';
+        _askingKey = null;
+        resolve(true);
+        location.reload(); // recargar todo (WS incluido) ya con la clave
+      };
     });
     return _askingKey;
   }
@@ -604,9 +632,11 @@
     ws = new WebSocket(`${wsProto}//${location.host}/?key=${encodeURIComponent(panelKey())}`);
 
     ws.onopen = () => {
-      document.getElementById('ollamaDot').style.cssText = 'background:#00f5ff;box-shadow:0 0 8px #00f5ff;width:7px;height:7px;border-radius:50%';
-      document.getElementById('ollamaStatus').textContent = 'CONECTADO';
-      document.getElementById('ollamaStatus').style.color = 'var(--cyan)';
+      if (!window._panelLocked) { // sin contraseña, mantener visible el aviso de candado
+        document.getElementById('ollamaDot').style.cssText = 'background:#00f5ff;box-shadow:0 0 8px #00f5ff;width:7px;height:7px;border-radius:50%';
+        document.getElementById('ollamaStatus').textContent = 'CONECTADO';
+        document.getElementById('ollamaStatus').style.color = 'var(--cyan)';
+      }
       // Keepalive: ping cada 25s para que Cloudflare/proxies no cierren la conexión idle
       if (ws._pingInterval) clearInterval(ws._pingInterval);
       ws._pingInterval = setInterval(() => {
@@ -891,6 +921,16 @@
   async function checkOllama() {
     const res = await fetch('/api/status');
     const data = await res.json();
+    if (res.status === 401) {
+      // No es que falte agy: el panel no tiene la contraseña (PANEL_PASSWORD del .env)
+      window._panelLocked = true;
+      const st = document.getElementById('ollamaStatus');
+      st.textContent = '🔒 FALTA LA CONTRASEÑA — clic acá';
+      st.style.cssText = 'color:#ff8800;cursor:pointer';
+      st.onclick = async () => { if (await askPanelKey()) location.reload(); };
+      document.getElementById('ollamaDot').style.background = '#ff8800';
+      return;
+    }
     if (data.llm) {
       const sel = document.getElementById('modelSelect');
       sel.innerHTML = '';
@@ -934,6 +974,7 @@
       _goalsLoaded = true;
     }
     document.getElementById('liveBackground').value = s.background || 'none';
+    document.getElementById('liveFloat').checked = s.float !== false;
     const t = s.tribunal;
     document.getElementById('tribStatus').textContent = t
       ? `⚖ "${t.topic}" — A (${t.a}): ${t.total.a} [${t.votes.a} votos] · B (${t.b}): ${t.total.b} [${t.votes.b} votos]`
@@ -963,6 +1004,10 @@
   async function setBackground(background) {
     const r = await postJSON('/api/live/background', { background });
     toast(r.ok ? '✓ Fondo cambiado' : `Error: ${r.error}`);
+  }
+  async function setFloat(on) {
+    const r = await postJSON('/api/live/float', { float: on });
+    toast(r.ok ? (on ? '✓ Flotar activado' : '✓ Avatar quieto') : `Error: ${r.error}`);
   }
   async function openTribunal() {
     const v = id => document.getElementById(id).value.trim();

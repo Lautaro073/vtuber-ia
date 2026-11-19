@@ -564,6 +564,7 @@ class LiveEvents {
     this.tribunal = null;     // { topic, a, b, votes: Map(user→side), gifts: {a,b}, args: {a:[],b:[]} }
     this.passes = new Map();  // "plataforma:usuario" → vencimiento del pase de prioridad
     this.background = "none"; // fondo del avatar en el OBS
+    this.float = true;        // animación de flotar/balancearse del avatar
     if (existsSync(this.filePath)) {
       try { Object.assign(this, JSON.parse(readFileSync(this.filePath, "utf8"))); } catch { }
     }
@@ -574,7 +575,9 @@ class LiveEvents {
     }, LIVE.moodDecayMs).unref();
   }
 
-  _save() { writeFileSync(this.filePath, JSON.stringify({ goals: this.goals, progress: this.progress, background: this.background }, null, 2)); }
+  _save() { writeFileSync(this.filePath, JSON.stringify({ goals: this.goals, progress: this.progress, background: this.background, float: this.float }, null, 2)); }
+
+  setFloat(on) { this.float = !!on; this._save(); this.broadcast(); }
 
   setBackground(id) {
     if (!BACKGROUNDS.includes(id)) return false;
@@ -655,6 +658,7 @@ class LiveEvents {
       reached: this.goals.filter(g => g.points <= this.progress).length,
       mood: this.mood,
       background: this.background,
+      float: this.float,
       tribunal: t ? { topic: t.topic, a: t.a, b: t.b, ...this.score() } : null,
     };
   }
@@ -1795,6 +1799,12 @@ app.post("/api/live/tribunal/close", (req, res) => {
 });
 
 app.delete("/api/live/tribunal", (req, res) => { live.closeTribunal(); res.json({ ok: true }); });
+
+app.post("/api/live/float", (req, res) => {
+  if (typeof req.body?.float !== "boolean") return res.status(400).json({ error: "float debe ser true o false" });
+  live.setFloat(req.body.float);
+  res.json({ ok: true, float: live.float });
+});
 
 app.post("/api/live/background", (req, res) => {
   if (!live.setBackground(req.body?.background)) return res.status(400).json({ error: `Fondo inválido (${BACKGROUNDS.join(", ")})` });
