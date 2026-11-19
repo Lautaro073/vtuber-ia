@@ -47,3 +47,6 @@ kick_tokens.json
 
 # estado del live (metas y progreso)
 live_state.json
+
+# audio generado por Edge TTS
+public/tts/

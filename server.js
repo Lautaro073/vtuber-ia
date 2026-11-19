@@ -35,6 +35,9 @@ const CONFIG = {
   maxRagChunks: 3,       // menos chunks RAG = prompt más corto = más rápido
   knowledgeFile: "knowledge.json",
   chunkSize: 200,
+  // Motor de voz: "murf" (API paga), "edge" (gratis, voces neurales de Microsoft) o "system" (voz de Windows)
+  ttsEngine: process.env.TTS_ENGINE || "murf",
+  edgeVoice: process.env.EDGE_VOICE || "es-AR-ElenaNeural", // rioplatense
   useSystemTTS: false,  // false = Murf (audio viaja al OBS del amigo por WS) ✅
   // true  = voz del sistema (suena en TU PC, el amigo no escucha nada) ❌
   // ── Murf.ai TTS ──────────────────────────────────────────────────────────
@@ -1507,12 +1510,15 @@ class TTSEngine {
       console.log("🎤 Edge TTS generando audio...");
       const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
       const edgeTts = new MsEdgeTTS();
-      await edgeTts.setMetadata(CONFIG.edgeVoice || "es-MX-DaliaNeural", OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
-      const tmpPath = join(__dirname, "public", "tts_audio.mp3");
-      await edgeTts.toFile(tmpPath, text);
+      await edgeTts.setMetadata(CONFIG.edgeVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+      // msedge-tts v2 recibe una CARPETA y escribe <carpeta>/audio.mp3 (pasarle un archivo fallaba siempre)
+      const dir = join(__dirname, "public", "tts");
+      mkdirSync(dir, { recursive: true });
+      await edgeTts.toFile(dir, text);
+      edgeTts.close?.();
       console.log("✅ Edge TTS listo");
       if (this._broadcast) {
-        this._broadcast({ type: "tts_play", url: "/tts_audio.mp3?t=" + Date.now() });
+        this._broadcast({ type: "tts_play", url: "/tts/audio.mp3?t=" + Date.now() });
         this._startPlaybackTimeout(text);  // speaking se libera cuando OBS manda tts_done
       }
     } catch (err) {
