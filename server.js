@@ -552,6 +552,9 @@ const LIVE = {
   tribunalArgs: 5,                  // argumentos del chat que se guardan por lado
 };
 
+// Fondos del avatar (public/backgrounds/<id>.png); "none" = transparente
+const BACKGROUNDS = ["none", "cyberpunk-room", "singularity-lab", "lofi-bedroom"];
+
 class LiveEvents {
   constructor() {
     this.filePath = join(__dirname, "live_state.json");
@@ -560,6 +563,7 @@ class LiveEvents {
     this.mood = 50;           // 0-100
     this.tribunal = null;     // { topic, a, b, votes: Map(user→side), gifts: {a,b}, args: {a:[],b:[]} }
     this.passes = new Map();  // "plataforma:usuario" → vencimiento del pase de prioridad
+    this.background = "none"; // fondo del avatar en el OBS
     if (existsSync(this.filePath)) {
       try { Object.assign(this, JSON.parse(readFileSync(this.filePath, "utf8"))); } catch { }
     }
@@ -570,7 +574,14 @@ class LiveEvents {
     }, LIVE.moodDecayMs).unref();
   }
 
-  _save() { writeFileSync(this.filePath, JSON.stringify({ goals: this.goals, progress: this.progress }, null, 2)); }
+  _save() { writeFileSync(this.filePath, JSON.stringify({ goals: this.goals, progress: this.progress, background: this.background }, null, 2)); }
+
+  setBackground(id) {
+    if (!BACKGROUNDS.includes(id)) return false;
+    this.background = id;
+    this._save(); this.broadcast();
+    return true;
+  }
 
   tier(points) { return LIVE.tiers.find(t => points >= t.min).name; }
 
@@ -643,6 +654,7 @@ class LiveEvents {
       progress: this.progress, goals: this.goals, next,
       reached: this.goals.filter(g => g.points <= this.progress).length,
       mood: this.mood,
+      background: this.background,
       tribunal: t ? { topic: t.topic, a: t.a, b: t.b, ...this.score() } : null,
     };
   }
@@ -1783,6 +1795,11 @@ app.post("/api/live/tribunal/close", (req, res) => {
 });
 
 app.delete("/api/live/tribunal", (req, res) => { live.closeTribunal(); res.json({ ok: true }); });
+
+app.post("/api/live/background", (req, res) => {
+  if (!live.setBackground(req.body?.background)) return res.status(400).json({ error: `Fondo inválido (${BACKGROUNDS.join(", ")})` });
+  res.json({ ok: true, background: live.background });
+});
 
 // Analizar captura de pantalla con modelo de visión
 app.post("/api/vision", async (req, res) => {

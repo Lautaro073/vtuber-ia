@@ -339,6 +339,14 @@
             <button class="btn btn-sm" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3)" onclick="resetProgress()">REINICIAR</button>
           </div>
 
+          <div class="label" style="margin-top:6px">FONDO DEL AVATAR</div>
+          <select class="model-select" id="liveBackground" onchange="setBackground(this.value)">
+            <option value="none">Ninguno (transparente)</option>
+            <option value="cyberpunk-room">Cuarto cyberpunk</option>
+            <option value="singularity-lab">Laboratorio Singularity</option>
+            <option value="lofi-bedroom">Cuarto lo-fi (lluvia)</option>
+          </select>
+
           <div class="label" style="margin-top:6px">TRIBUNAL NYRA</div>
           <input type="text" id="tribTopic" placeholder="Tema: ¿la pizza con ananá es aceptable?">
           <div style="display:flex;gap:8px">
@@ -925,6 +933,7 @@
       document.getElementById('liveGoals').value = s.goals.map(g => `${g.points} | ${g.reward}`).join('\n');
       _goalsLoaded = true;
     }
+    document.getElementById('liveBackground').value = s.background || 'none';
     const t = s.tribunal;
     document.getElementById('tribStatus').textContent = t
       ? `⚖ "${t.topic}" — A (${t.a}): ${t.total.a} [${t.votes.a} votos] · B (${t.b}): ${t.total.b} [${t.votes.b} votos]`
@@ -950,6 +959,10 @@
     if (!confirm('¿Reiniciar el progreso de metas a 0?')) return;
     await postJSON('/api/live/progress', { reset: true });
     toast('Progreso reiniciado');
+  }
+  async function setBackground(background) {
+    const r = await postJSON('/api/live/background', { background });
+    toast(r.ok ? '✓ Fondo cambiado' : `Error: ${r.error}`);
   }
   async function openTribunal() {
     const v = id => document.getElementById(id).value.trim();
