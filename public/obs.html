@@ -222,7 +222,9 @@
   // Detectar si estamos dentro de OBS Browser Source
   // Fuentes embebidas donde no se puede hacer clic (OBS, TikTok LIVE Studio con /obs?autoplay):
   // sin cartel de "click para activar audio" y reproducción directa con <audio>
-  const _isOBS = typeof window.obsstudio !== 'undefined' || new URLSearchParams(location.search).has('autoplay');
+  // ?mute: solo imagen (el audio sale por otra fuente). Reproduce silenciado para que el lip-sync y tts_done sigan andando
+  const _MUTE = new URLSearchParams(location.search).has('mute');
+  const _isOBS = typeof window.obsstudio !== 'undefined' || _MUTE || new URLSearchParams(location.search).has('autoplay');
 
   function _getCtx() {
     if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
@@ -272,6 +274,7 @@
   // <audio> simple (OBS y fallback): arranca el lip-sync cuando suena de verdad
   function _playElement(url) {
     const a = new Audio(url);
+    a.muted = _MUTE;
     a.onplaying = () => onAudioStart(a.duration);
     a.onended = _sendTTSDone;
     a.onerror = _sendTTSDone;
