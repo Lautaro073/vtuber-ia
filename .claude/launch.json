@@ -6,6 +6,12 @@
       "runtimeExecutable": "node",
       "runtimeArgs": ["server.js"],
       "port": 3000
+    },
+    {
+      "name": "tunnel",
+      "runtimeExecutable": "cloudflared",
+      "runtimeArgs": ["tunnel", "--metrics", "localhost:20241", "run"],
+      "port": 20241
     }
   ]
 }
