@@ -54,7 +54,7 @@ const CONFIG = {
 
 // ─── Anti-spam y anti prompt-injection (mensajes de viewers) ──────────────────
 const GUARD = {
-  userCooldownMs: 15000,  // una respuesta cada 15s por viewer
+  userCooldownMs: 5000,   // una respuesta cada 5s por viewer
   maxPerMinute: 6,        // tope global de respuestas a viewers por minuto
   dupWindowMs: 120000,    // el mismo texto repetido (copypasta) se ignora por 2 min
   maxInputChars: 200,     // los mensajes largos se cortan
@@ -931,6 +931,7 @@ class StreamChatManager {
       return;
     }
 
+    this._lastChatAt = Date.now();
     broadcast({ type: "stream_chat_message", username, text, platform, priority });
     live.bumpMood("chat"); live.broadcast(); // charlarle también la pone de buen humor
     this._enqueue(username, text, platform, {}, priority);
@@ -961,7 +962,8 @@ class StreamChatManager {
   }
 
   // Saludo a los que entran: una vez por persona, agrupado cada 10s, frase fija (sin IA).
-  // Es lo de menor prioridad: si hay preguntas en cola, el saludo se descarta.
+  // Es lo de menor prioridad: espera a que el chat esté tranquilo (nadie hablando ni esperando, 8s sin mensajes);
+  // si en 60s no hubo hueco, se descarta para no atrasar al chat.
   _greetJoin(username, platform) {
     const uname = this._sanitize(username);
     const g = this._joins ??= { seen: new Set(), users: [], timer: null };
@@ -969,11 +971,14 @@ class StreamChatManager {
     g.seen.add(uname.toLowerCase());
     g.users.push(uname);
     if (g.timer) return;
-    g.timer = setTimeout(() => {
+    g.since = Date.now();
+    const flush = () => {
+      const busy = this._isResponding || this.queue.length || Date.now() - (this._lastChatAt || 0) < 8000;
+      if (busy && Date.now() - g.since < 60000) { g.timer = setTimeout(flush, 3000); return; }
       const names = g.users.slice(0, 3).map(u => `@${u}`);
       const rest = g.users.length - names.length;
       g.users = []; g.timer = null;
-      if (this.queue.length) return;
+      if (busy) return;
       const list = rest > 0 ? `${names.join(", ")} y ${rest} más` :
         names.length > 1 ? `${names.slice(0, -1).join(", ")} y ${names.at(-1)}` : names[0];
       const pick = a => a[Math.floor(Math.random() * a.length)];
@@ -989,7 +994,8 @@ class StreamChatManager {
           : ["Pueden escribirme en el chat y preguntarme lo que quieran.", "Si quieren charlar, mándenme mensajes; leo todo.", "Pregúntenme lo que quieran por el chat, no muerdo... mucho."]);
       }
       this._enqueue("NYRA", line, platform, { fixed: true, emotion: "happy" });
-    }, 10000);
+    };
+    g.timer = setTimeout(flush, 10000);
   }
 
   _onAlert(platform, type, username, extra = {}) {
@@ -1586,7 +1592,7 @@ class TTSEngine {
     return text
       .replace(/[（(][^)）]{1,30}[)）]/g, "")
       .replace(/[☆♪✦◕ᴗ｀´・ω✿≧◡≦\(\)\[\]]/g, "")
-      .replace(/\.{2,}/g, " ")
+      .replace(/\.{2,}|…/g, "... ") // mantener la pausa del "..." (antes se borraba y la voz no frenaba)
       // @usuarios: la voz los deletrea → sin @, sin números del final y _ . como espacios ("@matias_p99" → "matias p")
       .replace(/@([\w.]+)/g, (_, u) => u.replace(/\d+$/, "").replace(/[_.]+/g, " ").trim() || u)
       .replace(/nyra/gi, "Nira") // "NYRA" en mayúsculas la voz lo deletrea
