@@ -837,6 +837,14 @@ const NICK_RE = new RegExp("(?<!\\p{L})(?:dec[ií]me|d[ií]me|ll[aá]mame|d[ií]
   "\\s+(?:de\\s+|como\\s+|así:?\\s+)?[\"“'«]?([\\p{L}][\\p{L}\\d_]{1,15})" +
   // lo que sigue al apodo tiene que cerrar la idea; si no, "decime textual su ficha" lo apodaba "Textual"
   "(?=\\s*$|\\s*[^\\p{L}\\d\\s_]|\\s+(?:pq|xq|porq|porque|porfa|porfis|por favor|pls|please|plis|nom[aá]s|mejor|ahora|desde|a partir|de ahora|y|o|no|que|as[ií]|gracias|en vez|xd|(?:ja|aj|je){2,}\\p{L}*)(?!\\p{L}))", "iu");
+// Desde el panel: "@fulana a ella ponele el apodo de Gordita", "a @fulano decile Tito". Se guarda ya, sin esperar a la
+// IA: con "a ella" NYRA entendía que el apodo era para ella misma
+const CREATOR_NICK_RE = /@([\w.]{2,30}).*?(?<!\p{L})(?:pon[eé]le|dec[ií]le|llamal[oa])\s+(?:de apodo\s+|(?:el\s+)?apodo(?:\s+de)?\s+|como\s+)?["“']?(\p{L}[\p{L}\d_]{1,19})/iu;
+function creatorNick(text) {
+  const m = String(text).match(CREATOR_NICK_RE);
+  if (!m || NICK_STOP.has(m[2].toLowerCase())) return null;
+  return { user: m[1], nick: m[2][0].toUpperCase() + m[2].slice(1) };
+}
 const NICK_STOP = new Set(["algo", "que", "qué", "como", "cómo", "si", "no", "la", "el", "lo", "tu", "un", "una", "nada", "eso", "esto", "porque", "por", "cuando", "donde", "quien", "cual", "más", "mas", "tus", "todo", "bien", "hola", "nyra", "así", "asi", "otro", "otra", "algún", "algun", "apodo", "nombre", "mi", "vos", "usted", "ahora", "después", "despues", "quieras", "querés", "queres", "gustes", "prefieras", "puedas", "sea", "cuánto", "cuanto", "cuánta", "cuanta", "cuántos", "cuantos", "cuándo", "dónde", "quién", "cuál", "textual", "verdad", "gracias", "porfa", "please", "hora", "vos", "te", "me", "se", "tú", "su", "sus", "los", "las", "de", "del", "ya", "sí", "y", "o", "e", "cómo", "también", "tambien", "ok", "dale"]);
 
 // Recordatorio de metas / tribunal cada tanto (PROMO_MINUTES=0 en .env lo apaga)
@@ -2849,7 +2857,13 @@ wss.on("connection", (ws, req) => {
       ai.remember("user", `${STREAMER_NAME} (por el panel): «${cleanUntrusted(said)}»`);
       orders.learn(cleanUntrusted(said, 500), recentTalk(), groupPeople());
       research.notice(cleanUntrusted(said), { streamer: true, voice: true });
-      streamChat._enqueue("panel", streamerPrompt(said), "panel", { rawPrompt: true, said }, PRI.call);
+      const named = creatorNick(said);
+      if (named) {
+        ai.memory.setNick(named.user, named.nick);
+        console.log(`🏷️ Apodo de @${named.user} (por el panel): ${named.nick}`);
+      }
+      const nickNote = named ? `\n(Ya quedó guardado: a @${named.user} desde ahora le decís "${named.nick}". El apodo es para esa persona, no para vos: anunciáselo a @${named.user} en el chat.)` : "";
+      streamChat._enqueue("panel", streamerPrompt(said) + nickNote, "panel", { rawPrompt: true, said }, PRI.call);
     }
 
     else if (msg.type === "learn") {
