@@ -2,7 +2,7 @@
 // y lo traduce a expresiones del VRM, más parpadeo, respiración, mirada a cámara y gestos.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import { VRMLoaderPlugin, VRMUtils, VRMExpression, VRMExpressionMorphTargetBind } from '@pixiv/three-vrm';
 import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-vrm-animation';
 
 // Gestos animados en Blender (.vrma, ver scripts/blender/). Solo se toman estos huesos del archivo:
@@ -18,7 +18,7 @@ const CLIPS = {
 
 const EMOTION = { happy: 'happy', sad: 'sad', angry: 'angry', surprised: 'surprised', thinking: 'relaxed' };
 const VISEME = { a: ['aa', 1], ei: ['ee', 0.8], o: ['oh', 1], u: ['ou', 0.9], fv: ['ih', 0.4], l: ['ih', 0.5] };
-const SHAPES = ['happy', 'sad', 'angry', 'surprised', 'relaxed', 'aa', 'ee', 'ih', 'oh', 'ou', 'blink'];
+const SHAPES = ['happy', 'happyTalk', 'sad', 'angry', 'surprised', 'relaxed', 'aa', 'ee', 'ih', 'oh', 'ou', 'blink'];
 
 // Dedos: curl 0 = mano abierta, ~1.2 = puño. En pose T la palma mira abajo: se cierran girando en z
 function hand(side, curl, thumb = curl * 0.6, fingers = ['Index', 'Middle', 'Ring', 'Little']) {
@@ -144,6 +144,22 @@ export async function start(container, url, face, getState) {
   vrm.scene.traverse(o => { o.frustumCulled = false; });
   scene.add(vrm.scene);
 
+  // Alegría hablando: la cara feliz del modelo (Fcl_ALL_Joy) trae la boca abierta y, sumada a la boca al hablar,
+  // la abría de más. Mientras habla usa solo ojos y cejas felices y una sonrisa; la boca la ponen los visemas
+  const joyTalk = new VRMExpression('happyTalk');
+  let joyBinds = 0;
+  vrm.scene.traverse(o => {
+    const d = o.morphTargetDictionary;
+    if (!o.isMesh || d?.Fcl_EYE_Joy === undefined) return;
+    for (const [n, w] of [['Fcl_EYE_Joy', 1], ['Fcl_BRW_Joy', 1], ['Fcl_MTH_Fun', 0.5]]) {
+      if (d[n] === undefined) continue;
+      joyTalk.addBind(new VRMExpressionMorphTargetBind({ primitives: [o], index: d[n], weight: w }));
+      joyBinds++;
+    }
+  });
+  vrm.scene.add(joyTalk);
+  vrm.expressionManager.registerExpression(joyTalk);
+
   const clipLoader = new GLTFLoader();
   clipLoader.register(parser => new VRMAnimationLoaderPlugin(parser));
   for (const [name, { file, bones }] of Object.entries(CLIPS)) {
@@ -225,12 +241,13 @@ export async function start(container, url, face, getState) {
     // Expresiones: suavizadas para que no salten de un frame al otro
     const target = Object.fromEntries(SHAPES.map(s => [s, 0]));
     const emo = g?.expr || EMOTION[face.emo];
-    if (emo) target[emo] = face.emo === 'thinking' && !g?.expr ? 0.4 : 1;
+    const happyShape = emo === 'happy' && joyBinds && state.includes('speaking') ? 'happyTalk' : emo; // un modelo sin esas formas sigue con happy
+    if (emo) target[happyShape] = face.emo === 'thinking' && !g?.expr ? 0.4 : 1;
     const v = VISEME[face.mouth];
     if (v) target[v[0]] = v[1];
     if (t > nextBlink) { blinkUntil = t + 0.13; nextBlink = t + 2.8 + Math.random() * 3.2; }
     // la cara feliz ya cierra los ojos: parpadear encima los deforma
-    target.blink = t < blinkUntil && weights.happy < 0.3 ? 1 : 0;
+    target.blink = t < blinkUntil && weights.happy + weights.happyTalk < 0.3 ? 1 : 0;
     for (const s of SHAPES) {
       const speed = s === 'blink' ? 40 : s.length === 2 ? 25 : 8; // la boca (aa, ee...) rápida, las emociones lentas
       weights[s] += (target[s] - weights[s]) * Math.min(1, dt * speed);
