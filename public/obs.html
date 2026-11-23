@@ -22,7 +22,13 @@
   /* Check "Efecto de flotar" apagado en el panel: avatar quieto */
   body.no-float .avatar { animation: none !important; }
 
-  @keyframes breathe  { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-1%)} }
+  /* Avatar 3D (VRoid): se elige en el panel o con ?3d en la URL */
+  #stage3d { display:none; position:absolute; inset:0; }
+  #stage3d canvas { width:100%; height:100%; display:block; }
+  body.mode3d #stage3d { display:block; }
+  body.mode3d #avatar { display:none; }
+
+  @keyframes breathe { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-1%)} }
   @keyframes speak-bob { from{transform:translateY(0) rotate(-.25deg)} to{transform:translateY(-.7%) rotate(.25deg)} }
   @keyframes think-sway{ 0%,100%{transform:rotate(-1deg)} 50%{transform:rotate(1deg) translateY(-.8%)} }
 
@@ -43,7 +49,15 @@
   <div class="avatar idle" id="avatar">
     <img id="sprite" src="avatar/cecilia_neutral_eye-open_mouth-closed.png" alt="NYRA">
   </div>
+  <div id="stage3d"></div>
 </div>
+<script type="importmap">
+{ "imports": {
+  "three": "/vendor/three/build/three.module.js",
+  "three/addons/": "/vendor/three/examples/jsm/",
+  "@pixiv/three-vrm": "/vendor/three-vrm/three-vrm.module.min.js"
+} }
+</script>
 
 <!-- Overlay para desbloquear autoplay en browsers con restricción -->
 <div id="audio-overlay" style="
@@ -102,9 +116,10 @@
     clearTimeout(blinkTimer);
     blinkTimer = setTimeout(() => {
       if (blinkEnabled && face.emo === 'neutral' && face.eye === 'open') {
-        const steps = ['half', 'closed', 'half', 'open'];
-        steps.forEach((eye, i) => setTimeout(() => { if (face.emo === 'neutral' && blinkEnabled) setFace({ eye }); }, i * 45));
-        setTimeout(() => setFace({ eye: 'open' }), steps.length * 45 + 10); // por si algo cambió a mitad
+        // Tiempos del test de parpadeo (cecilia_blink_test.gif): medio 70ms, cerrado 110ms, medio 70ms
+        const steps = [['half', 0], ['closed', 70], ['half', 180], ['open', 250]];
+        steps.forEach(([eye, at]) => setTimeout(() => { if (face.emo === 'neutral' && blinkEnabled) setFace({ eye }); }, at));
+        setTimeout(() => setFace({ eye: 'open' }), 260); // por si algo cambió a mitad
       }
       scheduleBlink();
     }, 2800 + Math.random() * 3200);
@@ -157,6 +172,19 @@
       setFace({ emo: idleEmotion(), eye: 'open', mouth: 'closed' });
     }
   }
+  // ── Avatar 3D: el módulo lee la misma cara y estado que el 2D; si no carga, queda el 2D ──
+  const FORCE_3D = new URLSearchParams(location.search).has('3d');
+  let loading3d = null, nyra3d = null, pendingGesture = null;
+  function set3d(on) {
+    document.body.classList.toggle('mode3d', on);
+    if (!on || loading3d) return;
+    loading3d = import('./avatar3d/vrm.js')
+      .then(m => m.start(document.getElementById('stage3d'), 'avatar3d/NYRA.vrm', face, () => avatar.className))
+      .then(ctl => { nyra3d = ctl; })
+      .catch(err => { console.warn('El avatar 3D no cargó, sigo en 2D:', err); document.body.classList.remove('mode3d'); loading3d = null; });
+  }
+  if (FORCE_3D) set3d(true);
+
   let mood = 50;
   const idleEmotion = () => mood >= 80 ? 'happy' : mood <= 20 ? 'sad' : 'neutral';
 
@@ -173,11 +201,12 @@
       setTimeout(() => setFace({ emo: 'surprised' }), 900);
       setTimeout(() => setFace({ emo: 'neutral' }), 2000);
     }
-    if (m.type === 'thinking') setState('thinking');
+    if (m.type === 'thinking') setState(m.thinking ? 'thinking' : 'idle');
     if (m.type === 'stream_alert') setFace({ emo: (m.tier === 'big' || m.tier === 'epic') ? 'surprised' : 'happy' });
     if (m.type === 'live_state') {
       mood = m.mood;
       document.body.classList.toggle('no-float', m.float === false);
+      set3d(FORCE_3D || m.avatar3d === true);
       // Fondo elegido en el panel ("none" = transparente, para usar el fondo de OBS/TikTok Studio)
       document.body.style.background = m.background && m.background !== 'none'
         ? `#000 url(backgrounds/${m.background}.png) center / cover no-repeat` : 'transparent';
@@ -185,6 +214,7 @@
     }
     if (m.type === 'stream_end') {
       lastText = m.fullText || '';
+      pendingGesture = m.gesture || null; // arranca con el audio
       setState('speaking');
       // El server manda la emoción en regalos/metas; si no, se deduce del texto
       setFace({ emo: m.emotion || detectEmotion(lastText), mouth: 'closed' });
@@ -192,7 +222,7 @@
       clearTimeout(idleTimer);
       idleTimer = setTimeout(() => { if (!_audioPlaying) setState('idle'); }, 8000);
     }
-    if (m.type === 'tts_play') playTTS(m.url);
+    if (m.type === 'tts_play') playTTS(m.url, m.mute);
     if (m.type === 'error') setState('idle');
   };
 
@@ -209,6 +239,8 @@
     clearTimeout(idleTimer);
     setState('speaking');
     startLipsync(lastText, durationSec * 1000);
+    if (pendingGesture && document.body.classList.contains('mode3d')) nyra3d?.gesture(pendingGesture);
+    pendingGesture = null;
   }
   function onAudioEnd() {
     stopLipsync();
@@ -257,36 +289,39 @@
   let   _audioPlaying = false;
 
   function _sendTTSDone() {
-    if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tts_done' }));
+    if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tts_done', url: _currentUrl }));
     _audioPlaying = false;
     onAudioEnd();
-    if (_audioQueue.length > 0) _playNext(_audioQueue.shift());
+    if (_audioQueue.length > 0) _playNext(..._audioQueue.shift());
   }
 
-  function playTTS(url) {
+  function playTTS(url, mute) {
     if (_audioPlaying) {
-      _audioQueue.push(url);  // encolar: espera a que termine el audio actual
+      _audioQueue.push([url, mute]);  // encolar: espera a que termine el audio actual
     } else {
-      _playNext(url);
+      _playNext(url, mute);
     }
   }
 
   // <audio> simple (OBS y fallback): arranca el lip-sync cuando suena de verdad
-  function _playElement(url) {
+  function _playElement(url, mute) {
     const a = new Audio(url);
     a.muted = _MUTE;
+    if (mute) a.volume = 0; // ya suena por Discord, acá solo mueve la boca (con muted, Chromium lo pausa en segundo plano)
     a.onplaying = () => onAudioStart(a.duration);
     a.onended = _sendTTSDone;
     a.onerror = _sendTTSDone;
     return a.play();
   }
 
-  async function _playNext(url) {
+  let _currentUrl = null; // el server ignora avisos de audios que ya no son el actual
+  async function _playNext(url, mute) {
     _audioPlaying = true;
+    _currentUrl = url;
     try {
       if (_isOBS) {
         // OBS: autoplay sin restricciones — onended envía tts_done
-        await _playElement(url);
+        await _playElement(url, mute);
         return;  // _sendTTSDone se llama vía onended, no aquí
       }
       // Browser normal: AudioContext para evitar bloqueo de autoplay
@@ -297,13 +332,13 @@
       const decoded = await ctx.decodeAudioData(buf);
       const src     = ctx.createBufferSource();
       src.buffer    = decoded;
-      src.connect(ctx.destination);
+      if (!mute) src.connect(ctx.destination);
       src.onended = _sendTTSDone;
       src.start(0);
       onAudioStart(decoded.duration);
     } catch(e) {
       console.warn('TTS audio error:', e);
-      _playElement(url).catch(_sendTTSDone);
+      _playElement(url, mute).catch(_sendTTSDone);
     }
   }
 

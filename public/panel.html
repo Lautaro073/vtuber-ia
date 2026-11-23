@@ -114,7 +114,8 @@
   .label { font-family:'Orbitron',monospace; font-size:10px; letter-spacing:2px; color:var(--dim); }
 
   /* right panel */
-  .right-col { display: flex; flex-direction: column; background: var(--panel); overflow: hidden; }
+  .right-col { display: flex; flex-direction: column; background: var(--panel); overflow-y: auto; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--border) transparent; } /* scroll propio: si no, lo de abajo queda cortado */
+  .right-col > * { flex-shrink: 0; } /* que las secciones no se aplasten: desbordan y se scrollea */
 
   .panel-section { border-bottom: 1px solid var(--border); padding: 16px; }
   .panel-title { font-family:'Orbitron',monospace; font-size:10px; letter-spacing:3px; color:var(--pink); text-shadow:0 0 10px #ff2d7888; margin-bottom:12px; }
@@ -135,7 +136,7 @@
     padding: 6px 10px; margin-bottom: 4px; border-left: 2px solid var(--purple);
     background: rgba(124,58,237,.05); border-radius: 0 4px 4px 0;
     font-size: 11px; color: var(--dim);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    white-space: normal; overflow-wrap: anywhere; /* texto completo en varias líneas */
   }
   .mem-source { color: var(--purple); font-size: 10px; }
 
@@ -233,6 +234,16 @@
     <div class="tab-content" id="tab-memoria">
       <div class="learn-section">
 
+        <!-- Evolución -->
+        <div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div class="label">🧠 CÓMO EVOLUCIONA</div>
+            <button class="btn btn-sm" onclick="loadEvolution()" style="font-size:9px">ACTUALIZAR</button>
+          </div>
+          <div style="font-size:10px;color:var(--dim);margin-bottom:8px">Tus órdenes mandan sobre todo. De los pibes y de la comunidad aprende por separado cada tantas charlas (con Auto-aprender prendido). La ✕ borra lo que no te guste.</div>
+          <div id="evolutionList" style="display:flex;flex-direction:column;gap:4px;max-height:300px;overflow-y:auto"></div>
+        </div>
+
         <!-- Personalidad -->
         <div>
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
@@ -327,6 +338,24 @@
         <!-- Live: metas de regalos y tribunal -->
         <div style="border-top:1px solid var(--border);padding-top:12px;display:flex;flex-direction:column;gap:8px">
           <div style="display:flex;justify-content:space-between;align-items:center">
+            <div class="label">SUGERENCIAS DEL CHAT</div>
+            <button class="btn btn-sm" style="background:transparent;color:var(--text);border:1px solid var(--border)" onclick="loadSuggestions()">ACTUALIZAR</button>
+          </div>
+          <div style="font-size:10px;color:var(--dim)">Lo que NYRA anotó cuando alguien sugirió algo para el stream. Borralas cuando ya las viste.</div>
+          <div id="suggestionsList" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto"></div>
+
+          <label class="label" for="squadText">LOS PIBES</label>
+          <div style="font-size:10px;color:var(--dim)">Una persona por línea: <b>nombre, apodo, otro apodo | cómo es, qué juega, con qué no bromear</b>. Máximo 15 personas y 400 letras cada una. No pongas nada privado: NYRA habla en vivo.</div>
+          <textarea id="squadText" style="min-height:80px" disabled placeholder="Nombre, apodo | juega de jungla, se enoja cuando pierde, se le puede cargar con eso"></textarea>
+          <button class="btn btn-sm btn-cyan" id="squadSave" onclick="saveSquad()" style="align-self:flex-start" disabled>GUARDAR PIBES</button>
+
+          <div class="label">TEMA DEL DIRECTO</div>
+          <div style="font-size:10px;color:var(--dim)">Si preguntan de qué va el live, NYRA lo cuenta con sus palabras.</div>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="liveTitle" maxlength="200" placeholder="Ej: Una IA te juzga en vivo" style="flex:1">
+            <button class="btn btn-sm btn-cyan" onclick="saveTitle()">GUARDAR</button>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center">
             <div class="label">LIVE · METAS DE REGALOS</div>
             <span id="liveProgress" style="font-size:11px;color:var(--cyan)">0 puntos</span>
           </div>
@@ -350,6 +379,11 @@
             <input type="checkbox" id="liveFloat" onchange="setFloat(this.checked)"
               style="accent-color:var(--cyan);width:14px;height:14px">
             Efecto de flotar (respirar, balancearse al hablar/pensar)
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);cursor:pointer">
+            <input type="checkbox" id="liveAvatar3d" onchange="setAvatar3d(this.checked)"
+              style="accent-color:var(--cyan);width:14px;height:14px">
+            Avatar 3D (modelo VRoid) en vez del 2D
           </label>
 
           <div class="label" style="margin-top:6px">TRIBUNAL NYRA</div>
@@ -435,6 +469,16 @@
           </div>
         </div>
 
+        <!-- Discord -->
+        <div style="border-top:1px solid var(--border);padding-top:12px">
+          <div class="label" style="margin-bottom:8px">DISCORD (VOZ)</div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-sm btn-cyan" id="discordBtn" onclick="toggleDiscord()">🎧 CONECTAR</button>
+            <span id="discordStatus" role="status" style="font-size:11px;color:var(--dim)">Desconectada</span>
+          </div>
+          <div style="font-size:10px;color:var(--dim);margin-top:6px">Escucha siempre y contesta si la nombran (✓) o si le responden hasta 30 s después de que habló (↪). Lo del grupo suena por Discord: <b>capturá el audio de Discord en el live</b> (con ella sin silenciar). OBS solo hace sonar chat y regalos, así no se escucha doble.</div>
+        </div>
+
         <!-- Micrófono del streamer -->
         <div style="border-top:1px solid var(--border);padding-top:12px">
           <div class="label" style="margin-bottom:8px">MICRÓFONO DEL STREAMER</div>
@@ -492,10 +536,14 @@
 
     <!-- Model selector -->
     <div class="panel-section">
-      <div class="panel-title">// MODELO (AGY)</div>
+      <div class="panel-title">// MODELO DE TEXTO (CHAT)</div>
       <select class="model-select" id="modelSelect"></select>
       <button class="btn btn-sm btn-cyan" style="margin-top:8px;width:100%" onclick="changeModel()">CAMBIAR MODELO</button>
       <div id="availableModels" style="font-size:10px;color:var(--dim);margin-top:6px"></div>
+      <div class="panel-title" style="margin-top:14px">// MODELO DE VISIÓN (PANTALLA)</div>
+      <select class="model-select" id="visionModelSelect"></select>
+      <button class="btn btn-sm btn-cyan" style="margin-top:8px;width:100%" onclick="changeVisionModel()">CAMBIAR MODELO DE VISIÓN</button>
+      <div id="visionModelInfo" style="font-size:10px;color:var(--dim);margin-top:6px"></div>
     </div>
 
     <!-- TTS -->
@@ -545,9 +593,9 @@
     </div>
 
     <!-- Recent memories -->
-    <div class="panel-section" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+    <div class="panel-section" style="display:flex;flex-direction:column;padding-bottom:24px">
       <div class="panel-title">// MEMORIAS RECIENTES</div>
-      <div class="mem-scroll" id="memList">
+      <div class="mem-scroll" id="memList" style="max-height:320px">
         <div style="font-size:12px;color:var(--dim)">Sin conocimiento aún.</div>
       </div>
     </div>
@@ -604,7 +652,6 @@
 
   let ws;
   let msgCount = 0;
-  let isThinking = false;
   let streamBuffer = '';
   let streamEl = null;
 
@@ -662,8 +709,8 @@
       }
 
       if (data.type === 'thinking') {
-        isThinking = true;
-        document.getElementById('sendBtn').disabled = true;
+        document.getElementById('thinking-el')?.remove();
+        if (!data.thinking) return;
         const el = document.createElement('div');
         el.className = 'msg msg-ai';
         el.innerHTML = '<div class="thinking"><span></span><span></span><span></span></div>';
@@ -700,8 +747,6 @@
         }
         streamEl = null;
         streamBuffer = '';
-        isThinking = false;
-        document.getElementById('sendBtn').disabled = false;
         msgCount++;
         document.getElementById('statMsgs').textContent = msgCount;
         scrollBottom();
@@ -724,17 +769,19 @@
         const thEl = document.getElementById('thinking-el');
         if (thEl) thEl.remove();
         addMsg('ai', data.text);
-        isThinking = false;
-        document.getElementById('sendBtn').disabled = false;
       }
 
-      if (data.type === 'tts_play') {
+      if (data.type === 'tts_play' && !data.mute) {
         new Audio(data.url).play().catch(e => console.warn('TTS panel:', e));
       }
 
       if (data.type === 'stream_status') {
         updateStreamStatus(data);
       }
+
+      if (data.type === 'discord_state') renderDiscord(data);
+      if (data.type === 'discord_heard') addVisionLog(`🎧 ${data.following ? '↪ ' : data.named ? '✓ ' : ''}${data.name}: ${data.text}`, data.named);
+      if (data.type === 'need_frame') ws.send(JSON.stringify({ type: 'frame', id: data.id, image: grabFrame() }));
 
       if (data.type === 'stream_chat_message') {
         addStreamMessage(data.username, data.text, data.platform);
@@ -768,7 +815,7 @@
   function sendMsg() {
     const input = document.getElementById('chatInput');
     const text = input.value.trim();
-    if (!text || isThinking || ws.readyState !== 1) return;
+    if (!text || ws.readyState !== 1) return;
     addMsg('user', text);
     ws.send(JSON.stringify({ type: 'chat', text }));
     input.value = '';
@@ -807,7 +854,13 @@
   function changeModel() {
     const model = document.getElementById('modelSelect').value;
     fetch('/api/model', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model }) })
-      .then(() => toast(`Modelo cambiado a ${model}`));
+      .then(() => { toast(`Modelo cambiado a ${model}`); document.getElementById('availableModels').textContent = `Usando: ${model}`; });
+  }
+
+  function changeVisionModel() {
+    const model = document.getElementById('visionModelSelect').value;
+    fetch('/api/vision-model', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model }) })
+      .then(() => { toast(`Visión con ${model}`); document.getElementById('visionModelInfo').textContent = `Usando: ${model}`; });
   }
 
   // ─ TTS ─
@@ -936,6 +989,10 @@
       sel.innerHTML = '';
       data.models.forEach(m => sel.add(new Option(m, m, false, m === data.currentModel)));
       document.getElementById('availableModels').textContent = `Usando: ${data.currentModel}`;
+      const vsel = document.getElementById('visionModelSelect');
+      vsel.innerHTML = '';
+      data.models.forEach(m => vsel.add(new Option(m, m, false, m === data.visionModel)));
+      document.getElementById('visionModelInfo').textContent = `Usando: ${data.visionModel} (claude-code = rápido, cuota de Claude; gemini = lento, cuota de Gemini)`;
     } else {
       document.getElementById('ollamaStatus').textContent = 'agy no encontrado';
       document.getElementById('ollamaDot').style.background = '#ff8800';
@@ -973,8 +1030,11 @@
       document.getElementById('liveGoals').value = s.goals.map(g => `${g.points} | ${g.reward}`).join('\n');
       _goalsLoaded = true;
     }
+    const ti = document.getElementById('liveTitle');
+    if (document.activeElement !== ti) ti.value = s.title || ''; // no pisar lo que estás escribiendo
     document.getElementById('liveBackground').value = s.background || 'none';
     document.getElementById('liveFloat').checked = s.float !== false;
+    document.getElementById('liveAvatar3d').checked = s.avatar3d === true;
     const t = s.tribunal;
     document.getElementById('tribStatus').textContent = t
       ? `⚖ "${t.topic}" — A (${t.a}): ${t.total.a} [${t.votes.a} votos] · B (${t.b}): ${t.total.b} [${t.votes.b} votos]`
@@ -983,6 +1043,99 @@
   const postJSON = (url, body, method = 'POST') =>
     fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }).then(r => r.json());
 
+  const EVOLUTION_ZONES = [['orders', 'TUS ÓRDENES'], ['pibes', 'LOS PIBES (DISCORD)'], ['comunidad', 'LA COMUNIDAD (CHAT)'], ['wishes', 'ANIMACIONES QUE LE FALTARON (las más pedidas arriba)']];
+  async function loadEvolution() {
+    const box = document.getElementById('evolutionList');
+    let data;
+    try {
+      const r = await fetch('/api/evolution');
+      if (!r.ok) return;
+      data = await r.json();
+    } catch { return; }
+    box.innerHTML = '';
+    for (const [zone, title] of EVOLUTION_ZONES) {
+      const head = document.createElement('div');
+      head.className = 'label';
+      head.style.cssText = 'font-size:10px;margin-top:6px';
+      head.textContent = `${title} (${data[zone].length})`;
+      box.appendChild(head);
+      for (const note of data[zone]) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:11px';
+        const txt = document.createElement('div');
+        txt.style.flex = '1';
+        txt.textContent = (note.kind ? note.kind.toLowerCase() + ': ' : '') + note.text; // viene de la charla: nunca como HTML
+        const del = document.createElement('button');
+        del.className = 'btn btn-sm';
+        del.textContent = '✕';
+        del.setAttribute('aria-label', `Borrar: ${note.text}`);
+        del.onclick = async () => {
+          try {
+            const r = await fetch(`/api/evolution/${zone}/${encodeURIComponent(note.id)}`, { method: 'DELETE' });
+            if (!r.ok) return toast('No se pudo borrar');
+            loadEvolution();
+          } catch { toast('No se pudo borrar: ¿está prendido el server?'); }
+        };
+        row.append(txt, del);
+        box.appendChild(row);
+      }
+    }
+  }
+  setTimeout(loadEvolution, 1500);
+  setInterval(loadEvolution, 30000);
+
+  async function loadSuggestions() {
+    const box = document.getElementById('suggestionsList');
+    let items = [];
+    try { items = await (await fetch('/api/suggestions')).json(); } catch { }
+    box.innerHTML = '';
+    if (!Array.isArray(items) || !items.length) { box.innerHTML = '<div style="font-size:11px;color:var(--dim)">Sin sugerencias todavía.</div>'; return; }
+    for (const it of items) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:12px';
+      const txt = document.createElement('div'); txt.style.flex = '1';
+      const t = document.createElement('div'); t.textContent = it.summary + (it.count > 1 ? `  (x${it.count})` : '');
+      const m = document.createElement('div'); m.style.cssText = 'font-size:10px;color:var(--dim)';
+      m.textContent = `@${it.users.join(', @')} · "${it.message}" · ${new Date(it.at).toLocaleString('es-AR')}`;
+      txt.append(t, m);
+      const del = document.createElement('button'); del.className = 'btn btn-sm'; del.textContent = '✓';
+      del.title = 'Ya la vi (borrar)';
+      del.onclick = async () => { await fetch('/api/suggestions/' + it.id, { method: 'DELETE' }); loadSuggestions(); };
+      row.append(txt, del); box.append(row);
+    }
+  }
+  setInterval(loadSuggestions, 30000);
+  setTimeout(loadSuggestions, 1500);
+
+  const squadLines = list => list.map(p => p.names.join(', ') + (p.about ? ` | ${p.about}` : '')).join('\n');
+  async function loadSquad() {
+    try {
+      const r = await fetch('/api/squad');
+      if (!r.ok) throw new Error(r.status);
+      document.getElementById('squadText').value = squadLines(await r.json());
+      // Recién acá se puede editar: guardar sin haber cargado borraría las fichas
+      document.getElementById('squadText').disabled = document.getElementById('squadSave').disabled = false;
+    } catch { setTimeout(loadSquad, 5000); }
+  }
+  async function saveSquad() {
+    const box = document.getElementById('squadText');
+    const list = box.value.split('\n').filter(l => l.trim()).map(l => {
+      const [names, ...about] = l.split('|');
+      return { names: names.split(','), about: about.join(' ') };
+    });
+    try {
+      const r = await postJSON('/api/squad', { squad: list });
+      if (!r.ok) return toast(`Error: ${r.error}`);
+      box.value = squadLines(r.squad);
+      toast(r.squad.length < list.length ? `⚠ Guardé ${r.squad.length} de ${list.length}: máximo 15 y cada línea necesita nombre` : `✓ ${r.squad.length} personas guardadas`);
+    } catch { toast('No se pudo guardar: ¿está prendido el server?'); }
+  }
+  setTimeout(loadSquad, 1500);
+
+  async function saveTitle() {
+    const r = await postJSON('/api/live/title', { title: document.getElementById('liveTitle').value.trim() });
+    if (r.ok) toast(r.title ? `✓ Tema: ${r.title}` : '✓ Tema borrado');
+  }
   async function saveGoals() {
     const goals = document.getElementById('liveGoals').value.split('\n')
       .map(l => l.split('|')).filter(p => p.length >= 2)
@@ -1004,6 +1157,10 @@
   async function setBackground(background) {
     const r = await postJSON('/api/live/background', { background });
     toast(r.ok ? '✓ Fondo cambiado' : `Error: ${r.error}`);
+  }
+  async function setAvatar3d(on) {
+    const r = await postJSON('/api/live/avatar3d', { avatar3d: on });
+    toast(r.ok ? (on ? '✓ Avatar 3D' : '✓ Avatar 2D') : `Error: ${r.error}`);
   }
   async function setFloat(on) {
     const r = await postJSON('/api/live/float', { float: on });
@@ -1122,18 +1279,25 @@
       _lastFrameSig = sig;
       // Capturar y enviar silenciosamente por WS
       try {
-        const canvas = document.createElement('canvas');
-        const scale = Math.min(1, 854 / (video.videoWidth || 854));
-        canvas.width  = Math.round((video.videoWidth  || 854) * scale);
-        canvas.height = Math.round((video.videoHeight || 480) * scale);
-        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-        const image = canvas.toDataURL('image/jpeg', 0.65).split(',')[1];
+        const image = grabFrame();
+        if (!image) return;
         if (ws && ws.readyState === 1) {
           ws.send(JSON.stringify({ type: 'vision_context_frame', image }));
         }
       } catch (e) { console.warn('Silent vision capture error:', e); }
     }, secs);
     document.getElementById('liveVisionStatus').style.display = 'flex';
+  }
+
+  function grabFrame() {
+    const video = document.getElementById('visionVideo');
+    if (!_visionStream || !video.videoWidth) return null;
+    const canvas = document.createElement('canvas');
+    const scale = Math.min(1, 854 / video.videoWidth);
+    canvas.width  = Math.round(video.videoWidth  * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.65).split(',')[1];
   }
 
   function stopLiveVision() {
@@ -1177,7 +1341,8 @@
     const time = new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
     const el = document.createElement('div');
     el.style.cssText = `padding:6px 8px;border-left:2px solid ${ok ? 'var(--cyan)' : 'var(--pink)'};background:rgba(0,245,255,.03);border-radius:0 4px 4px 0;font-size:11px`;
-    el.innerHTML = `<span style="color:var(--dim);font-size:9px">${time}</span> <span style="color:var(--text)">${text}</span>`;
+    el.innerHTML = `<span style="color:var(--dim);font-size:9px">${time}</span> <span style="color:var(--text)"></span>`;
+    el.lastElementChild.textContent = text; // viene de la voz o de lo que se ve en pantalla: nunca como HTML
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
     while (log.children.length > 20) log.removeChild(log.firstChild);
@@ -1186,6 +1351,26 @@
   function clearVisionLog() {
     const log = document.getElementById('visionLog');
     if (log) log.innerHTML = '<div style="font-size:11px;color:var(--dim)">Sin capturas aún.</div>';
+  }
+
+  // ─ Discord ─
+  let _discord = 'off';
+  function renderDiscord(d) {
+    _discord = d.state;
+    if (d.state === 'on' && _isListening) stopMic(); // si no, escucharía dos veces al streamer
+    document.getElementById('micBtn').disabled = d.state === 'on';
+    document.getElementById('discordBtn').textContent = d.state === 'off' ? '🎧 CONECTAR' : '■ SALIR';
+    const st = document.getElementById('discordStatus');
+    st.textContent = d.state === 'on' ? `En "${d.channel}" · streamer: ${d.streamer} · Whisper ${d.whisper}`
+      : d.state === 'starting' ? 'Entrando... (carga Whisper y avisa al canal, unos 20 s)'
+      : d.error ? `Desconectada: ${d.error}` : 'Desconectada';
+    st.style.color = d.state === 'on' ? 'var(--cyan)' : d.error ? 'var(--pink)' : 'var(--dim)';
+  }
+  async function toggleDiscord() {
+    try {
+      const r = await postJSON(`/api/discord/${_discord === 'off' ? 'start' : 'stop'}`, {});
+      if (!r.state) toast(`Error: ${r.error || 'no se pudo'}`);
+    } catch { toast('No se pudo: ¿está prendido el server?'); }
   }
 
   // ─ Mic / Speech Recognition ────────────────────────────────────────────────
@@ -1238,13 +1423,14 @@
           // Debounce: esperar 1.8s de silencio antes de enviar
           _speechTimer = setTimeout(() => {
             const text = _speechBuffer.trim();
-            const wakeWords = /\b(nyra|nira|ñira|naira|lyra|neira|nila|mira|nara)\b/i;
+            const wakeWords = /(?<!\p{L})(nyra|(?:ch[eé]|me)?nira|ñira|naira|lyra|neira|nila)(?!\p{L})/iu; // igual que WAKE_RE del server
             if (text.length > 3) {
               if (ws && ws.readyState === 1) {
-                ws.send(JSON.stringify({ type: 'streamer_speech', text }));
                 const triggered = wakeWords.test(text);
+                // si la nombran va la captura de ese momento ("Nira, mirá")
+                ws.send(JSON.stringify({ type: 'streamer_speech', text, image: triggered ? grabFrame() : null }));
                 addVisionLog('🎤 ' + (triggered ? '✓' : '✗ sin wake word') + ' "' + text + '"', triggered);
-                transcript.textContent = (triggered ? '✓ Enviado' : '✗ ignorado (sin wake word)') + ': ' + text.slice(0, 60);
+                transcript.textContent = (triggered ? '✓ Enviado' : '✗ solo escucha (no la nombraste)') + ': ' + text.slice(0, 60);
               } else {
                 transcript.textContent = '⚠ Sin conexión WS';
               }

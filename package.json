@@ -4,19 +4,25 @@
   "description": "NYRA - VTuber con IA local regenerativa (sin APIs externas)",
   "type": "module",
   "main": "server.js",
+  "packageManager": "pnpm@10.34.9+sha512.f49b5a8ea0fdedb44bb3c0c1d6575092a53c2950d95b7ad15df11f17974877a2de3a01c07e934e9b28ce716e51c09a94962c7306d09be2e1e4b18a8c8762fd32",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
   "dependencies": {
+    "@discordjs/voice": "0.19.2",
+    "@pixiv/three-vrm": "3.5.5",
     "cors": "^2.8.5",
-    "express": "^4.18.2",
+    "discord.js": "14.28.1",
+    "express": "^4.22.3",
     "msedge-tts": "^2.1.1",
     "node-fetch": "^3.3.2",
+    "opusscript": "0.0.8",
     "say": "^0.16.0",
-    "tiktok-live-connector": "^2.1.1-beta1",
+    "three": "0.187.0",
+    "tiktok-live-connector": "2.1.1-beta1",
     "tmi.js": "^1.8.5",
-    "uuid": "^9.0.0",
+    "uuid": "^11.1.1",
     "ws": "^8.16.0"
   }
 }

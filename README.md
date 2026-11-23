@@ -31,9 +31,12 @@ ollama pull qwen2
 
 ### 3. Instalar y correr NYRA
 
+Usá **pnpm**, no npm: las protecciones de `pnpm-workspace.yaml` y el lockfile solo valen con pnpm.
+Si no lo tenés: `npm install -g pnpm@10.34.9`.
+
 ```bash
-npm install
-npm start
+pnpm install
+pnpm start
 ```
 
 ### 4. Abrir en el navegador

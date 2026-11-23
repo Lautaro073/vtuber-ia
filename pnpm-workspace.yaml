@@ -1,0 +1,15 @@
+# No instalar versiones publicadas hace menos de 24 h (minutos).
+minimumReleaseAge: 1440
+# Rechazar versiones con menos garantías de publicación que las anteriores.
+trustPolicy: no-downgrade
+# Las subdependencias solo pueden venir del registro, no de git ni URLs.
+blockExoticSubdeps: true
+# Un script de instalación que no esté revisado acá abajo corta la instalación.
+strictDepBuilds: true
+allowBuilds:
+  # preinstall = "npx only-allow pnpm": baja y ejecuta código, no hace falta.
+  msedge-tts: false
+overrides:
+  # Lo declara pero no lo importa, y arrastra vulnerabilidades críticas. Revisar al subir el conector,
+  # que está fijo porque 2.5.0 ya no exporta WebcastPushConnection desde la entrada principal.
+  "tiktok-live-connector@2.1.1-beta1>protobufjs": "-"

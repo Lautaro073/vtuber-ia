@@ -50,3 +50,30 @@ live_state.json
 
 # audio generado por Edge TTS
 public/tts/
+
+backups/
+
+# sugerencias anotadas del chat
+nyra_suggestions.json
+
+# estado guardado del modo NYRA de agy
+scripts/agy-estado.json
+
+# fichas de los amigos del streamer (datos de terceros)
+nyra_squad.json
+
+# Whisper local: venv y modelo (se bajan, no se versionan)
+.whisper/
+
+# datos que NYRA verificó en internet
+nyra_facts.json
+
+# órdenes que el streamer le dio a NYRA por voz
+nyra_orders.json
+
+# lo que NYRA aprendió de los pibes y la comunidad (datos de terceros)
+nyra_evolution.json
+
+# transcripciones de Discord para pulir Whisper y animaciones que le faltaron
+logs/
+nyra_wishes.json

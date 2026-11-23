@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>NYRA - Overlay Live</title>
 <style>
-  /* Fuente de navegador para OBS (recomendado 720x420). Fondo transparente. */
+  /* Fuente de navegador para OBS (recomendado 560x900). Fondo transparente. */
   :root {
     --bg: rgba(10, 6, 24, .82); --border: rgba(190, 120, 255, .35);
     --text: #f1eaff; --dim: #b9a8d8; --violet: #bb77ff; --pink: #ff4fa3; --cyan: #00e5ff; --lime: #c6f26b;
@@ -34,6 +34,14 @@
   .sideA { color: var(--cyan); } .sideB { color: var(--pink); text-align: right; }
   .hint { font-size: 13px; color: var(--lime); margin-top: 4px; text-align: center; letter-spacing: 1px; }
 
+  /* Comandos y chat */
+  .cmds { font-size: 14px; line-height: 1.55; margin-top: 4px; }
+  .cmds b { color: var(--lime); }
+  #chat { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+  .msg { font-size: 15px; line-height: 1.3; word-wrap: break-word; animation: in .3s ease; transition: opacity .6s; }
+  .msg .u { color: var(--cyan); font-weight: 700; margin-right: 6px; }
+  @keyframes in { from { opacity: 0; transform: translateX(-12px) } }
+
   /* Avisos: regalos, metas, sentencia */
   #toast { position: fixed; left: 50%; bottom: 14px; transform: translate(-50%, 200%); opacity: 0; transition: transform .45s cubic-bezier(.2, .9, .3, 1.2), opacity .3s;
     max-width: 92%; padding: 12px 22px; border-radius: 16px; text-align: center; font-size: 20px; font-weight: 800;
@@ -42,6 +50,9 @@
   #toast.big  { border-color: var(--pink); box-shadow: 0 0 30px var(--pink); }
   #toast.epic { border-color: var(--lime); box-shadow: 0 0 40px var(--lime); font-size: 26px; animation: shake .5s 2; }
   @keyframes shake { 0%,100% { margin-left: 0 } 25% { margin-left: -8px } 75% { margin-left: 8px } }
+  /* Animación de NYRA arriba del aviso. Los GIF son 192x608 con ella en la franja del medio: se recorta lo vacío */
+  #toast .anim { width: 130px; aspect-ratio: 192 / 220; margin: -76px auto 4px; overflow: hidden; }
+  #toast .anim img { width: 100%; margin-top: -102.6%; image-rendering: pixelated; display: block; }
 </style>
 </head>
 <body>
@@ -67,8 +78,23 @@
     </div>
     <div class="hint">Escribí <b>!a</b> o <b>!b</b> + tu argumento · tus regalos suman pruebas</div>
   </div>
+
+  <div class="card">
+    <div class="label">Comandos</div>
+    <div class="cmds">
+      <div id="cmdMention" class="hidden">💬 Nombrá a <b>NYRA</b> para que te responda</div>
+      <div id="cmdVision" class="hidden">👁 Preguntale a <b>NYRA</b> qué ve en pantalla</div>
+      <div>⚖ <b>!tribunal</b> tema | lado A | lado B</div>
+      <div>🗳 Votá con <b>!a</b> o <b>!b</b> · 🎁 regalar te da prioridad</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">Chat</div>
+    <div id="chat"></div>
+  </div>
 </div>
-<div id="toast"></div>
+<div id="toast"><div class="anim hidden"><img alt=""></div><div class="txt"></div></div>
 
 <script>
   const $ = id => document.getElementById(id);
@@ -99,6 +125,8 @@
       $('goalFill').style.width = '100%';
     }
     $('moodFill').style.width = s.mood + '%';
+    $('cmdMention').classList.toggle('hidden', !s.commands?.mention);
+    $('cmdVision').classList.toggle('hidden', !s.commands?.vision);
     $('moodText').textContent = moodLabel(s.mood);
 
     // Tribunal
@@ -116,8 +144,9 @@
   // Cola de avisos: uno por vez
   const toasts = [];
   let showing = false;
-  function toast(text, cls = '', ms = 3500) {
-    toasts.push({ text, cls, ms });
+  const ANIM = { gift: 'Alertas/alerta-donacion.gif', follow: 'Alertas/alerta-nuevo-seguidor-sub.gif' };
+  function toast(text, cls = '', ms = 3500, anim = null) {
+    toasts.push({ text, cls, ms, anim });
     if (!showing) nextToast();
   }
   function nextToast() {
@@ -126,7 +155,10 @@
     showing = true;
     const el = $('toast');
     el.className = t.cls;
-    el.textContent = t.text;
+    el.querySelector('.txt').textContent = t.text; // el nombre viene de TikTok: nunca como HTML
+    const box = el.querySelector('.anim'), img = box.querySelector('img');
+    box.classList.toggle('hidden', !t.anim);
+    if (t.anim) { img.src = ''; img.src = t.anim; } // desde el primer cuadro
     requestAnimationFrame(() => el.classList.add('show'));
     setTimeout(() => { el.classList.remove('show'); setTimeout(nextToast, 450); }, t.ms);
   }
@@ -134,12 +166,34 @@
   function onEvent(e) {
     if (e.kind === 'gift') {
       const what = `${e.count > 1 ? e.count + 'x ' : ''}${e.gift}`;
-      if (e.tier === 'epic')   toast(`💥 ¡@${e.username} mandó ${what}! 💥`, 'epic', 6000);
-      else if (e.tier === 'big') toast(`🎉 @${e.username} mandó ${what}`, 'big', 4500);
-      else toast(`🎁 @${e.username} · ${what}`, '', 2500);
+      if (e.tier === 'epic')   toast(`💥 ¡@${e.username} mandó ${what}! 💥`, 'epic', 6000, ANIM.gift);
+      else if (e.tier === 'big') toast(`🎉 @${e.username} mandó ${what}`, 'big', 4500, ANIM.gift);
+      else toast(`🎁 @${e.username} · ${what}`, '', 2600, ANIM.gift);
     }
     if (e.kind === 'goal') toast(`✨ META DESBLOQUEADA: ${e.reward} ✨`, 'epic', 7000);
     if (e.kind === 'verdict') toast(e.winner ? `⚖ Ganó: ${e.winner}` : '⚖ ¡Empate! NYRA decide…', 'big', 6000);
+  }
+
+  // Seguidores y subs (los regalos llegan como live_event, con su nivel)
+  function onAlert(a) {
+    const u = `@${a.username}`;
+    if (a.alertType === 'follow') toast(`💜 ${u} ahora te sigue`, '', 3000, ANIM.follow);
+    if (a.alertType === 'subscribe') toast(`⭐ ${u} se suscribió`, 'big', 4500, ANIM.follow);
+    if (a.alertType === 'resub') toast(`⭐ ${u} sigue suscripto${a.extra?.months ? ` · ${a.extra.months} meses` : ''}`, 'big', 4500, ANIM.follow);
+    if (a.alertType === 'subgift') toast(`🎀 ${u} le regaló una sub a @${a.extra?.recipient || 'alguien'}`, 'big', 4500, ANIM.follow);
+  }
+
+  // Chat: últimos 6 mensajes; cada uno se desvanece a los 40s
+  function addChat(m) {
+    const el = document.createElement('div');
+    el.className = 'msg';
+    const u = document.createElement('span');
+    u.className = 'u'; u.textContent = m.username;
+    el.append(u, document.createTextNode(m.text)); // texto plano: el chat no puede inyectar HTML
+    const box = $('chat');
+    box.append(el);
+    while (box.children.length > 6) box.firstChild.remove();
+    setTimeout(() => { el.style.opacity = 0; setTimeout(() => el.remove(), 700); }, 40000);
   }
 
   function connect() {
@@ -148,6 +202,8 @@
       const m = JSON.parse(data);
       if (m.type === 'live_state') render(m);
       if (m.type === 'live_event') onEvent(m);
+      if (m.type === 'stream_alert') onAlert(m);
+      if (m.type === 'chat_line') addChat(m);
     };
     ws.onclose = () => setTimeout(connect, 2000); // reconectar si se reinicia el server
   }
