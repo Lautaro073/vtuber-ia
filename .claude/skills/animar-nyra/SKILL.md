@@ -126,6 +126,14 @@ dedos `J_Bip_R_{Thumb,Index,Middle,Ring,Little}{1,2,3}`. En el visor: nombres hu
   pecho para que la mano acompañe al cuerpo; el brazo libre apunta a posiciones fijas del mundo (cuelga por gravedad).
 - **Trayectorias**: entre dos poses lejanas poné una intermedia (la mano pasa frente al pecho con el codo doblado).
   Interpolar directo abre el brazo hacia el costado o lo pasa por detrás del cuerpo.
+- **Objetos en la mano (taza, etc.): fijos a la mano**, con la misma cuenta en Blender y en el visor. El objeto no se
+  orienta solo: lo inclinan el brazo y la muñeca. Para llevarlo a un punto (el borde de la taza al labio) usar un
+  buscador que mueva el brazo y mida el objeto, como `solve()` en `scripts/blender/tomar_te.py`.
+- **Límites del cuerpo**: la muñeca se dobla al costado ~20°; el giro (pronación) va en el **antebrazo**, nunca solo en
+  la mano (sin huesos de giro, la muñeca se retuerce como un caramelo). La mano sigue al antebrazo: para cambiar hacia
+  dónde apunta, mover el codo.
+- **Dedos con una bisagra por dedo** (eje sacado del primer tramo): un eje por falange se da vuelta al cerrar ~90°.
+- **Para manos y agarres, pedile fotos al usuario** si no las pasó: un GIF de cuerpo entero no muestra los dedos.
 
 ## Principios que hacen que se vea natural (aprendidos con el saludo)
 
@@ -230,3 +238,10 @@ necesitó tres versiones y varias rondas cada una. No es opcional ni depende de 
   - Revisar con **la cámara del directo** (0, 1.236, 2.4): de cerca la mano no tapaba nada, desde abajo tapaba un ojo.
   - Buscadores en Blender: corregir con componentes de vectores (los ángulos saltan al dar la vuelta), arrancar con una
     búsqueda gruesa, pasos cortos, y nada de probar 180 giros por pose (tardaba más de 15 minutos; usar la cuenta directa).
+  - La inclinación de la taza sale de cuánto sube el antebrazo (sostenida: antebrazo horizontal; sorbo: sube 30–45°
+    con el codo al costado). Si el buscador no converge o da la taza dada vuelta, revisar primero la pose del codo.
+  - Hicieron falta ~8 vueltas con el usuario: se adapta al brazo → agarre de garra → muñeca quebrada → taza cruzada →
+    meñique para afuera. Cada una la vio el usuario antes que yo: mirar de cerca la mano en cada pose clave (frente, 3/4
+    y desde arriba) y comparar con su foto antes de mostrar.
+  - Si el puerto 3010 está ocupado (otro agente con su copia), cambiar el puerto de `nyra-copia` en `launch.json`
+    después de `crear` (p. ej. 3011) y antes de `preview_start`.
