@@ -195,3 +195,20 @@ necesitó tres versiones y varias rondas cada una. No es opcional ni depende de 
 - Procesos en Windows: el PID que da Git Bash (`$!`) no es el del `node` real, así que `kill` puede apuntar a otro
   proceso. Por eso `parar` busca quién escucha en el 3010 y verifica antes de apagar. Pasó que el server del directo
   (3000) apareció apagado justo después de un `kill` sin verificar: nunca matar procesos a ciegas.
+- **Saludo de agy (nov 2026)**, con el mismo GIF: mano más baja (frente) y ~19 cm adelante del cuerpo, antebrazo hacia
+  la cámara; el mío, más alto y amplio. Mismo ritmo (0,4 s por vaivén). Ninguno es "el correcto": es estilo, decide el usuario.
+  Lo que aprendió agy en Blender 5.3:
+  - `bpy.ops.wm.read_factory_settings(use_empty=True)` **descarga los complementos** (se pierde el de VRM). Para
+    vaciar la escena, borrar `bpy.data.objects` sin resetear ajustes (o volver a habilitar el complemento).
+  - Acciones por capas: `action.fcurves` ya no existe; las curvas están en
+    `action.layers[0].strips[0].channelbags[0].fcurves`. Al insertar `rotation_quaternion`, forzar
+    `q.dot(q_anterior) >= 0` (si no, `q.negate()`): si no, la interpolación puede dar una vuelta de 360°.
+  - Apuntar un hueso a un objetivo **más cerca que su largo** (muñeca a menos de 0,215 m del codo, p. ej. al bajar el
+    brazo) hace que se pase de largo y la mano quiebre la muñeca hacia atrás. En transiciones, usar dirección relativa
+    desde el codo/muñeca reales, no puntos fijos cortos.
+  - Pulgares de `NYRA.vrm`: girar `Thumb1/2` en `Y` es torsión pura (no mueve la punta), y los signos `X`/`Z` del
+    pulgar izquierdo no son espejo del derecho: medir cuánto se mueve la punta antes de asumir signos.
+  - Visor: `nyra3d.gestures` se arma una sola vez, antes de que carguen los `.vrma`, así que un clip con nombre nuevo
+    agregado solo en `CLIPS` no aparece en la lista, aunque `nyra3d.gesture(nombre)` sí lo reproduce.
+- **Velocidad**: no marcar una velocidad como "error" sin medirla contra la referencia. Al comparar, contar en el GIF
+  cuántos cuadros tarda en subir y bajar la mano y compararlo con los cuadros del `.vrma`.
