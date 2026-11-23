@@ -27,15 +27,21 @@ Esta skill necesita **tres capacidades**. Comprobalas al principio, no a mitad d
   Avisá que el usuario tiene que abrir `/obs?3d` y probarlo.
 No digas "listo" sobre algo que no pudiste ver ni medir: decí qué quedó sin comprobar.
 
-**Blender y el complemento VRM.** Hay un solo Blender: `D:\blender-5.3.0-windows-x64\blender.exe` (5.3). El 5.2 que había
-en `C:\Program Files` se desinstaló (nov 2026) para que no haya dos. El complemento VRM está instalado en el perfil de 5.3
-(`%APPDATA%\Blender Foundation\Blender\5.3\extensions\blender_org\vrm`). Comprobalo así; tiene que decir `op: True`:
+**Blender y el complemento VRM.** Hay un solo Blender: `D:\blender-5.3.0-windows-x64\blender.exe` (5.3), en **modo
+portable**. Sus ajustes y el complemento VRM están en `D:\blender-5.3.0-windows-x64\portable\` (no en `%APPDATA%`): así
+todos los agentes ven lo mismo, aunque corran aislados y vean otra carpeta de usuario (pasó con agy: veía vacío el
+perfil de `%APPDATA%`). El 5.2 de `C:\Program Files` se desinstaló (nov 2026). Comprobalo con este comando; tiene que
+mostrar `VRM: ['bl_ext.blender_org.vrm'] op: True` y la carpeta `portable`:
 ```
-"D:\blender-5.3.0-windows-x64\blender.exe" --background --python-expr "import addon_utils,bpy; print('VRM:', [m.__name__ for m in addon_utils.modules() if 'vrm' in m.__name__.lower()], 'op:', hasattr(bpy.ops.import_scene,'vrm'))"
+"D:\blender-5.3.0-windows-x64\blender.exe" --background --python-expr "import addon_utils,bpy
+mods=[m.__name__ for m in addon_utils.modules() if 'vrm' in m.__name__.lower()]
+ok=True
+try: bpy.ops.import_scene.vrm.get_rna_type(); bpy.ops.export_scene.vrma.get_rna_type()
+except Exception as e: ok=repr(e)[:80]
+print('VRM:', mods, 'op:', ok); print('config:', bpy.utils.resource_path('USER'))"
 ```
-Si sale `VRM: []` / `op: False`, tu entorno no está leyendo el perfil del usuario (otra variable `APPDATA` o un entorno
-aislado). No instales otro Blender ni apuntes a otra versión: avisale al usuario y, si te lo permite, corré Blender con
-`BLENDER_USER_EXTENSIONS` apuntando a esa carpeta `5.3\extensions`.
+Ojo: `hasattr(bpy.ops.import_scene, 'vrm')` siempre da `True` (es un proxy dinámico); la prueba real es `get_rna_type()`.
+Si falla, no instales otro Blender ni cambies de versión ni de carpeta: avisale al usuario.
 
 **Shell en Windows.** Los scripts `.sh` se corren con Git Bash, llamándolo explícito:
 `"C:\Program Files\Git\bin\bash.exe" .claude/skills/animar-nyra/herramientas/copia_prueba.sh …`.
@@ -172,6 +178,9 @@ necesitó tres versiones y varias rondas cada una. No es opcional ni depende de 
   usar reemplazos exactos con Python y verificar con `node --check`.
 - Los cambios de otra IA (GPT) en este visor se dejaron en la rama `gpt/animaciones-vrma`: no mezclarlos con main sin
   que el usuario lo pida.
+- Cada agente puede ver una carpeta de usuario distinta (agy corre aislado y veía vacío `%APPDATA%`). Lo que tienen
+  que compartir todos va a una ruta fija: por eso Blender quedó en modo portable en `D:\`. Y un chequeo tiene que probar
+  lo real (`get_rna_type()`), no algo que siempre da `True`.
 - Procesos en Windows: el PID que da Git Bash (`$!`) no es el del `node` real, así que `kill` puede apuntar a otro
   proceso. Por eso `parar` busca quién escucha en el 3010 y verifica antes de apagar. Pasó que el server del directo
   (3000) apareció apagado justo después de un `kill` sin verificar: nunca matar procesos a ciegas.
