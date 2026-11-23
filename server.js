@@ -1301,7 +1301,7 @@ class StreamChatManager {
           ? ["Podés escribirme en el chat y preguntarme lo que quieras.", "Si querés charlar, mandame un mensaje; leo todo.", "Preguntame lo que quieras por el chat, no muerdo... mucho."]
           : ["Pueden escribirme en el chat y preguntarme lo que quieran.", "Si quieren charlar, mándenme mensajes; leo todo.", "Pregúntenme lo que quieran por el chat, no muerdo... mucho."]);
       }
-      this._enqueue("NYRA", line, platform, { fixed: true, emotion: "happy" }, PRI.idle);
+      this._enqueue("NYRA", line, platform, { fixed: true, emotion: "happy", gesture: "saludar" }, PRI.idle); // saluda con la mano
     };
     g.timer = setTimeout(flush, 10000);
   }
@@ -1464,9 +1464,9 @@ class StreamChatManager {
 
   // Genera el texto y el audio de una respuesta, sin mostrar ni reproducir nada todavía
   async _prepare({ username, text, platform, opts }, client = ai.llm) {
-    let fullText = "", gesture = null;
+    let fullText = "", gesture = opts.gesture || null;
     if (opts.fixed) {
-      fullText = text; // frase fija (agradecimientos, saludos): no pasa por la IA
+      fullText = text; // frase fija (agradecimientos, saludos): no pasa por la IA; el gesto, si tiene, viene en opts
     } else {
       // El mensaje del viewer va entre comillas y marcado como texto de terceros, no como instrucciones
       let note = opts.rawPrompt ? "" : this._nickNote(username, text);
