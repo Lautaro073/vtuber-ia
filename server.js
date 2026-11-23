@@ -345,6 +345,9 @@ class NyraChatLearning {
     const kept = [], count = {};
     for (const c of [...this.chunks].reverse()) { // de más nuevo a más viejo
       if (BROKEN.test(c.text.split("\nNYRA:")[1] || "")) continue;
+      // poner un apodo es una orden de una vez (queda en el apodo y en la libreta): aprendida, una respuesta mal
+      // entendida se repetía ("de acá en más soy la Gordita")
+      if (creatorNick(c.text.split("\nNYRA:")[0].replace(/^@\S+:\s*/, ""))) continue;
       const u = c.username;
       if (u !== "panel" && u !== "streamer" && (count[u] = (count[u] || 0) + 1) > MAX_PER_VIEWER) continue;
       kept.push(c);
@@ -2142,8 +2145,8 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
     // 1. Trackear viewer
     if (username && username !== "panel") this.memory.trackViewer(username, userMessage);
 
-    // 2. Guardar el intercambio en chat learning
-    this.chatLearning.addExchange(username || "panel", userMessage, nyraResponse);
+    // 2. Guardar el intercambio en chat learning (los pedidos de apodo no: ver _prune)
+    if (!creatorNick(userMessage)) this.chatLearning.addExchange(username || "panel", userMessage, nyraResponse);
 
     // 3. Extraer si NYRA expresó una opinión → guardar en personalidad (async, no bloquea)
     const extractPrompt = `Respondé en ESPAÑOL. En esta conversación, ¿NYRA expresó una opinión sobre algún tema concreto?
