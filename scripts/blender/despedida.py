@@ -1,6 +1,6 @@
 # Arma el saludo de NYRA con cuadros clave y lo exporta como .vrma (VRM Animation).
 # Uso (Blender 5.3 con el complemento VRM instalado):
-#   blender --background --python scripts/blender/saludo.py -- public/avatar3d/NYRA.vrm public/avatar3d/saludo.vrma [carpeta_renders]
+#   blender --background --python scripts/blender/despedida.py -- public/avatar3d/NYRA.vrm public/avatar3d/despedida.vrma [carpeta_renders]
 # Las posiciones vienen del visor (three.js: y arriba, el modelo mira a +Z) y se pasan a Blender (z arriba, mira a -Y).
 # Cada hueso se apunta a su objetivo en vez de posarlo a ojo: así el codo queda abajo y adelante y la mano al lado de la cara.
 import math

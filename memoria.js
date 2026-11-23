@@ -139,6 +139,7 @@ ${recent.join("\n") || "(nada)"}
 // ── Gestos del avatar 3D ──
 // Los que existen en public/avatar3d/vrm.js. La IA escribe [GESTO: ...] con sus palabras: se traduce acá
 export const GESTURES = {
+  despedir: /despid|despedi|chau|adios|nos vemos/, // antes que irse_enojada: "despedirse" contiene "irse"
   irse_enojada: /enoj|irse|me voy|se va|andar/,
   tomar_te: /\bte\b|taza/,
   festejar: /festej|celebr|brazos arriba/,

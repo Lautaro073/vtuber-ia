@@ -83,7 +83,7 @@ Desde PowerShell, `bash` a secas abre el WSL de Windows (que acá no tiene distr
      Anotá: altura de mano/codo respecto a la cabeza, de dónde sale el giro (codo, muñeca), cuánto va a cada lado,
      ritmo (cuadros por vaivén), qué hacen los dedos, la cabeza y el torso.
    - Usá solo referencias públicas para estudiar el movimiento: no copies ni subas al repo el GIF ajeno.
-2. **Script de Blender** en `scripts/blender/<gesto>.py`, copiando la estructura de `scripts/blender/saludo.py`
+2. **Script de Blender** en `scripts/blender/<gesto>.py`, copiando la estructura de `scripts/blender/despedida.py` (o `saludo_agy.py`)
    (importa `public/avatar3d/NYRA.vrm`, pone cuadros clave, exporta `public/avatar3d/<gesto>.vrma`, renderiza controles).
    Blender: `D:\blender-5.3.0-windows-x64\blender.exe` con el complemento VRM (extensión oficial `vrm`).
    ```
