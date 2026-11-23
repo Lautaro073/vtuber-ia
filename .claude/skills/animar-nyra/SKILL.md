@@ -15,7 +15,7 @@ Esta skill necesita **tres capacidades**. Comprobalas al principio, no a mitad d
 
 | capacidad | para qué | cómo comprobarla |
 |---|---|---|
-| Correr comandos en la PC | Blender en segundo plano, Python, el server de prueba | correr `"D:\blender-5.3.0-windows-x64\blender.exe" --version` |
+| Correr comandos en la PC | Blender en segundo plano, Python, el server de prueba | correr `"D:\blender-5.3.0-windows-x64\blender.exe" --version` y el chequeo del complemento VRM (abajo) |
 | Ver imágenes | revisar los renders de Blender, la grilla y las capturas del visor | abrir un PNG cualquiera y describir lo que muestra |
 | Navegador controlable | abrir el visor de prueba, ejecutar JavaScript en la página, sacar capturas | abrir `http://localhost:3010/obs?3d` y leer un valor con JavaScript |
 
@@ -26,6 +26,20 @@ Esta skill necesita **tres capacidades**. Comprobalas al principio, no a mitad d
 - sin navegador: podés armar el `.vrma` y revisarlo en los renders de Blender, pero no comprobarlo en el visor.
   Avisá que el usuario tiene que abrir `/obs?3d` y probarlo.
 No digas "listo" sobre algo que no pudiste ver ni medir: decí qué quedó sin comprobar.
+
+**Blender y el complemento VRM.** Hay un solo Blender: `D:\blender-5.3.0-windows-x64\blender.exe` (5.3). El 5.2 que había
+en `C:\Program Files` se desinstaló (nov 2026) para que no haya dos. El complemento VRM está instalado en el perfil de 5.3
+(`%APPDATA%\Blender Foundation\Blender\5.3\extensions\blender_org\vrm`). Comprobalo así; tiene que decir `op: True`:
+```
+"D:\blender-5.3.0-windows-x64\blender.exe" --background --python-expr "import addon_utils,bpy; print('VRM:', [m.__name__ for m in addon_utils.modules() if 'vrm' in m.__name__.lower()], 'op:', hasattr(bpy.ops.import_scene,'vrm'))"
+```
+Si sale `VRM: []` / `op: False`, tu entorno no está leyendo el perfil del usuario (otra variable `APPDATA` o un entorno
+aislado). No instales otro Blender ni apuntes a otra versión: avisale al usuario y, si te lo permite, corré Blender con
+`BLENDER_USER_EXTENSIONS` apuntando a esa carpeta `5.3\extensions`.
+
+**Shell en Windows.** Los scripts `.sh` se corren con Git Bash, llamándolo explícito:
+`"C:\Program Files\Git\bin\bash.exe" .claude/skills/animar-nyra/herramientas/copia_prueba.sh …`.
+Desde PowerShell, `bash` a secas abre el WSL de Windows (que acá no tiene distros) y falla.
 
 ## Herramientas según el agente
 
@@ -39,7 +53,10 @@ No digas "listo" sobre algo que no pudiste ver ni medir: decí qué quedó sin c
   bash .claude/skills/animar-nyra/herramientas/copia_prueba.sh parar     <carpeta_temporal>
   bash .claude/skills/animar-nyra/herramientas/copia_prueba.sh limpiar   <carpeta_temporal>
   ```
-  En Windows esto corre en Git Bash. `parar` apaga solo el `node` que escucha en el 3010, después de verificarlo.
+  En Windows, `bash` = `"C:\Program Files\Git\bin\bash.exe"` (ver "Shell en Windows"). `parar` apaga solo el `node` que
+  escucha en el 3010, después de verificarlo.
+  Si tu herramienta cierra los procesos cuando termina el comando, el server de prueba muere con la terminal: levantalo
+  como proceso independiente (o en una terminal que quede abierta) y apagalo igual con `parar`.
 - **Para todos**: Blender, `grilla.py` y los scripts de Blender son comandos comunes y andan igual en cualquier agente.
 - **Nunca apagues ni reinicies el server del puerto 3000**: es el del directo. Antes de cerrar cualquier proceso,
   verificá cuál es (puerto, nombre, quién lo arrancó). Si el 3000 no responde, avisale al usuario; no lo levantes vos.
