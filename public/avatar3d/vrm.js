@@ -9,7 +9,8 @@ import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-v
 // el resto (respiración, el otro brazo, los dedos) sigue en código. Si el archivo no carga, queda el gesto en código
 const RIGHT_FINGERS = ['Index', 'Middle', 'Ring', 'Little'].flatMap(f => ['Proximal', 'Intermediate', 'Distal'].map(j => `right${f}${j}`))
   .concat(['rightThumbMetacarpal', 'rightThumbProximal', 'rightThumbDistal']);
-const CLIPS = { saludar: { file: 'avatar3d/saludo.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', 'head', ...RIGHT_FINGERS] } };
+const BODY = ['spine', 'chest', 'upperChest', 'neck', 'head', 'leftShoulder', 'leftUpperArm', 'leftLowerArm']; // el cuerpo acompaña
+const CLIPS = { saludar: { file: 'avatar3d/saludo.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', ...RIGHT_FINGERS, ...BODY] } };
 
 const EMOTION = { happy: 'happy', sad: 'sad', angry: 'angry', surprised: 'surprised', thinking: 'relaxed' };
 const VISEME = { a: ['aa', 1], ei: ['ee', 0.8], o: ['oh', 1], u: ['ou', 0.9], fv: ['ih', 0.4], l: ['ih', 0.5] };
