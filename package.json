@@ -12,6 +12,7 @@
   "dependencies": {
     "@discordjs/voice": "0.19.2",
     "@pixiv/three-vrm": "3.5.5",
+    "@pixiv/three-vrm-animation": "3.5.5",
     "cors": "^2.8.5",
     "discord.js": "14.28.1",
     "express": "^4.22.3",

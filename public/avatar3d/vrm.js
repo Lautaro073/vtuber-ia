@@ -3,6 +3,13 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-vrm-animation';
+
+// Gestos animados en Blender (.vrma, ver scripts/blender/). Solo se toman estos huesos del archivo:
+// el resto (respiración, el otro brazo, los dedos) sigue en código. Si el archivo no carga, queda el gesto en código
+const RIGHT_FINGERS = ['Index', 'Middle', 'Ring', 'Little'].flatMap(f => ['Proximal', 'Intermediate', 'Distal'].map(j => `right${f}${j}`))
+  .concat(['rightThumbMetacarpal', 'rightThumbProximal', 'rightThumbDistal']);
+const CLIPS = { saludar: { file: 'avatar3d/saludo.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', 'head', ...RIGHT_FINGERS] } };
 
 const EMOTION = { happy: 'happy', sad: 'sad', angry: 'angry', surprised: 'surprised', thinking: 'relaxed' };
 const VISEME = { a: ['aa', 1], ei: ['ee', 0.8], o: ['oh', 1], u: ['ou', 0.9], fv: ['ih', 0.4], l: ['ih', 0.5] };
@@ -130,6 +137,21 @@ export async function start(container, url, face, getState) {
   VRMUtils.rotateVRM0(vrm); // VRM 0.x mira para el otro lado; en 1.0 no hace nada
   vrm.scene.traverse(o => { o.frustumCulled = false; });
   scene.add(vrm.scene);
+
+  const clipLoader = new GLTFLoader();
+  clipLoader.register(parser => new VRMAnimationLoaderPlugin(parser));
+  for (const [name, { file, bones }] of Object.entries(CLIPS)) {
+    clipLoader.loadAsync(file).then(c => {
+      const clip = createVRMAnimationClip(c.userData.vrmAnimations[0], vrm);
+      const nodes = new Map(bones.map(b => [vrm.humanoid.getNormalizedBoneNode(b)?.name, vrm.humanoid.getNormalizedBoneNode(b)]));
+      const tracks = clip.tracks.filter(t => t.name.endsWith('.quaternion') && nodes.has(t.name.split('.')[0]))
+        .map(t => ({ node: nodes.get(t.name.split('.')[0]), interp: t.createInterpolant() }));
+      const q = new THREE.Quaternion();
+      GESTURES[name] = { ...GESTURES[name], dur: clip.duration, clip: (t, k) => {
+        for (const { node, interp } of tracks) node.quaternion.slerp(q.fromArray(interp.evaluate(Math.min(t, clip.duration))), k);
+      } };
+    }).catch(err => console.warn(`No cargó ${file}, sigue el gesto en código:`, err));
+  }
   const baseTurn = vrm.scene.rotation.y;
 
   const bone = name => vrm.humanoid.getNormalizedBoneNode(name);
@@ -221,11 +243,12 @@ export async function start(container, url, face, getState) {
 
     // Gesto encima del reposo
     const base = { ...REST, head: headRest };
-    const pose = g ? { ...g.pose(p, name => base[name]), ...(g.walk ? walkPose(p) : {}) } : {};
+    const pose = g && !g.clip ? { ...g.pose(p, name => base[name]), ...(g.walk ? walkPose(p) : {}) } : {};
     for (const [name, rest] of Object.entries(base)) {
       const to = pose[name] || rest;
       bone(name)?.rotation.set(...rest.map((r, i) => r + (to[i] - r) * env));
     }
+    if (g?.clip) g.clip(p, Math.min(1, p / 0.2, (g.dur - p) / 0.2)); // entra y sale suave sobre la pose en código
     cup.visible = !!g?.cup && env > 0.5;
     const walk = g?.walk ? walkOff(p) : { turn: 0, x: 0 };
     vrm.scene.rotation.y = baseTurn + walk.turn;

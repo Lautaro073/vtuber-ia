@@ -2322,6 +2322,7 @@ app.use(express.static(join(__dirname, "public")));
 app.use("/vendor/three/build", express.static(join(__dirname, "node_modules/three/build")));
 app.use("/vendor/three/examples/jsm", express.static(join(__dirname, "node_modules/three/examples/jsm")));
 app.use("/vendor/three-vrm", express.static(join(__dirname, "node_modules/@pixiv/three-vrm/lib")));
+app.use("/vendor/three-vrm-animation", express.static(join(__dirname, "node_modules/@pixiv/three-vrm-animation/lib")));
 
 // ─── Contraseña del panel (PANEL_PASSWORD en .env; vacía = sin contraseña) ────
 const PANEL_PASSWORD = process.env.PANEL_PASSWORD || "";

@@ -55,7 +55,8 @@
 { "imports": {
   "three": "/vendor/three/build/three.module.js",
   "three/addons/": "/vendor/three/examples/jsm/",
-  "@pixiv/three-vrm": "/vendor/three-vrm/three-vrm.module.min.js"
+  "@pixiv/three-vrm": "/vendor/three-vrm/three-vrm.module.min.js",
+  "@pixiv/three-vrm-animation": "/vendor/three-vrm-animation/three-vrm-animation.module.min.js"
 } }
 </script>
 
@@ -256,7 +257,9 @@
   // sin cartel de "click para activar audio" y reproducción directa con <audio>
   // ?mute: solo imagen (el audio sale por otra fuente). Reproduce silenciado para que el lip-sync y tts_done sigan andando
   const _MUTE = new URLSearchParams(location.search).has('mute');
-  const _isOBS = typeof window.obsstudio !== 'undefined' || _MUTE || new URLSearchParams(location.search).has('autoplay');
+  // ?3d también: es la fuente del avatar 3D en OBS/TikTok LIVE Studio, donde no se puede hacer clic
+  const _qs = new URLSearchParams(location.search);
+  const _isOBS = typeof window.obsstudio !== 'undefined' || _MUTE || _qs.has('autoplay') || _qs.has('3d');
 
   function _getCtx() {
     if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
