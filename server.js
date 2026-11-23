@@ -2443,6 +2443,7 @@ async function onDiscordSpeech({ id, name, streamer, text, raw, ms, secs }, wait
   let said = cleanUntrusted(text, 500);
   const log = extra => !waited && logTranscript({ who: cleanUntrusted(name, 32), streamer, secs: secs && +secs.toFixed(1), ms, text: said, ...(raw ? { raw } : {}), ...extra });
   if (!said) return log({ result: "descartado por los filtros" });
+  if (LISTEN_ONLY) return log({ result: "solo escucha" }); // modo log: no contesta ni recuerda nada
   if (!/\p{L}{2}/u.test(said) || filters.checkMessage(said, name).blocked) return log({ result: "ignorado" });
   let named = WAKE_RE.test(said);
   const key = `discord:${id}`; // por ID: el nombre de Discord lo cambia cualquiera
@@ -2491,12 +2492,15 @@ async function onDiscordSpeech({ id, name, streamer, text, raw, ms, secs }, wait
     { rawPrompt: true, said: streamer ? said : undefined, query: said, image: freshFrame() }, PRI.call);
 }
 
+// NYRA_SOLO_ESCUCHA=1: entra sola a Discord muda, sin saludar ni contestar, y solo guarda lo que oye en logs/discord
+const LISTEN_ONLY = process.env.NYRA_SOLO_ESCUCHA === "1";
 const discord = new DiscordVoice({
+  listenOnly: LISTEN_ONLY,
   synth: async text => audioSource(await tts.synth(text)),
   onSpeech: onDiscordSpeech,
   onState: s => {
     toPanels({ type: "discord_state", ...s });
-    if (s.state === "on") { // lo que le contesten al saludo es para ella, sin decir "Nira"
+    if (s.state === "on" && !LISTEN_ONLY) { // lo que le contesten al saludo es para ella, sin decir "Nira"
       ai.remember("assistant", GREETING, "al grupo");
       followUp.speaking(GREETING);
       followUp.finished();
@@ -2950,6 +2954,11 @@ server.listen(PORT, () => {
   `);
 
   if (!PANEL_PASSWORD) console.warn("⚠️  Sin PANEL_PASSWORD en .env: cualquiera en tu red puede usar el panel y la API");
+  if (LISTEN_ONLY) { // sin chat ni IA: entra a Discord y escucha para el log
+    console.log("🎧 Modo solo escucha: entro a Discord muda y guardo lo que oigo en logs/discord");
+    discord.start();
+    return;
+  }
   if (!existsSync(CONFIG.agy.path)) {
     console.warn(`⚠️  No encontré agy en ${CONFIG.agy.path} — instalalo o seteá AGY_PATH`);
     return;

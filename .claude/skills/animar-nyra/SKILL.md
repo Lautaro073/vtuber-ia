@@ -212,3 +212,21 @@ necesitó tres versiones y varias rondas cada una. No es opcional ni depende de 
     agregado solo en `CLIPS` no aparece en la lista, aunque `nyra3d.gesture(nombre)` sí lo reproduce.
 - **Velocidad**: no marcar una velocidad como "error" sin medirla contra la referencia. Al comparar, contar en el GIF
   cuántos cuadros tarda en subir y bajar la mano y compararlo con los cuadros del `.vrma`.
+- **Té en Blender (nov 2026)**, con un GIF de April (Parks and Rec) para el sorbo y fotos del usuario para el agarre.
+  Lo que hubo que corregir, en orden:
+  - **El objeto va fijo a la mano**: si el visor orienta la taza solo, "se adapta al brazo" y al tomar se va de costado.
+    Ahora la mueven el brazo y la muñeca; `tomar_te.py` y `vrm.js` hacen la misma cuenta (eje de la taza = fila de
+    nudillos meñique→índice, asa del lado de la palma) y un buscador (`solve`) mueve el brazo hasta que el borde toca
+    el labio con la inclinación pedida. Se mide en el visor: borde→labio, inclinación y vuelco al costado.
+  - **Agarre de taza** (fotos): mano horizontal con los nudillos en fila vertical, índice enganchado en el asa, pulgar
+    encima, mayor debajo, anular y meñique cerrados contra la palma. Cerrados a medias parecen una garra.
+  - **Al tomar, la taza va derecha con el asa al costado** (un poco adelante): con la palma a la cara el asa apunta a
+    cámara y la taza "se cruza"; con el asa justo al costado el codo tendría que ir detrás del cuerpo (imposible).
+  - **El giro del antebrazo se aplica al antebrazo, no a la mano**: el modelo no tiene huesos de giro y torcer la mano
+    retuerce la muñeca como un caramelo ("¿qué le pasó a la muñeca?"). La muñeca se dobla al costado ~20° como mucho.
+  - **Dedos: una bisagra por dedo**, sacada del primer tramo. Con un eje por falange (`dirección × palma`), al cerrar
+    ~90° el eje se da vuelta y la falange siguiente dobla para afuera (le pasó al meñique).
+  - `bend()` con ángulo negativo igual movía la punta hacia `want`: para valores con signo usar `signed()`.
+  - Revisar con **la cámara del directo** (0, 1.236, 2.4): de cerca la mano no tapaba nada, desde abajo tapaba un ojo.
+  - Buscadores en Blender: corregir con componentes de vectores (los ángulos saltan al dar la vuelta), arrancar con una
+    búsqueda gruesa, pasos cortos, y nada de probar 180 giros por pose (tardaba más de 15 minutos; usar la cuenta directa).

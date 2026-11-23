@@ -137,8 +137,8 @@ export class Whisper {
 
 export class DiscordVoice {
   // synth(texto) → archivo o URL de audio · onSpeech({ id, name, streamer, text, raw, ms, secs }) · onState({ state, ... })
-  constructor({ synth, onSpeech, onState = () => { } }) {
-    Object.assign(this, { synth, onSpeech, onState });
+  constructor({ synth, onSpeech, onState = () => { }, listenOnly = false }) {
+    Object.assign(this, { synth, onSpeech, onState, listenOnly }); // listenOnly: entra muda y sin saludar, solo escucha
     this.state = { state: "off" };
     this.run = 0; // invalida un arranque en curso si tocan SALIR
   }
@@ -185,7 +185,7 @@ export class DiscordVoice {
       const owner = (await client.application.fetch()).owner;
       this.streamerId = process.env.STREAMER_DISCORD_ID?.trim() || owner?.ownerId || owner?.id; check();
 
-      const conn = this.conn = voice.joinVoiceChannel({ guildId, channelId, adapterCreator: guild.voiceAdapterCreator, selfDeaf: false, selfMute: false });
+      const conn = this.conn = voice.joinVoiceChannel({ guildId, channelId, adapterCreator: guild.voiceAdapterCreator, selfDeaf: false, selfMute: this.listenOnly });
       conn.on("error", err => console.error("🎧 Voz:", err.message));
       await voice.entersState(conn, voice.VoiceConnectionStatus.Ready, 30000); check();
       conn.on(voice.VoiceConnectionStatus.Disconnected, async () => {
@@ -209,7 +209,7 @@ export class DiscordVoice {
       });
 
       // Primero saluda, recién después escucha
-      if (!await this._notice(GREETING)) console.warn("🎧 No pude saludar al entrar: sigo escuchando igual");
+      if (!this.listenOnly && !await this._notice(GREETING)) console.warn("🎧 No pude saludar al entrar: sigo escuchando igual");
       check();
       const listen = listenTo(conn.receiver, async (uid, pcm) => {
         if (run !== this.run || uid === client.user.id) return;

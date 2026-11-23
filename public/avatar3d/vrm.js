@@ -13,6 +13,7 @@ const BODY = ['spine', 'chest', 'upperChest', 'neck', 'head', 'leftShoulder', 'l
 const CLIPS = {
   saludar: { file: 'avatar3d/saludo_agy.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', ...RIGHT_FINGERS, ...BODY, 'leftHand', 'leftIndexProximal', 'leftIndexIntermediate', 'leftIndexDistal', 'leftMiddleProximal', 'leftMiddleIntermediate', 'leftMiddleDistal', 'leftRingProximal', 'leftRingIntermediate', 'leftRingDistal', 'leftLittleProximal', 'leftLittleIntermediate', 'leftLittleDistal', 'leftThumbMetacarpal', 'leftThumbProximal', 'leftThumbDistal'] }, // el de agy: más contenido y hacia la cámara
   despedir: { file: 'avatar3d/despedida.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', ...RIGHT_FINGERS, ...BODY] }, // más amplio: chau a quien se va
+  tomar_te: { file: 'avatar3d/tomar_te.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', ...RIGHT_FINGERS, ...BODY] }, // la taza y su inclinación siguen en código (tilt)
 };
 
 const EMOTION = { happy: 'happy', sad: 'sad', angry: 'angry', surprised: 'surprised', thinking: 'relaxed' };
@@ -184,7 +185,7 @@ export async function start(container, url, face, getState) {
   const cupDir = new THREE.Vector3(), cupQ = new THREE.Quaternion(), gripPos = new THREE.Vector3();
   const UP = new THREE.Vector3(0, 1, 0);
   const HANDLE_OUT = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI / 2); // asa (-Z) hacia la mano, afuera a la derecha
-
+  const handF = [raw('rightHand'), raw('rightIndexProximal'), raw('rightLittleProximal')].filter(Boolean);
   // Encuadre de busto, como el sprite 2D
   vrm.update(0);
   const head = new THREE.Vector3();
@@ -261,7 +262,19 @@ export async function start(container, url, face, getState) {
     vrm.scene.position.y = g?.walk ? Math.abs(Math.sin(p * 7)) * 0.015 * (band(p, 0.6, 1.85, 0.2) + band(p, 4, 5.25, 0.2)) : 0; // sube y baja con cada paso
 
     vrm.update(dt);
-    if (cup.visible) {
+    if (cup.visible && g.clip && handF[0]) {
+      // Con animación de Blender la taza va fija a la mano: la inclinan el brazo y la muñeca, no la taza sola.
+      // Como en el agarre real: el eje de la taza sigue la fila de nudillos (meñique → índice) y el asa queda del lado
+      // de la palma (scripts/blender/tomar_te.py hace la misma cuenta para llevar el borde a la boca)
+      const [h, i1, l1] = handF.map(b => b.getWorldPosition(new THREE.Vector3()));
+      const cz = i1.clone().sub(h).cross(l1.clone().sub(h)).normalize(); // palma; el asa está en -Z de la taza
+      const cy = i1.sub(l1); cy.sub(cz.clone().multiplyScalar(cy.dot(cz))).normalize();
+      cupQ.setFromRotationMatrix(new THREE.Matrix4().makeBasis(cy.clone().cross(cz), cy, cz));
+      cup.quaternion.copy(cupQ);
+      gripPos.set(0, 0, 0);
+      for (const b of pinch) gripPos.add(b.getWorldPosition(pinchB));
+      cup.position.copy(gripPos.divideScalar(pinch.length)).sub(HANDLE.clone().applyQuaternion(cupQ));
+    } else if (cup.visible) {
       const k = g.tilt?.(p) || 0;
       cupDir.set(0, 1 - 0.55 * k, -0.9 * k).normalize(); // el modelo mira a +Z: -Z es hacia su cara
       cupQ.setFromUnitVectors(UP, cupDir).multiply(HANDLE_OUT).premultiply(vrm.scene.quaternion);
