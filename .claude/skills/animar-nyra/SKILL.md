@@ -69,9 +69,20 @@ Desde PowerShell, `bash` a secas abre el WSL de Windows (que acá no tiene distr
 
 ## El circuito
 
-1. **Referencia.** Si el usuario pasa un GIF/video, sacá sus cuadros y estudialos antes de animar (ver `herramientas/gif_cuadros.js`).
-   Anotá: altura de mano/codo respecto a la cabeza, de dónde sale el giro (codo, muñeca), cuánto va a cada lado,
-   ritmo (cuadros por vaivén), qué hacen los dedos, la cabeza y el torso.
+1. **Referencia (obligatoria: nunca animar sin una).** Animar de memoria es lo que dio el primer saludo "raro"; con un
+   GIF de referencia salió natural en una vuelta.
+   - **Si el usuario adjunta una** (GIF, video, imagen, link), usá esa.
+   - **Si no adjunta nada, investigá vos antes de animar**: buscá en internet GIFs o videos de una persona real haciendo
+     ese gesto, de frente a cámara, de cuerpo entero o medio cuerpo (búsquedas tipo "<gesto> gif", "<gesto> reference
+     animation", "<gesto> mocap"; Tenor, Giphy, referencias de animación). Elegí la que se vea más natural y que encaje
+     con NYRA (personaje tranquilo, un poco sarcástico), y contale al usuario cuál elegiste y por qué, con el link.
+     Si hay varias buenas, compará 2 o 3 y quedate con lo mejor de cada una.
+   - **Si no encontrás nada que sirva** (o no tenés navegador/búsqueda), **frená y pedile una referencia al usuario**:
+     decile qué buscaste y qué tipo de GIF o video necesitás. No inventes el movimiento.
+   - Con la referencia, sacá sus cuadros y estudialos antes de animar (ver `herramientas/gif_cuadros.js`).
+     Anotá: altura de mano/codo respecto a la cabeza, de dónde sale el giro (codo, muñeca), cuánto va a cada lado,
+     ritmo (cuadros por vaivén), qué hacen los dedos, la cabeza y el torso.
+   - Usá solo referencias públicas para estudiar el movimiento: no copies ni subas al repo el GIF ajeno.
 2. **Script de Blender** en `scripts/blender/<gesto>.py`, copiando la estructura de `scripts/blender/saludo.py`
    (importa `public/avatar3d/NYRA.vrm`, pone cuadros clave, exporta `public/avatar3d/<gesto>.vrma`, renderiza controles).
    Blender: `D:\blender-5.3.0-windows-x64\blender.exe` con el complemento VRM (extensión oficial `vrm`).
