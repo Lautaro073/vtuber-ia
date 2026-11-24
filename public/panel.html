@@ -459,6 +459,7 @@
           <div class="label" style="margin-bottom:8px">FRECUENCIA DE OBSERVACIÓN</div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <select id="visionInterval" class="model-select" style="width:auto;padding:4px 8px" onchange="if(typeof _visionTimer!=='undefined'&&_visionTimer)startLiveVision()">
+              <option value="10">10 seg (partidas)</option>
               <option value="15">15 seg</option>
               <option value="30" selected>30 seg</option>
               <option value="60">1 min</option>
@@ -466,6 +467,10 @@
               <option value="300">5 min</option>
             </select>
             <span style="font-size:11px;color:var(--dim)">Cada cuánto NYRA mira — comenta cambios sola</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
+            <label for="screenPlayer" class="label" style="margin:0">¿DE QUIÉN ES LA PANTALLA?</label>
+            <input id="screenPlayer" class="model-select" style="width:auto;padding:4px 8px" maxlength="40" placeholder="ej: El Yisus, Kira" onchange="sendScreenPlayer()">
           </div>
         </div>
 
@@ -679,6 +684,7 @@
     ws = new WebSocket(`${wsProto}//${location.host}/?key=${encodeURIComponent(panelKey())}`);
 
     ws.onopen = () => {
+      if (document.getElementById('screenPlayer').value.trim()) sendScreenPlayer(); // el server se reinició: no sabe quién juega
       if (!window._panelLocked) { // sin contraseña, mantener visible el aviso de candado
         document.getElementById('ollamaDot').style.cssText = 'background:#00f5ff;box-shadow:0 0 8px #00f5ff;width:7px;height:7px;border-radius:50%';
         document.getElementById('ollamaStatus').textContent = 'CONECTADO';
@@ -1257,8 +1263,17 @@
     }
   }
 
+  // Quién juega: si no, NYRA da por hecho que la pantalla es del streamer
+  function sendScreenPlayer() {
+    const name = document.getElementById('screenPlayer').value.trim();
+    try { localStorage.setItem('screenPlayer', name); } catch { }
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'screen_player', name }));
+  }
+  try { document.getElementById('screenPlayer').value = localStorage.getItem('screenPlayer') || ''; } catch { }
+
   function startLiveVision() {
     stopLiveVision();
+    sendScreenPlayer();
     const secs = parseInt(document.getElementById('visionInterval').value, 10) * 1000;
     _lastFrameSig = 0;
     // Captura silenciosa: envía frames por WS para que NYRA actualice su contexto visual
@@ -1293,7 +1308,7 @@
     const video = document.getElementById('visionVideo');
     if (!_visionStream || !video.videoWidth) return null;
     const canvas = document.createElement('canvas');
-    const scale = Math.min(1, 854 / video.videoWidth);
+    const scale = Math.min(1, 1280 / video.videoWidth); // a 854 no se leen el KDA ni los nombres del HUD
     canvas.width  = Math.round(video.videoWidth  * scale);
     canvas.height = Math.round(video.videoHeight * scale);
     canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);

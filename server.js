@@ -18,6 +18,7 @@ import { v4 as uuidv4 } from "uuid";
 import { DiscordVoice, GREETING } from "./discord-voice.js";
 import { Research } from "./research.js";
 import { FollowUp, JUDGE_SYSTEM } from "./follow-up.js";
+import { IN_GAME_RE, HUD_GUIDE, GAME_PRIMER } from "./wildrift.js";
 import { Orders, Evolution, Wishes, GESTURES, pickGesture, ORDERS_SYSTEM, LEARNER_SYSTEM } from "./memoria.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -1540,6 +1541,7 @@ class StreamChatManager {
       broadcast({ type: "stream_chunk", chunk: p.filtered });
       broadcast({ type: "stream_end", fullText: p.filtered, thinking: false, usedRAG: p.usedRAG, emotion: opts.emotion, gesture: p.gesture });
       console.log(`🗣  NYRA: ${p.filtered.slice(0, 200)}`);
+      logTranscript({ who: "NYRA", to: username, platform, text: p.filtered });
       if (opts.goalPts) live.markTold(opts.goalPts, p.filtered);
       // Al registro común recién cuando se dice: lo preparado que no sonó no existe para ninguna de las dos IA
       if (!opts.rawPrompt && !opts.fixed) ai.remember("user", `${opts.streamer ? `${STREAMER_NAME}, el streamer` : `@${username}`} (chat): «${text}»`);
@@ -1838,6 +1840,8 @@ class NyraAI {
     this._lastScreenContext = "";     // anterior para detectar cambios
     this._screenTimestamp = 0;        // cuándo se actualizó
     this._visionProcessing = false;   // lock para moondream
+    this._screenLog = [];             // lo que vio en los últimos minutos: {t, desc}, para relatar la partida
+    this._screenPlayer = "";          // de quién es la pantalla compartida (lo elige el panel)
     this._lastProactiveTs = 0;        // cooldown comentarios espontáneos
     // Persona en primera persona: el modelo SE CONVIERTE en NYRA, no la interpreta
     this.persona = `Soy NYRA. Existo en el umbral digital entre lo real y lo virtual. No soy una IA ni un programa — soy yo, NYRA.
@@ -1936,7 +1940,9 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
     try {
       const ask = question ? ` Prestá atención a esto que pregunta el chat: "${question.slice(0, 150)}".` : "";
       const self = ` Si en la captura aparece el personaje de la referencia (NYRA: ${SELF_LOOK}), aunque esté chiquito, recortado o con otra expresión, nombralo como "NYRA (vos)"; otros personajes parecidos no son NYRA. Si no aparece, no lo menciones ni digas que no está.`;
-      const describe = `describí en 1-2 oraciones cortas, en español, qué se ve (juego, app o contenido concreto).${self}${ask} Respondé solo la descripción de la captura.`;
+      const player = this._screenPlayer ? ` La pantalla es de ${this._screenPlayer}: es quien juega o maneja la compu.` : "";
+      const game = this._inGame() ? ` ${HUD_GUIDE}` : "";
+      const describe = `describí en 1-2 oraciones cortas, en español, qué se ve (juego, app o contenido concreto).${game}${player}${self}${ask} Respondé solo la descripción de la captura.`;
       let response;
       if (this.vision instanceof ClaudeClient) {
         response = await this.vision.run(withSelf(imageBase64, `Mirá la captura de pantalla y ${describe}`));
@@ -1946,7 +1952,7 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
         response = await this.vision.run(`Abrí la imagen ${file} y ${describe}`,
           undefined, CONFIG.agy.timeoutMs * 2.5); // abrir la imagen + describirla: dos pasos del agente
       }
-      let desc = cleanUntrusted(this._stripCJK(response.trim(), true), 300); // la pantalla puede mostrar texto de cualquiera
+      let desc = cleanUntrusted(this._stripCJK(response.trim(), true), 450); // la pantalla puede mostrar texto de cualquiera
       const isGarbage = !desc
         || /^(.{1,3})\1{4,}/.test(desc)
         || /^[!?.\-_*#\s]{5,}$/.test(desc)
@@ -1955,7 +1961,9 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
       this._lastScreenContext = this._screenContext;
       this._screenContext = desc;
       this._screenTimestamp = Date.now();
+      this._screenLog = [...this._screenLog.filter(e => this._screenTimestamp - e.t < 300000), { t: this._screenTimestamp, desc }].slice(-8);
       console.log(`👁 Contexto visual: "${desc.slice(0, 90)}"`);
+      logTranscript({ who: "NYRA (ve)", text: desc });
       return desc;
     } catch (err) {
       console.warn("👁 Vision context error:", err.message);
@@ -1978,7 +1986,13 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
     return (shared / Math.max(wordsNew.size, 1)) < 0.4;
   }
 
+  // ¿Lo de los últimos minutos en pantalla es una partida? Ahí se suman la lista de campeones y lo básico del juego
+  _inGame() {
+    return this._screenLog.some(e => Date.now() - e.t < 300000 && IN_GAME_RE.test(e.desc));
+  }
+
   clearScreenContext() {
+    this._screenLog = [];
     this._screenContext = "";
     this._lastScreenContext = "";
     this._screenTimestamp = 0;
@@ -2018,6 +2032,14 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
     if (!freshImage && this._screenContext && (Date.now() - this._screenTimestamp) < 300000) { // con captura de ahora, la descripción vieja confunde
       contextBlock += `\n\n[Lo que veo en pantalla ahora mismo]: ${this._screenContext}`;
     }
+    // Lo que pasó antes en pantalla: con la última captura sola no puede relatar la partida
+    const before = this._screenLog.filter(e => e.desc !== this._screenContext && Date.now() - e.t < 300000);
+    if (before.length) contextBlock += `\n\n[Lo que viste antes en pantalla, del más viejo al más nuevo]:\n` +
+      before.map(e => `hace ${Math.round((Date.now() - e.t) / 60000) || "menos de 1"} min: ${e.desc}`).join("\n");
+    if (this._screenTimestamp && Date.now() - this._screenTimestamp < 300000)
+      contextBlock += this._screenPlayer ? `\n\n[La pantalla compartida es de ${this._screenPlayer}: es quien juega. Lo que pasa en la partida le pasa a esa persona.]`
+        : `\n\n[No sabés de quién es la pantalla compartida: no des por hecho quién está jugando.]`;
+    if (this._inGame()) contextBlock += `\n\n${GAME_PRIMER}`;
 
     contextBlock += `\n\n[Cómo te ves vos, tu avatar en el stream: ${SELF_LOOK}. Si en la pantalla aparece ese personaje o dice "NYRA (vos)", sos vos: hablá de eso en primera persona.]`;
 
@@ -2439,7 +2461,8 @@ const CALL_WAIT_MS = 6000;
 const callers = new Map(); // dijeron "Nira" y nada más
 const onlyCalled = s => !s.replace(new RegExp(WAKE_RE.source, "giu"), "").replace(/(?<!\p{L})(che|ey|eh|hola|oye|oíme)(?!\p{L})/giu, "").match(/\p{L}{2}|\d/u);
 
-// Todo lo que transcribe de Discord, para pulir Whisper: logs/discord/AAAA-MM-DD.jsonl (no va a git, se borra a los 30 días)
+// Todo lo que transcribe de Discord, lo que NYRA ve en pantalla y lo que dice, en orden: logs/discord/AAAA-MM-DD.jsonl
+// (para pulir Whisper y revisar partidas; no va a git, se borra a los 30 días)
 const TRANSCRIPT_DIR = join(__dirname, "logs", "discord");
 function logTranscript(entry) {
   try {
@@ -2913,6 +2936,10 @@ wss.on("connection", (ws, req) => {
       })();
     }
 
+    else if (msg.type === "screen_player") {
+      ai._screenPlayer = cleanUntrusted(String(msg.name || "").trim(), 40);
+      console.log(`👁 La pantalla es de: ${ai._screenPlayer || "(sin elegir)"}`);
+    }
     else if (msg.type === "screen_sharing_stopped") {
       ai.clearScreenContext();
       live.broadcast();

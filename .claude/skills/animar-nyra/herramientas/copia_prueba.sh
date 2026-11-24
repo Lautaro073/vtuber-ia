@@ -25,7 +25,7 @@ case "$cmd" in
   crear)
     [ -e "$copy" ] && { echo "ya existe $copy (corré limpiar primero)"; exit 1; }
     mkdir -p "$copy"
-    (cd "$root" && cp server.js discord-voice.js research.js follow-up.js memoria.js package.json datos_curiosos.json \
+    (cd "$root" && cp server.js discord-voice.js research.js follow-up.js memoria.js wildrift.js package.json datos_curiosos.json \
       filters.json knowledge.json nyra_chat_learning.json nyra_memory.json nyra_personality.json "$copy/" && cp -r public "$copy/public")
     powershell -NoProfile -Command "New-Item -ItemType Junction -Path '$(cygpath -w "$copy/node_modules")' -Target '$(cygpath -w "$root/node_modules")' | Out-Null"
     v="$copy/public/avatar3d/vrm.js"
