@@ -641,7 +641,11 @@ const BACKGROUNDS = ["none", "cyberpunk-room", "singularity-lab", "lofi-bedroom"
 // Meta cumplida: antes la IA solo festejaba y seguía "dejando la intriga" (venía de recordar la meta) y el chat se quejaba de que no lo cumplía
 // En el live se habla de "regalos de TikTok": los números de puntos/diamantes confunden al chat
 const goalDistance = g => { const r = live.progress / g.points; return r >= 0.75 ? "falta muy poquito" : r >= 0.4 ? "ya van más o menos por la mitad" : "todavía falta bastante"; };
-const goalPrompt = g => `[META CUMPLIDA] Con sus regalos de TikTok el chat desbloqueó: "${g.reward}". YA ESTÁ PAGADO: cumplilo de verdad AHORA, en esta misma respuesta, sin postergarlo, sin dejar intriga y sin pedir más regalos. Una oración corta de festejo y después cumplilo completo y concreto (si es contar algo tuyo, inventalo con detalles específicos y coherentes con tu personaje, nada de vaguedades). Entre 3 y 5 oraciones.`;
+// Lo pagado tiene que estar a la altura de la promesa: una "opinión polémica" salía tipo "el té con limón es mejor"
+const POLEMIC_RE = /pol[eé]mic|controvers|hot ?take|opini[oó]n (fuerte|picante|prohibida)/i;
+const goalStrength = g => ` Tiene que estar a la altura de lo que promete el texto, palabra por palabra: si dice "más", "nunca", "completa" o "prohibida", es lo máximo, no algo tibio.` +
+  (POLEMIC_RE.test(g.reward) ? ` Es una opinión POLÉMICA de verdad: algo fuerte que a buena parte del chat le moleste o lo haga discutir (sobre costumbres, relaciones, plata, trabajo, religión, internet, streamers, fama, gaming, música, fútbol, moral de todos los días), dicho en primera persona, sin suavizarlo y sin "igual cada uno con lo suyo". Defendela con un argumento y cerrá provocando ("cambienme de opinión"). Prohibido lo inofensivo tipo gustos de comida o bebida, el clima o "la gente debería ser más amable". Lo único que no hacés es atacar a un grupo por identidad, origen, orientación, cuerpo o salud: criticá ideas y conductas, no a quién es la gente.` : "");
+const goalPrompt = g => `[META CUMPLIDA] Con sus regalos de TikTok el chat desbloqueó: "${g.reward}". YA ESTÁ PAGADO: cumplilo de verdad AHORA, en esta misma respuesta, sin postergarlo, sin dejar intriga y sin pedir más regalos. Una oración corta de festejo y después cumplilo completo y concreto (si es contar algo tuyo, inventalo con detalles específicos y coherentes con tu personaje, nada de vaguedades).${goalStrength(g)} Entre 3 y 5 oraciones.`;
 
 const GOAL_TALK_RE = /regalos? de tiktok|bajo llave|desbloque|\bpuntos\b|diamante|\bmetas?\b/i;
 
