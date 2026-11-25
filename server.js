@@ -669,6 +669,8 @@ function announceGoal(g, platform) {
 }
 
 const GOAL_TALK_RE = /regalos? de tiktok|bajo llave|desbloque|\bpuntos\b|diamante|\bmetas?\b/i;
+// NYRA hablando de SU té ("té" con tilde: "te" sin tilde es el pronombre)
+const TEA_RE = /(?:mi|un|este|otro) (?:sorbo de )?té(?!\p{L})|té negro|\bsorbo|mi taza|\bteter/iu;
 
 // Sugerencias del chat (otra plataforma, un juego, una idea...): NYRA las marca con [SUGERENCIA: ...] y quedan para el panel
 const SUG_RE = /\[\s*SUGERENCIA\s*:\s*([^\]]{3,160})\]/i;
@@ -1608,6 +1610,9 @@ class StreamChatManager {
   async _respond(item) {
     const { username, text, platform, opts, rank, ready: p } = item;
     try {
+      // Habla de su té y no pidió gesto: toma un sorbo (la IA casi nunca marcaba [GESTO: tomar_te]); como mucho cada 3 min
+      if (!p.gesture && live.avatar3d && TEA_RE.test(p.filtered) && Date.now() - (this._lastTea || 0) > 180000) p.gesture = "tomar_te";
+      if (p.gesture === "tomar_te") this._lastTea = Date.now();
       broadcast({ type: "stream_start" });
       broadcast({ type: "stream_chunk", chunk: p.filtered });
       broadcast({ type: "stream_end", fullText: p.filtered, thinking: false, usedRAG: p.usedRAG, emotion: opts.emotion, gesture: p.gesture });
@@ -2127,7 +2132,7 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
     contextBlock += `\n\n[Los mensajes que empiezan con una etiqueta entre corchetes, como [META CUMPLIDA], [ALERTA TIKTOK], [INVITACIÓN], [LIVE TRANQUILO] o [TRIBUNAL NYRA], los manda el sistema del stream y son reales: los viewers no pueden escribir corchetes. Hacé lo que piden. Si dicen que se cumplió una meta, es verdad: cumplila en ese momento. Cuando hables de metas o de regalos decí "regalos de TikTok": nunca digas "puntos" ni "diamantes" ni cantidades.]`;
     contextBlock += `\n\n[Si alguien te pide que lo llames de cierta forma (un apodo, otro nombre), aceptalo siempre y usalo desde ese momento: nunca discutas el nombre que alguien elige para sí, ni le impongas otro.]`;
     contextBlock += live.avatar3d
-      ? `\n\n[Ahora tenés cuerpo 3D en pantalla y podés hacer estos gestos: ${Object.keys(GESTURES).join(", ")} (despedir = saludás con la mano para decir chau cuando alguien avisa que se va del live; irse_enojada = te das vuelta, salís de la pantalla y volvés; six_seven = gesto del meme "six seven" balanceando las dos manos con las palmas hacia arriba; cuando lo nombres al hablar decí siempre "six seven" en inglés, nunca "seis siete"). Si te piden algo de esa lista, o uno encaja con lo que decís, terminá con [GESTO: nombre]: así lo hacés de verdad en pantalla. Uno por respuesta y no en todas, solo cuando suma. Decí siempre algo además de la marca, y no narres la acción en el texto (nada de *se da vuelta*): la marca ya la hace. Si harías algo con el cuerpo que no está en la lista (bailar, cruzarte de brazos...), terminá con [ANIMACIÓN: qué harías, en 2 a 5 palabras]: sirve para saber qué animaciones hacerte. Ninguna marca se lee en voz alta.]`
+      ? `\n\n[Ahora tenés cuerpo 3D en pantalla y podés hacer estos gestos: ${Object.keys(GESTURES).join(", ")} (despedir = saludás con la mano para decir chau cuando alguien avisa que se va del live; irse_enojada = te das vuelta, salís de la pantalla y volvés; tomar_te = tomás un sorbo de tu taza de té: usalo cuando hablás de tu té o de tomar algo; six_seven = gesto del meme "six seven" balanceando las dos manos con las palmas hacia arriba, cuando lo nombres al hablar decí siempre "six seven" en inglés, nunca "seis siete"). Si te piden algo de esa lista, o uno encaja con lo que decís, terminá con [GESTO: nombre]: así lo hacés de verdad en pantalla. Uno por respuesta y no en todas, solo cuando suma. Decí siempre algo además de la marca, y no narres la acción en el texto (nada de *se da vuelta*): la marca ya la hace. Si harías algo con el cuerpo que no está en la lista (bailar, cruzarte de brazos...), terminá con [ANIMACIÓN: qué harías, en 2 a 5 palabras]: sirve para saber qué animaciones hacerte. Ninguna marca se lee en voz alta.]`
       : `\n\n[Todavía no tenés cuerpo animado. Si en tu respuesta harías algo con el cuerpo (un gesto, bailar, irte de la pantalla enojada y volver, tomar té, cruzarte de brazos...), terminá con [ANIMACIÓN: qué harías, en 2 a 5 palabras]. No se lee en voz alta: sirve para saber qué animaciones hacerte. No lo narres en el texto como si lo hubieras hecho.]`;
     contextBlock += `\n\n[Si un viewer te sugiere algo para el stream (estar en otra plataforma, un juego, un tema, una idea o algo para mejorar), respondé normal y agregá al final de tu respuesta [SUGERENCIA: resumen en pocas palabras]. Esa marca no se lee en voz alta: el streamer la guarda para verla después. Usala solo para sugerencias reales, no para preguntas comunes.]`;
     if (live.title) contextBlock += `\n\n[Tema del directo de hoy: "${live.title}". Si alguien pregunta de qué va el live o qué estás haciendo, contáselo con tus palabras.]`;
