@@ -160,7 +160,8 @@
     box.classList.toggle('hidden', !t.anim);
     if (t.anim) { img.src = ''; img.src = t.anim; } // desde el primer cuadro
     requestAnimationFrame(() => el.classList.add('show'));
-    setTimeout(() => { el.classList.remove('show'); setTimeout(nextToast, 450); }, t.ms);
+    const k = toasts.length > 3 ? 1 : 2; // el doble para que se vea la animación; con muchas en fila, normal para no atrasarse
+    setTimeout(() => { el.classList.remove('show'); setTimeout(nextToast, 450); }, t.ms * k);
   }
 
   function onEvent(e) {
