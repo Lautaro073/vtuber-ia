@@ -245,3 +245,10 @@ necesitó tres versiones y varias rondas cada una. No es opcional ni depende de 
     y desde arriba) y comparar con su foto antes de mostrar.
   - Si el puerto 3010 está ocupado (otro agente con su copia), cambiar el puerto de `nyra-copia` en `launch.json`
     después de `crear` (p. ej. 3011) y antes de `preview_start`.
+- **Six seven en Blender (nov 2026)**, con ambas manos alternando y márgenes de OBS:
+  - La normal de la palma con `Index1`/`Little1` cambia de signo entre manos: en la derecha es `(Index1 - Hand) × (Little1 - Hand)`;
+    en la izquierda, el orden inverso (`(Little1 - Hand) × (Index1 - Hand)`).
+  - Márgenes seguros del encuadre de OBS (`1015×1275`, con la cámara actual): `x` dentro de `±0.24` y manos a una altura
+    `≥ ~0.95` (coordenadas de Blender). Fuera de eso se cortan en pantalla.
+  - Para probar una rama o worktree, corré el `copia_prueba.sh` de esa worktree: el script toma como raíz su propia carpeta,
+    así que copia esa rama (no hace falta copiar archivos a mano).

@@ -138,17 +138,34 @@ ${recent.join("\n") || "(nada)"}
 
 // ── Gestos del avatar 3D ──
 // Los que existen en public/avatar3d/vrm.js. La IA escribe [GESTO: ...] con sus palabras: se traduce acá
+const normalizeGesture = raw =>
+  String(raw || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/_/g, " ");
+const SIX_SEVEN_WORDS_RE = /\b(?:six|si[ck]s?|sis|seis)\s*[-/]?\s*(?:sevens?|sietes?|7)\b|\b6\s*[-/]?\s*(?:sevens?|sietes?)\b|\b(?:seis|6)\s+y\s+(?:siete|7)\b/;
+const SIX_SEVEN_DIGITS_RE = /(?<![a-z0-9/]|(?:\d[.,]))(?:6(?:\s*[-/]\s*|,\s+|\s+)7|67)(?![a-z0-9/%]|(?:[.,]\d))/;
+const SIX_SEVEN_NEG_RE = /\b(?:no\s+(?:me\s+|lo\s+)?hagas|no\s+lo\s+hagas|deja\s+de\s+hacer|para\s+de\s+hacer|no\s+quiero\s+que\s+hagas)\b/;
+const SIX_SEVEN_UNIT_RE = /^\s*(?:de\s+)?(?:ping|ms|fps|bits?|puntos?|diamantes?|kicks?|anos|pesos|dolares|euros|kills?|muertes|min|minutos?|segundos?|horas?)\b/;
+
+// Reconoce pedidos de "six seven" / "6 7" y variantes en texto libre (chat, voz, cheers) sin confundir stats como "67 de ping"
+export function hasSixSeven(raw) {
+  const t = normalizeGesture(raw);
+  if (!t || SIX_SEVEN_NEG_RE.test(t)) return false;
+  if (SIX_SEVEN_WORDS_RE.test(t)) return true;
+  return Array.from(t.matchAll(new RegExp(SIX_SEVEN_DIGITS_RE.source, "g")))
+    .some(m => !SIX_SEVEN_UNIT_RE.test(t.slice(m.index + m[0].length)));
+}
+
 export const GESTURES = {
   despedir: /despid|despedi|chau|adios|nos vemos/, // antes que irse_enojada: "despedirse" contiene "irse"
   irse_enojada: /enoj|irse|me voy|se va|andar/,
   tomar_te: /\bte\b|taza/,
   festejar: /festej|celebr|brazos arriba/,
+  six_seven: new RegExp(`${SIX_SEVEN_WORDS_RE.source}|${SIX_SEVEN_DIGITS_RE.source}|balanza|sopes`),
   saludar: /salud|mano/,
   asentir: /asent|\bsi\b/,
   negar: /neg|\bno\b/,
 };
 export function pickGesture(raw) {
-  const t = String(raw).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/_/g, " ");
+  const t = normalizeGesture(raw);
   return Object.keys(GESTURES).find(g => GESTURES[g].test(t)) || null;
 }
 

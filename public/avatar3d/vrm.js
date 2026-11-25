@@ -9,11 +9,14 @@ import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-v
 // el resto (respiración, el otro brazo, los dedos) sigue en código. Si el archivo no carga, queda el gesto en código
 const RIGHT_FINGERS = ['Index', 'Middle', 'Ring', 'Little'].flatMap(f => ['Proximal', 'Intermediate', 'Distal'].map(j => `right${f}${j}`))
   .concat(['rightThumbMetacarpal', 'rightThumbProximal', 'rightThumbDistal']);
+const LEFT_FINGERS = ['Index', 'Middle', 'Ring', 'Little'].flatMap(f => ['Proximal', 'Intermediate', 'Distal'].map(j => `left${f}${j}`))
+  .concat(['leftThumbMetacarpal', 'leftThumbProximal', 'leftThumbDistal']);
 const BODY = ['spine', 'chest', 'upperChest', 'neck', 'head', 'leftShoulder', 'leftUpperArm', 'leftLowerArm']; // el cuerpo acompaña
 const CLIPS = {
   saludar: { file: 'avatar3d/saludo_agy.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', ...RIGHT_FINGERS, ...BODY, 'leftHand', 'leftIndexProximal', 'leftIndexIntermediate', 'leftIndexDistal', 'leftMiddleProximal', 'leftMiddleIntermediate', 'leftMiddleDistal', 'leftRingProximal', 'leftRingIntermediate', 'leftRingDistal', 'leftLittleProximal', 'leftLittleIntermediate', 'leftLittleDistal', 'leftThumbMetacarpal', 'leftThumbProximal', 'leftThumbDistal'] }, // el de agy: más contenido y hacia la cámara
   despedir: { file: 'avatar3d/despedida.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', ...RIGHT_FINGERS, ...BODY] }, // más amplio: chau a quien se va
   tomar_te: { file: 'avatar3d/tomar_te.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', ...RIGHT_FINGERS, ...BODY] }, // la taza y su inclinación siguen en código (tilt)
+  six_seven: { file: 'avatar3d/six_seven.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', ...RIGHT_FINGERS, ...BODY, 'leftHand', ...LEFT_FINGERS] },
 };
 
 const EMOTION = { happy: 'happy', sad: 'sad', angry: 'angry', surprised: 'surprised', thinking: 'relaxed' };
@@ -93,6 +96,17 @@ const GESTURES = {
   },
   // Se da vuelta, sale caminando por la derecha, se queda afuera un rato y vuelve
   irse_enojada: { dur: 6.2, expr: 'angry', walk: true, pose: () => ({}) },
+  // Respaldo si no carga six_seven.vrma
+  six_seven: {
+    dur: 2.67, pose: p => {
+      const s = Math.sin(p * 13);
+      return {
+        leftUpperArm: [-0.25, 0, -1.2], rightUpperArm: [-0.25, 0, 1.2],
+        leftLowerArm: [0, -1.25 + 0.35 * s, 0], rightLowerArm: [0, 1.25 + 0.35 * s, 0],
+        head: [0, 0, 0.1 * s],
+      };
+    },
+  },
 };
 GESTURES.despedir = GESTURES.saludar; // respaldo si no carga despedida.vrma
 const smooth = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x);

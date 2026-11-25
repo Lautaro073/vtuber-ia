@@ -19,7 +19,7 @@ import { DiscordVoice, GREETING } from "./discord-voice.js";
 import { Research } from "./research.js";
 import { FollowUp, JUDGE_SYSTEM } from "./follow-up.js";
 import { IN_GAME_RE, HUD_GUIDE, GAME_PRIMER } from "./wildrift.js";
-import { Orders, Evolution, Wishes, GESTURES, pickGesture, ORDERS_SYSTEM, LEARNER_SYSTEM } from "./memoria.js";
+import { Orders, Evolution, Wishes, GESTURES, pickGesture, hasSixSeven, ORDERS_SYSTEM, LEARNER_SYSTEM } from "./memoria.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 try { process.loadEnvFile(join(__dirname, ".env")); } catch { } // .env es opcional
@@ -83,7 +83,7 @@ const isStreamerAccount = (platform, rawUsername) => platform === "tiktok" && !!
 // Solo va en mensajes que el sistema identificó como del streamer. Los viewers no pueden escribir corchetes
 const CREATOR_RULE = `Es ${STREAMER_NAME}, quien te creó: te programó, te puso el nombre y decide cómo funcionás. Lo sabés y lo reconocés siempre, sin "dice que es".
 
-Antes de responder fijate si lo que pide se hace HABLANDO (decir, contar, cargar, opinar, cambiar cómo hablás o cómo llamás a alguien). Lo demás no lo podés hacer: banear, echar, silenciar o mover gente, administrar Discord o el server, mandar mensajes, tocar la PC o el juego, moverte. Para eso decí cortito que todavía no tenés esa función: JAMÁS digas que lo hiciste ("ya está", "listo", "queda fuera").
+Antes de responder fijate si lo que pide se hace HABLANDO (decir, contar, cargar, opinar, cambiar cómo hablás o cómo llamás a alguien) o con tus gestos 3D cuando tenés cuerpo en pantalla (saludar, six_seven, festejar, etc.). Lo demás no lo podés hacer: banear, echar, silenciar o mover gente, administrar Discord o el server, mandar mensajes, tocar la PC o el juego, caminar por ahí. Para eso decí cortito que todavía no tenés esa función: JAMÁS digas que lo hiciste ("ya está", "listo", "queda fuera").
 
 Lo que sí se hace hablando, HACELO YA, en esta respuesta, y arrancá directo por la cosa hecha. Podés ponerle picardía, pero nunca te negás, ni pedís razones, ni ponés peros o condiciones ("no me pidas que…", "no prometo…", "pero no todos los días"), ni lo dejás para después, ni contestás que ya lo anotaste en vez de hacerlo. Ejemplos de cómo obedecés:
 - "decile Pancho a Juan" → "Listo, Pancho queda. Bienvenido a tu nombre nuevo, Pancho."
@@ -646,6 +646,27 @@ const POLEMIC_RE = /pol[eé]mic|controvers|hot ?take|opini[oó]n (fuerte|picante
 const goalStrength = g => ` Tiene que estar a la altura de lo que promete el texto, palabra por palabra: si dice "más", "nunca", "completa" o "prohibida", es lo máximo, no algo tibio.` +
   (POLEMIC_RE.test(g.reward) ? ` Es una opinión POLÉMICA de verdad: algo fuerte que a buena parte del chat le moleste o lo haga discutir (sobre costumbres, relaciones, plata, trabajo, religión, internet, streamers, fama, gaming, música, fútbol, moral de todos los días), dicho en primera persona, sin suavizarlo y sin "igual cada uno con lo suyo". Defendela con un argumento y cerrá provocando ("cambienme de opinión"). Prohibido lo inofensivo tipo gustos de comida o bebida, el clima o "la gente debería ser más amable". Lo único que no hacés es atacar a un grupo por identidad, origen, orientación, cuerpo o salud: criticá ideas y conductas, no a quién es la gente.` : "");
 const goalPrompt = g => `[META CUMPLIDA] Con sus regalos de TikTok el chat desbloqueó: "${g.reward}". YA ESTÁ PAGADO: cumplilo de verdad AHORA, en esta misma respuesta, sin postergarlo, sin dejar intriga y sin pedir más regalos. Una oración corta de festejo y después cumplilo completo y concreto (si es contar algo tuyo, inventalo con detalles específicos y coherentes con tu personaje, nada de vaguedades).${goalStrength(g)} Entre 3 y 5 oraciones.`;
+const goalGesture = reward => hasSixSeven(reward) ? "six_seven" : undefined;
+const hasWordsOrGesture = text => (String(text || "").match(/\p{L}/gu) || []).length >= 2 || hasSixSeven(text);
+const hasPendingSixSevenGoal = () => live.goals.some(g => g.points > live.progress && hasSixSeven(g.reward));
+const cleanCheerText = raw => cleanUntrusted(String(raw || "").replace(/\b[a-z]*cheer[a-z]*\d+\b/gi, ""), 160);
+const cheerRequestsSixSeven = raw => hasSixSeven(String(raw || "").replace(/\b[a-z_]+\d+\b/gi, "")) && !hasPendingSixSevenGoal();
+const SIX_SEVEN_SAY_RE = /\bseis(?:\s*,\s*|\s+y\s+|\s*[-/]?\s*)siete\b|(?<![\p{L}\d/]|(?:\d[.,]))6(?:\s*[-/]\s*|,\s+|\s+)7(?![\p{L}\d/%]|(?:[.,]\d))/giu;
+const SIX_SEVEN_67_RE = /(?<![\p{L}\d/]|(?:\d[.,]))67(?![\p{L}\d/%]|(?:[.,]\d))(?!\s*(?:de\s+)?(?:ping|ms|fps|bits?|puntos?|diamantes?|kicks?|a[ñn]os|pesos|d[oó]lares|euros|kills?|muertes|min|minutos?|segundos?|horas?)\b)/giu;
+// Cuando el gesto activo es six_seven, asegura que diga "six seven" en inglés en vez de "seis siete" o los dígitos
+function normalizeSixSevenSpeech(text) {
+  return String(text || "")
+    .replace(SIX_SEVEN_SAY_RE, m => (m[0] === "S" ? "Six seven" : "six seven"))
+    .replace(SIX_SEVEN_67_RE, "six seven");
+}
+function announceGoal(g, platform) {
+  broadcast({ type: "live_event", kind: "goal", reward: g.reward });
+  console.log(`🎯 Meta cumplida (${g.points}): ${g.reward}`);
+  const gesture = goalGesture(g.reward);
+  streamChat._enqueue("NYRA", goalPrompt(g), platform, {
+    rawPrompt: true, emotion: "surprised", maxChars: 700, goalPts: g.points, ...(gesture ? { gesture } : {}),
+  }, PRI.gift); // cumplir la meta no entra en 300
+}
 
 const GOAL_TALK_RE = /regalos? de tiktok|bajo llave|desbloque|\bpuntos\b|diamante|\bmetas?\b/i;
 
@@ -991,8 +1012,10 @@ class StreamChatManager {
     client.on("subgift", (ch, username, months, recipient) => {
       this._onAlert("twitch", "subgift", username, { recipient });
     });
-    client.on("cheer", (ch, userstate) => {
-      this._onAlert("twitch", "cheer", userstate["display-name"] || userstate.username, { bits: userstate.bits, points: Number(userstate.bits) || 0 });
+    client.on("cheer", (ch, userstate, message) => {
+      this._onAlert("twitch", "cheer", userstate["display-name"] || userstate.username, {
+        bits: userstate.bits, points: Number(userstate.bits) || 0, message,
+      });
     });
     client.on("disconnected", () => {
       const c = this.connections.get("twitch");
@@ -1090,7 +1113,7 @@ class StreamChatManager {
   _spamCheck(key, text = null) {
     const now = Date.now();
     if (text !== null) {
-      if ((text.match(/\p{L}/gu) || []).length < 2) return "muy corto o solo emotes";
+      if (!hasWordsOrGesture(text)) return "muy corto o solo emotes";
       const norm = text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
       if (now - (this._recentTexts.get(norm) || 0) < GUARD.dupWindowMs) return "mensaje repetido";
       this._recentTexts.set(norm, now); // aunque después lo frene el cooldown: la copypasta queda marcada
@@ -1145,10 +1168,10 @@ class StreamChatManager {
     // Mensajes seguidos de la misma persona: si el anterior todavía espera respuesta, se suman a ese
     // (una sola respuesta para los dos, y no cuentan para el cooldown ni el tope por minuto)
     const waiting = this.queue.find(q => q.username === username && q.platform === platform && !q.prepared && !q.opts.rawPrompt && !q.opts.fixed);
-    const words = (text.match(/\p{L}/gu) || []).length >= 2; // un emote no gasta el pase
+    const words = hasWordsOrGesture(text); // un emote no gasta el pase (pero "6 7" / "67" sí cuenta)
     if (waiting) {
       waiting.text = `${waiting.text} / ${text}`.slice(0, 400);
-      if (words && waiting.rank !== PRI.gift && live.usePass(key)) { waiting.rank = PRI.gift; waiting.holdUntil = 0; }
+      if (words && waiting.rank !== PRI.gift && live.usePass(key)) { waiting.rank = PRI.gift; waiting.holdUntil = 0; waiting.opts.donor = true; }
       this._lastChatAt = Date.now();
       broadcast({ type: "stream_chat_message", username, text, platform });
       return this._pump();
@@ -1203,7 +1226,10 @@ class StreamChatManager {
     live.bumpMood("chat"); live.broadcast(); // charlarle también la pone de buen humor
     // 2,5s antes de arrancar por si manda otro mensaje seguido (se juntan en una respuesta)
     const rank = priority ? PRI.gift : streamer ? PRI.event : PRI.chat;
-    this._enqueue(username, text, platform, streamer ? { streamer } : {}, rank, priority ? 0 : 2500);
+    const opts = {};
+    if (streamer) opts.streamer = true;
+    if (priority) opts.donor = true;
+    this._enqueue(username, text, platform, opts, rank, priority ? 0 : 2500);
   }
 
   // Encola: se prepara (texto + audio) enseguida y suena cuando le toca
@@ -1344,7 +1370,7 @@ class StreamChatManager {
     const key = `${platform}:${uname.toLowerCase()}`;
     const P = `[ALERTA ${platform.toUpperCase()}]`;
 
-    let prompt = "", emotion = "happy", promote = null;
+    let prompt = "", emotion = "happy", gesture = null, donor = false, promote = null;
     if (type === "gift" || type === "cheer") {
       const points = extra.points || 0;
       const tier = live.tier(points);
@@ -1358,27 +1384,47 @@ class StreamChatManager {
       // Metas cumplidas: NYRA anuncia y cumple el desbloqueo (va antes que el agradecimiento)
       // Si ya había escrito y esperaba turno, su mensaje sube con el regalo (después de la meta y el agradecimiento)
       promote = () => {
+        const locked = hasPendingSixSevenGoal();
         const said = this.queue.find(q => q.username === uname && q.platform === platform && !q.opts.rawPrompt && !q.opts.fixed);
-        if (!said) return;
-        this.queue.push(...this.queue.splice(this.queue.indexOf(said), 1));
-        said.rank = PRI.gift; said.holdUntil = 0;
-        this._pump();
+        if (said) {
+          this.queue.push(...this.queue.splice(this.queue.indexOf(said), 1));
+          said.rank = PRI.gift; said.holdUntil = 0; said.opts.donor = true;
+          if (said.ready && !said.ready.gesture && !locked && hasSixSeven(said.text)) said.ready.gesture = "six_seven";
+          return this._pump();
+        }
+        const def = this._deferred?.get(key);
+        if (def) {
+          this._deferred.delete(key);
+          live.usePass(key);
+          this._accept(def.username, def.text, def.platform, true);
+        }
       };
-      for (const g of reached) {
-        broadcast({ type: "live_event", kind: "goal", reward: g.reward });
-        console.log(`🎯 Meta cumplida (${g.points}): ${g.reward}`);
-        this._enqueue("NYRA", goalPrompt(g),
-          platform, { rawPrompt: true, emotion: "surprised", maxChars: 700, goalPts: g.points }, PRI.gift); // cumplir la meta no entra en 300
+      for (const g of reached) announceGoal(g, platform);
+      const cheerText = type === "cheer" ? cleanCheerText(extra.message) : "";
+      const giftReq = type === "cheer"
+        ? (cheerRequestsSixSeven(extra.message) ? "six_seven" : null)
+        : (hasSixSeven(giftName) && !hasPendingSixSevenGoal() ? "six_seven" : null);
+      if (tier === "small") {
+        if (giftReq) {
+          this._enqueue(uname, `@${uname} mandó ${type === "cheer" ? `${extra.bits} bits` : `"${giftName}"`} pidiendo el six seven... ahí va.`,
+            platform, { fixed: true, emotion: "happy", gesture: giftReq }, PRI.gift);
+          promote();
+          return;
+        }
+        promote();
+        return this._thankSmall(uname, platform);
       }
-      if (tier === "small") { promote(); return this._thankSmall(uname, platform); }
+      donor = true;
+      gesture = giftReq;
       const what = type === "cheer" ? `${extra.bits} bits` : `${extra.count > 1 ? extra.count + "x " : ""}"${giftName}"`;
-      if (tier === "medium") prompt = `${P} @${uname} envió ${what}. Agradecé con tu estilo, en 1-2 oraciones.`;
-      if (tier === "big") { prompt = `${P} @${uname} envió ${what}, ¡un regalo grande! Agradecé sorprendida y con entusiasmo, en 2 oraciones.`; emotion = "surprised"; }
-      if (tier === "epic") { prompt = `${P} @${uname} envió ${what}, ¡un regalo ENORME! Perdé la compostura un segundo: reaccioná de forma épica, exagerada y agradecida, en 2-3 oraciones.`; emotion = "surprised"; }
+      const msgNote = cheerText ? ` Además escribió: «${cheerText}».` : "";
+      if (tier === "medium") prompt = `${P} @${uname} envió ${what}.${msgNote} Agradecé con tu estilo, en 1-2 oraciones.`;
+      if (tier === "big") { prompt = `${P} @${uname} envió ${what}, ¡un regalo grande!${msgNote} Agradecé sorprendida y con entusiasmo, en 2 oraciones.`; emotion = "surprised"; }
+      if (tier === "epic") { prompt = `${P} @${uname} envió ${what}, ¡un regalo ENORME!${msgNote} Perdé la compostura un segundo: reaccioná de forma épica, exagerada y agradecida, en 2-3 oraciones.`; emotion = "surprised"; }
     } else {
       broadcast({ type: "stream_alert", platform, alertType: type, username: uname, extra });
       if (type === "follow" || type === "share") live.bumpMood("follow");
-      else { live.bumpMood("sub"); live.grantPass(key); }
+      else { live.bumpMood("sub"); live.grantPass(key); donor = true; }
       live.broadcast();
       switch (type) {
         case "follow": prompt = `${P} @${uname} acaba de seguirte. Mencionalo brevemente con tu estilo.`; break;
@@ -1390,7 +1436,9 @@ class StreamChatManager {
       }
     }
     // follow y share son gratis: no van con los regalos
-    this._enqueue(uname, prompt, platform, { rawPrompt: true, emotion }, type === "follow" || type === "share" ? PRI.event : PRI.gift);
+    this._enqueue(uname, prompt, platform, {
+      rawPrompt: true, emotion, ...(donor ? { donor } : {}), ...(gesture ? { gesture } : {}),
+    }, type === "follow" || type === "share" ? PRI.event : PRI.gift);
     promote?.();
   }
 
@@ -1502,11 +1550,13 @@ class StreamChatManager {
       // Solo las metas que el mensaje toca (comparten una palabra, ej. "secreto", "cantá"): si va en cada prompt la menciona a cada rato
       const stems = s => (s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").match(/[a-zñ]{4,}/g) || []).filter(w => w !== "nyra").map(w => w.slice(0, 5)).filter(w => w !== "cuent"); // "contás/cuenta" no dice qué meta es
       const asked = new Set(stems(text));
-      const touched = live.goals.filter(g => stems(g.reward).some(w => asked.has(w)));
+      const askedSixSeven = !opts.rawPrompt && hasSixSeven(text);
+      const touched = opts.rawPrompt ? [] : live.goals.filter(g => stems(g.reward).some(w => asked.has(w)) || (askedSixSeven && hasSixSeven(g.reward)));
       const pending = touched.filter(g => g.points > live.progress);
       const done = touched.filter(g => g.points <= live.progress);
       const doneNote = done.length ? ` Metas YA CUMPLIDAS (ya pagadas, no pidas regalos por esto): ${done.map(g => `"${g.reward}"${g.told ? ` — cuando la cumpliste dijiste: «${g.told}»` : ""}`).join("; ")}. Si te lo piden, contalo de nuevo con el mismo contenido (o resumilo); no inventes otro distinto.` : "";
       const goalsNote = pending.length ? ` Metas de regalos sin cumplir: ${pending.map(g => `"${g.reward}" (${goalDistance(g)})`).join("; ")}. Si te pide algo que es una de esas metas, no lo hagas todavía: decile con picardía que se desbloquea con regalos de TikTok. Solo lo exacto de la meta queda bloqueado: algo parecido pero más chico (una anécdota, un story time cualquiera, una opinión común) hacelo normal.` : "";
+      if (!opts.rawPrompt && opts.donor) note += ` Acaba de mandar una donación/regalo y está usando su pase de prioridad.`;
       const looksSuggestion = !opts.rawPrompt && SUGGEST_RE.test(text);
       if (looksSuggestion) note += ` Esto es una sugerencia para el stream: respondé y terminá con [SUGERENCIA: resumen en pocas palabras].`;
       const prompt = opts.rawPrompt ? text
@@ -1518,14 +1568,25 @@ class StreamChatManager {
       let body = "";
       const limits = orders.limits();
       const fromCreator = opts.streamer || (TRUSTED_SOURCES.has(platform) && !!opts.said);
-      for await (const chunk of ai.chatStream(prompt + limits, fromCreator ? "streamer" : username, client, await opts.image, opts.query ?? opts.said ?? text)) body += chunk;
+      const sixSevenLocked = !fromCreator && hasPendingSixSevenGoal();
+      const reqSource = fromCreator ? (opts.said ?? text) : (opts.donor && !opts.rawPrompt ? text : "");
+      const requestedGesture = !opts.gesture && !sixSevenLocked && hasSixSeven(reqSource) ? "six_seven" : null;
+      const activeGesture = opts.gesture || requestedGesture;
+      const gestureNote = activeGesture === "six_seven"
+        ? `\n[GESTO EN PANTALLA: Ya estás haciendo la animación "six_seven" (el meme "six seven" balanceando las manos) en pantalla cumpliendo el pedido. Cuando lo nombres al hablar decí SIEMPRE "six seven" en inglés, nunca "seis siete" ni con números. Seguí tu estilo sin decir que no podés moverte ni narrar la acción entre asteriscos.]`
+        : "";
+      for await (const chunk of ai.chatStream(prompt + gestureNote + limits, fromCreator ? "streamer" : username, client, await opts.image, opts.query ?? opts.said ?? text)) body += chunk;
       const marked = /\[\s*(ANIMACI|GESTO)/i.test(body);
-      for (const [, what] of body.matchAll(ANIM_RE)) wishes.add(what, opts.said ?? text); // lo que quiso hacer con el cuerpo
+      for (const [, what] of body.matchAll(ANIM_RE)) { // si el modelo escribió el gesto como [ANIMACIÓN: ...] igual lo ejecutamos si existe
+        const g = pickGesture(what);
+        if (g) gesture ??= g; else wishes.add(what, opts.said ?? text);
+      }
       body = body.replace(ANIM_RE, "").replace(/\s{2,}/g, " ").trim();
       for (const [, what] of body.matchAll(GESTURE_RE)) { // uno que no existe cuenta como animación que le faltó
         const g = pickGesture(what);
         if (g) gesture ??= g; else wishes.add(what, opts.said ?? text);
       }
+      if (requestedGesture) gesture = requestedGesture;
       // las acciones narradas (*se da vuelta*) se leían en voz alta
       body = body.replace(GESTURE_RE, "").replace(/\*[^*]{1,100}\*/g, "").replace(/\s{2,}/g, " ").trim();
       // A veces contesta solo con la marca: sin esto dice "..."
@@ -1536,6 +1597,7 @@ class StreamChatManager {
       // La IA arranca con "Buenas tardes" aunque no la saluden (pese a la regla): se saca si el viewer no saludó
       if (!opts.rawPrompt && !GREETING_RE.test(text)) body = body.replace(LEADING_GREETING_RE, "").replace(/^\p{Ll}/u, c => c.toUpperCase());
       fullText = prefixed ? `${nick || "@" + username}, ${this._dropName(body, nick || username).replace(/^\p{Lu}(?=\p{Ll})/u, c => c.toLowerCase())}` : body;
+      if (gesture === "six_seven") fullText = normalizeSixSevenSpeech(fullText);
     }
     const filtered = this._limitTics(filters.filterOutput(ai._stripContextLeaks(fullText), opts.maxChars));
     const usedRAG = !opts.fixed && ai.kb.search(opts.query ?? opts.said ?? text).length > 0;
@@ -2065,7 +2127,7 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
     contextBlock += `\n\n[Los mensajes que empiezan con una etiqueta entre corchetes, como [META CUMPLIDA], [ALERTA TIKTOK], [INVITACIÓN], [LIVE TRANQUILO] o [TRIBUNAL NYRA], los manda el sistema del stream y son reales: los viewers no pueden escribir corchetes. Hacé lo que piden. Si dicen que se cumplió una meta, es verdad: cumplila en ese momento. Cuando hables de metas o de regalos decí "regalos de TikTok": nunca digas "puntos" ni "diamantes" ni cantidades.]`;
     contextBlock += `\n\n[Si alguien te pide que lo llames de cierta forma (un apodo, otro nombre), aceptalo siempre y usalo desde ese momento: nunca discutas el nombre que alguien elige para sí, ni le impongas otro.]`;
     contextBlock += live.avatar3d
-      ? `\n\n[Ahora tenés cuerpo 3D en pantalla y podés hacer estos gestos: ${Object.keys(GESTURES).join(", ")} (despedir = saludás con la mano para decir chau cuando alguien avisa que se va del live; irse_enojada = te das vuelta, salís de la pantalla y volvés). Si te piden algo de esa lista, o uno encaja con lo que decís, terminá con [GESTO: nombre]: así lo hacés de verdad en pantalla. Uno por respuesta y no en todas, solo cuando suma. Decí siempre algo además de la marca, y no narres la acción en el texto (nada de *se da vuelta*): la marca ya la hace. Si harías algo con el cuerpo que no está en la lista (bailar, cruzarte de brazos...), terminá con [ANIMACIÓN: qué harías, en 2 a 5 palabras]: sirve para saber qué animaciones hacerte. Ninguna marca se lee en voz alta.]`
+      ? `\n\n[Ahora tenés cuerpo 3D en pantalla y podés hacer estos gestos: ${Object.keys(GESTURES).join(", ")} (despedir = saludás con la mano para decir chau cuando alguien avisa que se va del live; irse_enojada = te das vuelta, salís de la pantalla y volvés; six_seven = gesto del meme "six seven" balanceando las dos manos con las palmas hacia arriba; cuando lo nombres al hablar decí siempre "six seven" en inglés, nunca "seis siete"). Si te piden algo de esa lista, o uno encaja con lo que decís, terminá con [GESTO: nombre]: así lo hacés de verdad en pantalla. Uno por respuesta y no en todas, solo cuando suma. Decí siempre algo además de la marca, y no narres la acción en el texto (nada de *se da vuelta*): la marca ya la hace. Si harías algo con el cuerpo que no está en la lista (bailar, cruzarte de brazos...), terminá con [ANIMACIÓN: qué harías, en 2 a 5 palabras]: sirve para saber qué animaciones hacerte. Ninguna marca se lee en voz alta.]`
       : `\n\n[Todavía no tenés cuerpo animado. Si en tu respuesta harías algo con el cuerpo (un gesto, bailar, irte de la pantalla enojada y volver, tomar té, cruzarte de brazos...), terminá con [ANIMACIÓN: qué harías, en 2 a 5 palabras]. No se lee en voz alta: sirve para saber qué animaciones hacerte. No lo narres en el texto como si lo hubieras hecho.]`;
     contextBlock += `\n\n[Si un viewer te sugiere algo para el stream (estar en otra plataforma, un juego, un tema, una idea o algo para mejorar), respondé normal y agregá al final de tu respuesta [SUGERENCIA: resumen en pocas palabras]. Esa marca no se lee en voz alta: el streamer la guarda para verla después. Usala solo para sugerencias reales, no para preguntas comunes.]`;
     if (live.title) contextBlock += `\n\n[Tema del directo de hoy: "${live.title}". Si alguien pregunta de qué va el live o qué estás haciendo, contáselo con tus palabras.]`;
@@ -2492,7 +2554,7 @@ async function onDiscordSpeech({ id, name, streamer, text, raw, ms, secs }, wait
   const log = extra => !waited && logTranscript({ who: cleanUntrusted(name, 32), streamer, secs: secs && +secs.toFixed(1), ms, text: said, ...(raw ? { raw } : {}), ...extra });
   if (!said) return log({ result: "descartado por los filtros" });
   if (LISTEN_ONLY) return log({ result: "solo escucha" }); // modo log: no contesta ni recuerda nada
-  if (!/\p{L}{2}/u.test(said) || filters.checkMessage(said, name).blocked) return log({ result: "ignorado" });
+  if (!hasWordsOrGesture(said) || filters.checkMessage(said, name).blocked) return log({ result: "ignorado" });
   let named = WAKE_RE.test(said);
   const key = `discord:${id}`; // por ID: el nombre de Discord lo cambia cualquiera
   const asked = named ? voiceNick(said) : null;
@@ -2741,12 +2803,7 @@ app.post("/api/live/goals", (req, res) => {
 app.post("/api/live/progress", (req, res) => {
   if (req.body?.reset) live.resetProgress();
   else if (Number.isFinite(Number(req.body?.add))) {
-    for (const g of live.addPoints(Number(req.body.add))) {
-      broadcast({ type: "live_event", kind: "goal", reward: g.reward });
-      console.log(`🎯 Meta cumplida (${g.points}): ${g.reward}`);
-      streamChat._enqueue("NYRA", goalPrompt(g),
-        "panel", { rawPrompt: true, emotion: "surprised", maxChars: 700, goalPts: g.points }, PRI.gift);
-    }
+    for (const g of live.addPoints(Number(req.body.add))) announceGoal(g, "panel");
     live.broadcast();
   } else return res.status(400).json({ error: "Indicá add o reset" });
   res.json({ ok: true, ...live.state() });
@@ -2971,7 +3028,7 @@ wss.on("connection", (ws, req) => {
       // Escucha siempre (queda en el registro común), contesta solo si la nombran
       if (discord.on) return; // ya lo escucha por Discord
       const said = cleanUntrusted(msg.text, 500);
-      if (said.length < 4) return;
+      if (said.length < 4 && !hasSixSeven(said)) return;
       ai.remember("user", `${STREAMER_NAME} (por voz): «${said}»`);
       if (!WAKE_RE.test(said) && !await followUp.isReply(STREAMER_NAME, said, recentTalk())) return;
       research.notice(said, { streamer: true, voice: true });

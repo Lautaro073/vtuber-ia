@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Orders, Evolution, pickGesture } from "../memoria.js";
+import { Orders, Evolution, pickGesture, hasSixSeven } from "../memoria.js";
 
 const dir = mkdtempSync(join(tmpdir(), "nyra-memoria-"));
 const clean = (s, n) => String(s).replace(/[\[\]]/g, "").slice(0, n);
@@ -56,7 +56,15 @@ try {
   // gestos: lo que escriba la IA con sus palabras → el nombre del visor 3D, o nada
   for (const [raw, g] of [["saludar", "saludar"], ["Saludo con la mano", "saludar"], ["irse_enojada", "irse_enojada"],
     ["enojarse e irse", "irse_enojada"], ["tomar té", "tomar_te"], ["sorbo de la taza", "tomar_te"], ["festejar", "festejar"],
+    ["six_seven", "six_seven"], ["six seven", "six_seven"], ["6 7", "six_seven"], ["6-7", "six_seven"],
+    ["seis siete", "six_seven"], ["67", "six_seven"],
     ["asentir", "asentir"], ["negar con la cabeza", "negar"], ["bailar", null], ["terminar", null]]) assert.equal(pickGesture(raw), g, raw);
+  for (const ok of ["six seven", "six-seven", "six_seven", "sixseven", "six 7", "6 seven", "seis siete",
+    "seissiete", "seis 7", "6 siete", "6 y 7", "seis y siete", "sic seven", "sik seven", "6 7", "6-7",
+    "6/7", "6, 7", "67", "Nira, hacé el 6 7.", "hacé el 67.", "el 6 7, dale",
+    "Nyra hace el six seven", "mandate un 6 7 porfa"]) assert.ok(hasSixSeven(ok), ok);
+  for (const no of ["tengo 67 de ping", "donó 67 bits", "167", "6700", "voy 6/7/2", "me saqué 6,7",
+    "mide 1.67", "son 67.5", "no hagas el six seven", "deja de hacer el 6 7", "hola nyra"]) assert.ok(!hasSixSeven(no), no);
   console.log("memoria: ok");
 } finally {
   rmSync(dir, { recursive: true, force: true });
