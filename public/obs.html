@@ -10,14 +10,45 @@
 
   .scene { width:100%; height:100%; position:relative; display:flex; align-items:flex-end; justify-content:center; }
 
-  .avatar { position:relative; width:100%; height:100%; transform-origin: bottom center; }
-  /* Un solo <img>: todos los sprites comparten silueta, así que cambiar el src no hace saltos */
-  #sprite { width:100%; height:100%; object-fit:contain; object-position:bottom center; pointer-events:none; }
+  .avatar { position:relative; width:100%; height:100%; display:flex; align-items:flex-end; justify-content:center; transform-origin: bottom center; }
+  /* Contenedor de capas 1024x1536 (2:3), alineado abajo al centro igual que object-fit:contain bottom center */
+  .layers {
+    position: relative;
+    width: min(100vw, calc(100vh * 1024 / 1536));
+    height: min(100vh, calc(100vw * 1536 / 1024));
+    image-rendering: pixelated;
+    pointer-events: none;
+  }
+  .layer-group { position: absolute; inset: 0; pointer-events: none; }
+  .layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    pointer-events: none;
+  }
+  .layer.is-hidden { display: none; }
 
-  /* Animaciones por estado — se aplican al wrapper */
-  .avatar.idle     { animation: breathe 4s ease-in-out infinite; }
-  .avatar.speaking { animation: speak-bob .3s ease-in-out infinite alternate; }
-  .avatar.thinking { animation: think-sway 1.5s ease-in-out infinite; }
+  /* Pivotes medidos en el lienzo 1024x1536:
+     - cuello (centro abajo de 06_cuello): (506, 357) -> 49.41% 23.24%
+     - mechón izq (arriba de 31):          (520, 62)  -> 50.78% 4.04%
+     - mechón der (arriba de 32):          (458, 65)  -> 44.73% 4.23%
+     - flequillo  (arriba de 33):          (483, 52)  -> 47.17% 3.39% */
+  .head-pivot       { transform-origin: 49.41% 23.24%; }
+  .lock-left-pivot  { transform-origin: 50.78% 4.04%; }
+  .lock-right-pivot { transform-origin: 44.73% 4.23%; }
+  .bangs-pivot      { transform-origin: 47.17% 3.39%; }
+
+  /* Fallback al sprite entero si alguna capa falla al cargar */
+  #sprite { display:none; width:100%; height:100%; object-fit:contain; object-position:bottom center; image-rendering:pixelated; pointer-events:none; }
+  body.layers-fallback .layers { display:none; }
+  body.layers-fallback #sprite { display:block; }
+
+  /* Animaciones CSS del modo fallback (sprite entero) */
+  body.layers-fallback .avatar.idle     { animation: breathe 4s ease-in-out infinite; }
+  body.layers-fallback .avatar.speaking { animation: speak-bob .3s ease-in-out infinite alternate; }
+  body.layers-fallback .avatar.thinking { animation: think-sway 1.5s ease-in-out infinite; }
 
   /* Check "Efecto de flotar" apagado en el panel: avatar quieto */
   body.no-float .avatar { animation: none !important; }
@@ -47,7 +78,8 @@
     <span></span><span></span><span></span><span></span><span></span>
   </div>
   <div class="avatar idle" id="avatar">
-    <img id="sprite" src="avatar/cecilia_neutral_eye-open_mouth-closed.png" alt="NYRA">
+    <div class="layers" id="layers"></div>
+    <img id="sprite" alt="NYRA">
   </div>
   <div id="stage3d"></div>
 </div>
@@ -75,29 +107,215 @@
   const overlay = document.getElementById('audio-overlay');
   const avatar  = document.getElementById('avatar');
   const wave    = document.getElementById('wave');
+  const layersEl = document.getElementById('layers');
   const sprite  = document.getElementById('sprite');
 
-  // ── Sprites ──────────────────────────────────────────────────────────────
-  // neutral: ojos open/half/closed × 8 bocas (visemas). Emociones: solo ojos abiertos, boca closed/open.
+  // ── Capas 2D (cecilia_layers_v2, 1024x1536) + fallback a sprite entero ──
   const VISEMES  = ['closed', 'mbp', 'a', 'ei', 'o', 'u', 'fv', 'l'];
   const EMOTIONS = ['happy', 'sad', 'angry', 'surprised'];
+  const LAYER_DIR = 'avatar/cecilia_layers_v2';
   const file = (emo, eye, mouth) => `avatar/cecilia_${emo}_eye-${eye}_mouth-${mouth}.png`;
 
-  // Precargar todo para que los cambios de frame sean instantáneos
-  const _preload = [];
-  for (const eye of ['open', 'half', 'closed']) for (const v of VISEMES) _preload.push(file('neutral', eye, v));
-  for (const emo of EMOTIONS) for (const m of ['closed', 'open']) _preload.push(file(emo, 'open', m));
-  _preload.push(file('thinking', 'open', 'closed'));
-  _preload.forEach(src => { const i = new Image(); i.src = src; });
+  const NEUTRAL_EYES = ['09_ojo_izq_blanco', '10_ojo_der_blanco', '11_iris_izq', '12_iris_der'];
+  const EMO_EYES = {
+    happy: '36_ojos_happy',
+    angry: '37_ojos_angry',
+    sad: '38_ojos_sad',
+    surprised: '39_ojos_surprised',
+    thinking: '40_ojos_thinking',
+  };
+  const BROWS_LAYER = {
+    neutral: '17_cejas_neutral',
+    happy: '18_cejas_feliz',
+    angry: '19_cejas_enojada',
+    sad: '20_cejas_triste',
+    surprised: '21_cejas_sorprendida',
+    thinking: '22_cejas_pensando',
+  };
+  const NEUTRAL_MOUTHS = {
+    closed: '23_boca_closed',
+    a: '24_boca_a',
+    ei: '25_boca_ei',
+    o: '26_boca_o',
+    u: '27_boca_u',
+    fv: '28_boca_fv',
+    l: '29_boca_l',
+    mbp: '30_boca_mbp',
+  };
+  const EMO_MOUTHS_CLOSED = {
+    happy: '41_boca_happy',
+    angry: '42_boca_angry',
+    sad: '43_boca_sad',
+    surprised: '44_boca_surprised',
+    thinking: '45_boca_thinking',
+  };
+  const EMO_MOUTHS_OPEN = {
+    happy: '46_boca_happy_open',
+    angry: '47_boca_angry_open',
+    sad: '48_boca_sad_open',
+    surprised: '49_boca_surprised_open',
+  };
+  const ALL_MOUTHS = [
+    ...Object.values(NEUTRAL_MOUTHS),
+    ...Object.values(EMO_MOUTHS_CLOSED),
+    ...Object.values(EMO_MOUTHS_OPEN),
+  ];
 
+  let useFallback = false;
+  let fallbackPreloaded = false;
+  const layerEls = {};
   const face = { emo: 'neutral', eye: 'open', mouth: 'closed' };
+
+  function activateFallback(failedLayer) {
+    if (useFallback) return;
+    useFallback = true;
+    console.warn('Capa 2D no cargó, volviendo al sprite entero:', failedLayer);
+    document.body.classList.add('layers-fallback');
+    if (!fallbackPreloaded) {
+      fallbackPreloaded = true;
+      const preload = [];
+      for (const eye of ['open', 'half', 'closed']) for (const v of VISEMES) preload.push(file('neutral', eye, v));
+      for (const emo of EMOTIONS) for (const m of ['closed', 'open']) preload.push(file(emo, 'open', m));
+      preload.push(file('thinking', 'open', 'closed'));
+      preload.forEach(src => { const i = new Image(); i.src = src; });
+    }
+    render();
+  }
+
+  function makeGroup(parent, cls, id) {
+    const g = document.createElement('div');
+    g.className = 'layer-group' + (cls ? ' ' + cls : '');
+    if (id) g.id = id;
+    parent.appendChild(g);
+    return g;
+  }
+
+  function addLayer(parent, name, alwaysVisible = false) {
+    const img = document.createElement('img');
+    img.className = alwaysVisible ? 'layer' : 'layer is-hidden';
+    img.alt = '';
+    img.decoding = 'sync';
+    img.dataset.layer = name;
+    img.onerror = () => activateFallback(name);
+    img.onload = () => { if (img.decode) img.decode().catch(() => {}); };
+    img.src = `${LAYER_DIR}/${name}.png`;
+    parent.appendChild(img);
+    layerEls[name] = img;
+    return img;
+  }
+
+  // Orden exacto de atrás hacia adelante (con grupos de pivote para respiración, cabeza y pelo)
+  const breatheGroup = makeGroup(layersEl, '', 'breathe-group');
+  addLayer(breatheGroup, '01_capucha_atras', true);
+  const headBack = makeGroup(breatheGroup, 'head-pivot', 'head-back');
+  addLayer(headBack, '02_pelo_atras', true);
+  addLayer(breatheGroup, '03_cuerpo', true);
+  addLayer(breatheGroup, '04_brazo_izq', true);
+  addLayer(breatheGroup, '05_brazo_der', true);
+  addLayer(breatheGroup, '06_cuello', true);
+
+  const headFront = makeGroup(breatheGroup, 'head-pivot', 'head-front');
+  addLayer(headFront, '07_cara_base', true);
+  addLayer(headFront, '08_rubor', true);
+  for (const n of NEUTRAL_EYES) addLayer(headFront, n);
+  for (const n of Object.values(EMO_EYES)) addLayer(headFront, n);
+  for (const n of ['13_parpado_medio_izq', '14_parpado_medio_der', '15_parpado_cerrado_izq', '16_parpado_cerrado_der']) addLayer(headFront, n);
+  for (const n of Object.values(BROWS_LAYER)) addLayer(headFront, n);
+  for (const n of ALL_MOUTHS) addLayer(headFront, n);
+
+  const lockLeft  = makeGroup(headFront, 'lock-left-pivot', 'lock-left');
+  addLayer(lockLeft, '31_mechones_laterales_izq', true);
+  const lockRight = makeGroup(headFront, 'lock-right-pivot', 'lock-right');
+  addLayer(lockRight, '32_mechones_laterales_der', true);
+  const bangs     = makeGroup(headFront, 'bangs-pivot', 'bangs');
+  addLayer(bangs, '33_flequillo', true);
+
+  addLayer(breatheGroup, '34_cordones_capucha', true);
+  addLayer(breatheGroup, '35_auriculares', true);
+
+  function showLayer(name, on) {
+    layerEls[name].classList.toggle('is-hidden', !on);
+  }
+
   function render() {
-    const src = face.emo === 'neutral'  ? file('neutral', face.eye, face.mouth)
-              : face.emo === 'thinking' ? file('thinking', 'open', 'closed') // solo existe con boca cerrada
-              : file(face.emo, 'open', (face.mouth === 'closed' || face.mouth === 'mbp') ? 'closed' : 'open');
-    if (!sprite.src.endsWith(src)) sprite.src = src;
+    if (useFallback) {
+      const src = face.emo === 'neutral'  ? file('neutral', face.eye, face.mouth)
+                : face.emo === 'thinking' ? file('thinking', 'open', 'closed') // solo existe con boca cerrada
+                : file(face.emo, 'open', (face.mouth === 'closed' || face.mouth === 'mbp') ? 'closed' : 'open');
+      if (!sprite.getAttribute('src') || !sprite.src.endsWith(src)) sprite.src = src;
+      return;
+    }
+    const emo = BROWS_LAYER[face.emo] ? face.emo : 'neutral';
+    const isNeutral = emo === 'neutral';
+
+    for (const n of NEUTRAL_EYES) showLayer(n, isNeutral);
+    for (const [e, n] of Object.entries(EMO_EYES)) showLayer(n, emo === e);
+
+    const half = face.eye === 'half', closed = face.eye === 'closed';
+    showLayer('13_parpado_medio_izq', half);
+    showLayer('14_parpado_medio_der', half);
+    showLayer('15_parpado_cerrado_izq', closed);
+    showLayer('16_parpado_cerrado_der', closed);
+
+    for (const [e, n] of Object.entries(BROWS_LAYER)) showLayer(n, emo === e);
+
+    const activeMouth = isNeutral
+      ? (NEUTRAL_MOUTHS[face.mouth] || '23_boca_closed')
+      : emo === 'thinking'
+        ? '45_boca_thinking'
+        : (face.mouth === 'closed' || face.mouth === 'mbp')
+          ? EMO_MOUTHS_CLOSED[emo]
+          : EMO_MOUTHS_OPEN[emo];
+    for (const n of ALL_MOUTHS) showLayer(n, n === activeMouth);
   }
   function setFace(changes) { Object.assign(face, changes); render(); }
+
+  // ── Movimiento idle sutil siempre activo (+ extra en la cabeza al hablar) ──
+  let speakMix = 0, lastAnimTs = performance.now();
+  const qDeg = d => Math.round(d * 20) / 20;
+  function animateLayers(now) {
+    const dt = Math.min(0.1, (now - lastAnimTs) / 1000);
+    lastAnimTs = now;
+    if (!useFallback && !document.body.classList.contains('mode3d')) {
+      if (document.body.classList.contains('no-float')) {
+        breatheGroup.style.transform = '';
+        headBack.style.transform = '';
+        headFront.style.transform = '';
+        lockLeft.style.transform = '';
+        lockRight.style.transform = '';
+        bangs.style.transform = '';
+      } else {
+        const targetSpeak = avatar.classList.contains('speaking') ? 1 : 0;
+        speakMix += (targetSpeak - speakMix) * Math.min(1, dt * 6);
+
+        const t = now / 1000;
+        // Respiración: cuerpo + cabeza suben y bajan 1-2 px enteros, ciclo de ~4 s
+        const breatheY = Math.round(-1 - Math.sin(t * (Math.PI * 2 / 4.0)));
+
+        // Cabeza: ±1.25° con pivote en la base del cuello; al hablar se mueve un poco más
+        const swayPhase = t * (Math.PI * 2 / 5.2);
+        const talkPhase = t * (Math.PI * 2 / 1.55);
+        const headDeg   = qDeg(1.25 * Math.sin(swayPhase) + 0.75 * speakMix * Math.sin(talkPhase));
+        const headTalkY = Math.round(-0.65 * speakMix * (0.5 + 0.5 * Math.sin(talkPhase * 1.5)));
+
+        // Mechones 31/32 (±2-3° desfasados de la cabeza) y flequillo (±1°)
+        const lockAmp  = 2.05 + 0.35 * speakMix;
+        const lockLDeg = qDeg(lockAmp * Math.sin(swayPhase - 0.75) + 0.25 * speakMix * Math.sin(talkPhase - 0.55));
+        const lockRDeg = qDeg((lockAmp + 0.1) * Math.sin(swayPhase - 0.9) + 0.25 * speakMix * Math.sin(talkPhase - 0.7));
+        const bangsDeg = qDeg((0.9 + 0.1 * speakMix) * Math.sin(swayPhase - 0.4));
+
+        breatheGroup.style.transform = `translate(0px, ${breatheY}px)`;
+        const headTransform = `translate(0px, ${headTalkY}px) rotate(${headDeg}deg)`;
+        headBack.style.transform  = headTransform;
+        headFront.style.transform = headTransform;
+        lockLeft.style.transform  = `rotate(${lockLDeg}deg)`;
+        lockRight.style.transform = `rotate(${lockRDeg}deg)`;
+        bangs.style.transform     = `rotate(${bangsDeg}deg)`;
+      }
+    }
+    requestAnimationFrame(animateLayers);
+  }
+  requestAnimationFrame(animateLayers);
 
   // ── Emoción según el tono de la respuesta (heurística simple) ──
   function detectEmotion(text) {
@@ -111,15 +329,16 @@
     return 'neutral';
   }
 
-  // ── Parpadeo: open → half → closed → half → open (solo en neutral) ──
+  // ── Parpadeo: open → half → closed → half → open (en todas las emociones con capas; en fallback solo neutral) ──
   let blinkTimer = null, blinkEnabled = true;
   function scheduleBlink() {
     clearTimeout(blinkTimer);
     blinkTimer = setTimeout(() => {
-      if (blinkEnabled && face.emo === 'neutral' && face.eye === 'open') {
+      const canBlink = blinkEnabled && face.eye === 'open' && (!useFallback || face.emo === 'neutral');
+      if (canBlink) {
         // Tiempos del test de parpadeo (cecilia_blink_test.gif): medio 70ms, cerrado 110ms, medio 70ms
         const steps = [['half', 0], ['closed', 70], ['half', 180], ['open', 250]];
-        steps.forEach(([eye, at]) => setTimeout(() => { if (face.emo === 'neutral' && blinkEnabled) setFace({ eye }); }, at));
+        steps.forEach(([eye, at]) => setTimeout(() => { if (blinkEnabled && (!useFallback || face.emo === 'neutral')) setFace({ eye }); }, at));
         setTimeout(() => setFace({ eye: 'open' }), 260); // por si algo cambió a mitad
       }
       scheduleBlink();
@@ -162,7 +381,7 @@
     wave.classList.toggle('show', s === 'speaking');
     if (s === 'thinking') {
       stopLipsync();
-      blinkEnabled = false;
+      blinkEnabled = true;
       setFace({ emo: 'thinking', eye: 'open', mouth: 'closed' });
     } else if (s === 'speaking') {
       blinkEnabled = true;
