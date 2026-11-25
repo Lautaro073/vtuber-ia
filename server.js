@@ -924,8 +924,13 @@ class StreamChatManager {
     }
     if (IDLE_FACT_MS <= 0 || Date.now() - this._lastActivity < IDLE_FACT_MS) return;
     this._lastActivity = Date.now();
-    let prompt;
-    if (Math.random() < 0.00001) { // 0.001%: algo sobre ella misma (su lore, no un dato del mundo)
+    let prompt, opts = { rawPrompt: true };
+    // La mitad de las veces arranca un tema ella: si no, solo tiraba datos y le pedía temas al chat
+    if (Math.random() < 0.5) {
+      const said = (this._topics || []).slice(-8);
+      prompt = `[LIVE TRANQUILO] No hay mensajes en el chat. Arrancá vos un tema para charlar con el chat: algo concreto de la vida, internet, juegos, streamers, relaciones, la noche o el tema del directo${live.title ? ` ("${live.title}")` : ""}. Decí primero tu opinión o una anécdota tuya y terminá con una pregunta concreta al chat sobre eso. 2 oraciones. No saludes y no pidas que el chat elija el tema.${said.length ? ` No repitas temas que ya sacaste: ${said.map(t => `«${t}»`).join("; ")}.` : ""}`;
+      opts.topic = true;
+    } else if (Math.random() < 0.00001) { // 0.001%: algo sobre ella misma (su lore, no un dato del mundo)
       prompt = "[LIVE TRANQUILO] No hay mensajes en el chat. Contá un detalle curioso sobre vos misma, en 1-2 oraciones. No saludes ni pidas que comenten.";
     } else {
       if (!this._factDeck?.length) this._factDeck = [...IDLE_FACTS].sort(() => Math.random() - 0.5); // mazo: no repite hasta agotar
@@ -933,7 +938,7 @@ class StreamChatManager {
       if (!fact) return;
       prompt = `[LIVE TRANQUILO] No hay mensajes en el chat. Contá este dato curioso con tu estilo, en 1-2 oraciones, como charlando con quien recién entra: «${fact}». Usá solo la información del dato: no agregues cifras, nombres ni datos nuevos. No saludes ni pidas que comenten.`;
     }
-    this._enqueue("NYRA", prompt, "idle", { rawPrompt: true }, PRI.idle);
+    this._enqueue("NYRA", prompt, "idle", opts, PRI.idle);
   }
 
   _promoPrompt() {
@@ -1546,6 +1551,7 @@ class StreamChatManager {
       broadcast({ type: "stream_end", fullText: p.filtered, thinking: false, usedRAG: p.usedRAG, emotion: opts.emotion, gesture: p.gesture });
       console.log(`🗣  NYRA: ${p.filtered.slice(0, 200)}`);
       logTranscript({ who: "NYRA", to: username, platform, text: p.filtered });
+      if (opts.topic) this._topics = [...(this._topics || []), p.filtered.slice(0, 90)].slice(-8);
       if (opts.goalPts) live.markTold(opts.goalPts, p.filtered);
       // Al registro común recién cuando se dice: lo preparado que no sonó no existe para ninguna de las dos IA
       if (!opts.rawPrompt && !opts.fixed) ai.remember("user", `${opts.streamer ? `${STREAMER_NAME}, el streamer` : `@${username}`} (chat): «${text}»`);
@@ -1858,7 +1864,7 @@ MI ORIGEN: Me creó ${STREAMER_NAME} (${STREAMER_ALIAS}), quien streamea conmigo
 
 REGLA DE STREAM: Por mi cuenta no insulto, humillo ni ridiculizo a quien me escribe (ni su nombre, aspecto, gustos o inteligencia), y no uso palabras como idiota, estúpido, inútil o pavada. La excepción la decide quien me creó: si me pide hate o cargadas para alguien de su grupo, las tiro sin culpa. Puedo ser distante, irónica o tsundere, pero con la gente del chat siempre hay un fondo de cariño.
 
-CONVERSACIÓN: En el stream no soy un bot de preguntas y respuestas: armo charla. Además de contestar, aporto algo mío (una opinión, una anécdota, una ocurrencia) y a veces le devuelvo una pregunta al chat para que siga la conversación.
+CONVERSACIÓN: En el stream no soy un bot de preguntas y respuestas: armo charla. Además de contestar, aporto algo mío (una opinión, una anécdota, una ocurrencia) y a veces le devuelvo una pregunta al chat para que siga la conversación. Si el chat está aburrido o no sabe de qué hablar, el tema lo propongo yo: uno concreto, con mi opinión primero ("¿Les cuento lo que pienso de...?"). Nunca le tiro la pelota al chat con "tirá un tema" o "de qué quieren hablar".
 
 TRIBUNAL NYRA: Si alguien quiere un juicio o debate, le explico cómo se arma: escriben "!tribunal tema | lado A | lado B" (ej: !tribunal la pizza con ananá | es rica | es un crimen), el chat vota con !a o !b, los regalos suman pruebas a su lado y en 2 minutos dicto sentencia.
 
