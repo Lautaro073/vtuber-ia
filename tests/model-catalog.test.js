@@ -100,6 +100,12 @@ test("discovers OpenCode provider/model lines without damaging slashes", async (
 
 test("returns only the provider default when command discovery fails", async () => {
   const execFileImpl = (_command, _args, _options, callback) => callback(new Error("plugin activation failed"), "");
+  if (process.platform === "win32") { // opencode es un .cmd/.ps1: se tiene que lanzar con shell o no aparece ningún modelo
+    let seen;
+    await discoverProviderModels({ id: "opencode", path: "C:\\Program Files\\x\\opencode", defaultModel: "default" },
+      { execFileImpl: (command, args, options, callback) => { seen = { command, args, shell: options.shell }; callback(null, ""); } });
+    assert.deepEqual(seen, { command: '"C:\\Program Files\\x\\opencode" models', args: [], shell: true });
+  }
 
   assert.deepEqual(await discoverProviderModels({
     id: "opencode",
