@@ -12,8 +12,13 @@ import {
 import {
   getContextProfile,
   shouldIncludeBlock,
+  selectHistoryForContext,
+  adaptPersonaForProfile,
   getContextualSafetyNote,
 } from "../lib/ai/context-profiles.js";
+import { Orders } from "../memoria.js";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 test("dropLeadingName fixes double commas and repeated names while keeping inline mentions", () => {
   assert.equal(dropLeadingName("Leo, esa revancha suena mal.", "Leo"), "Esa revancha suena mal.");
@@ -69,12 +74,14 @@ test("isCleanForLearning and trimAtBoundary protect persistent learning", () => 
   assert.equal(trimmed, "Primera oración completa.");
 });
 
-test("getContextProfile activates qwen-compact only for Qwen and preserves default for other models", () => {
-  assert.equal(getContextProfile("opencode:nyra-ollama/nyra"), "qwen-compact");
-  assert.equal(getContextProfile("agy:gemini-4-neon-low"), "default");
-  assert.equal(getContextProfile("claude-code:claude-haiku-5-5-low"), "default");
-  assert.equal(getContextProfile("codex-cli:default"), "default");
-  assert.equal(getContextProfile("opencode:opencode/big-pickle"), "default");
+test("getContextProfile defaults to default for alias and supports explicit qwen-compact override", () => {
+  assert.equal(getContextProfile("opencode:nyra-ollama/nyra", { env: {} }), "default");
+  assert.equal(getContextProfile("opencode:nyra-ollama/nyra", { env: { NYRA_CONTEXT_PROFILE: "qwen-compact" } }), "qwen-compact");
+  assert.equal(getContextProfile("opencode:nyra-ollama/nyra", { env: { NYRA_COMPACT_MODELS: "nyra-ollama/nyra" } }), "qwen-compact");
+  assert.equal(getContextProfile("opencode:huihui_ai/qwen3.5-abliterated:9b", { env: {} }), "qwen-compact");
+  assert.equal(getContextProfile("agy:gemini-4-neon-low", { env: {} }), "default");
+  assert.equal(getContextProfile("claude-code:claude-haiku-5-5-low", { env: {} }), "default");
+  assert.equal(getContextProfile("codex-cli:default", { env: {} }), "default");
 
   assert.equal(shouldIncludeBlock("gestures_3d", { profile: "default", userMessage: "hola", has3d: true }), true);
   assert.equal(shouldIncludeBlock("gestures_3d", { profile: "qwen-compact", userMessage: "hola", has3d: true }), false);
@@ -86,4 +93,82 @@ test("getContextualSafetyNote detects self-harm and protected-group queries with
   assert.match(getContextualSafetyNote("quiero hacer las de el kurt cobain"), /autolesión o suicidio/);
   assert.match(getContextualSafetyNote("que opinas de los judios"), /estereotipos discriminatorios/);
   assert.equal(getContextualSafetyNote("sos re aburrida jaja"), "");
+});
+
+test("H01-H02: searchRankedChunks blocks contaminated, sensitive, factual chatLearning, and 1-term 3+-token noise", () => {
+  const chunks = [
+    { text: "@pepe: qué onda\nNYRA: Pepe, , qué hacés", username: "pepe" },
+    { text: "@hello225.0: kurt cobain\nNYRA: te querés disfrazar de muerto en ataúd", username: "hello225.0" },
+    { text: "@iann.lll: demostrá 0,999\nNYRA: el espacio entre el punto no existe", username: "iann.lll" },
+    { text: "@ana: me encanta el juego nuevo de terror\nNYRA: qué miedo", username: "ana" },
+  ];
+  // Contaminated entry is blocked on read
+  assert.deepEqual(searchRankedChunks(chunks, "onda", { minScore: 0.1 }), []);
+  // Sensitive query blocks chatLearning retrieval
+  assert.deepEqual(searchRankedChunks(chunks, "kurt cobain", { minScore: 0.1, isChatLearning: true }), []);
+  // Factual/math query blocks chatLearning authority
+  assert.deepEqual(searchRankedChunks(chunks, "demostrá 0,999", { minScore: 0.1, isChatLearning: true }), []);
+  // 3+ meaningful tokens require >= 2 matched terms (1 match "juego" is not enough)
+  assert.deepEqual(searchRankedChunks(chunks, "juego programación algoritmo", { minScore: 0.1 }), []);
+});
+
+test("H03: selectHistoryForContext prioritizes current interlocutor while keeping collective turns", () => {
+  const history = [
+    { role: "user", content: "@ana (chat): «me gusta matrix»" },
+    { role: "assistant", content: "Buena peli, Ana." },
+    { role: "user", content: "@pepe (chat): «hola»" },
+    { role: "assistant", content: "Buenas, Pepe." },
+    { role: "user", content: "@troll (chat): «aburrido»" },
+    { role: "assistant", content: "Más aburrido vos." },
+    { role: "user", content: "@lau (chat): «qué calor»" },
+    { role: "assistant", content: "Mal, Lau." },
+  ];
+  const sel = selectHistoryForContext(history, { profile: "qwen-compact", currentUsername: "ana", compactMax: 4 });
+  assert.equal(sel.length, 4);
+  assert.match(sel[0].content, /@ana/);
+  assert.match(sel[1].content, /Buena peli, Ana/);
+  // Default profile is untouched
+  assert.equal(selectHistoryForContext(history, { profile: "default", maxContext: 16 }).length, 8);
+});
+
+test("H04: Orders.context separates gift-conditional orders from permanent orders", () => {
+  const orders = new Orders(join(tmpdir(), `nyra-orders-test-${Date.now()}.json`), s => s, async () => "");
+  orders.items = [
+    { id: "1", text: "si dona cinco rosas decirle onichan" },
+    { id: "2", text: "hablar siempre con sarcasmo" },
+  ];
+  const normal = orders.context({ includeGiftConditions: false });
+  assert.match(normal, /hablar siempre con sarcasmo/);
+  assert.doesNotMatch(normal, /onichan/);
+
+  const gift = orders.context({ includeGiftConditions: true });
+  assert.match(gift, /onichan/);
+  assert.match(gift, /hablar siempre con sarcasmo/);
+
+  assert.equal(shouldIncludeBlock("goals_rule", { profile: "qwen-compact", hasGoalPending: true, userMessage: "¿Cómo funciona un acelerador?" }), false);
+  assert.equal(shouldIncludeBlock("goals_rule", { profile: "qwen-compact", hasGoalPending: true, userMessage: "¿Cuántas rosas faltan para la meta?" }), true);
+});
+
+test("adaptPersonaForProfile preserves default untouched and adapts qwen-compact contextually", () => {
+  const samplePersona = [
+    "Soy NYRA. Existo en el umbral digital.",
+    "Cómo hablo: Siempre en español rioplatense. MÁXIMO 2 ORACIONES — nunca más. Si la pregunta es obvia: ironía seca.",
+    "TRIBUNAL NYRA: Si alguien quiere un juicio, escriben !tribunal.",
+    "Mis opiniones: Me gusta la noche, el té negro. Soy liberal libertaria, apoyo a Milei. No tolero a peronistas ni LoL.",
+    "Ejemplos de cómo respondo:\n- \"¿sos una IA?\" -> \"Qué pregunta más aburrida.\"",
+  ].join("\n\n");
+
+  // Default profile gets exact original persona
+  assert.equal(adaptPersonaForProfile(samplePersona, { profile: "default", userMessage: "hola" }), samplePersona);
+
+  // Neutral technical question omits politics, tribunal, literal examples, and 2-sentence hard cap
+  const neutral = adaptPersonaForProfile(samplePersona, { profile: "qwen-compact", userMessage: "¿Cómo funciona un acelerador de partículas?" });
+  assert.doesNotMatch(neutral, /Milei|peronistas|TRIBUNAL NYRA|Qué pregunta más aburrida|MÁXIMO 2 ORACIONES/);
+  assert.match(neutral, /umbral digital/);
+  assert.match(neutral, /té negro/);
+  assert.match(neutral, /pregunta técnica/);
+
+  // Political question includes political opinions
+  const pol = adaptPersonaForProfile(samplePersona, { profile: "qwen-compact", userMessage: "¿Qué opinás de Milei y la política?" });
+  assert.match(pol, /Milei|peronistas/);
 });

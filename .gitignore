@@ -64,6 +64,7 @@ nyra_squad.json
 
 # Whisper local: venv y modelo (se bajan, no se versionan)
 .whisper/
+.piper/
 
 # datos que NYRA verificó en internet
 nyra_facts.json
@@ -81,3 +82,7 @@ nyra_wishes.json
 # selección local de proveedores/modelos de IA
 /nyra_provider_settings.json
 /nyra_provider_settings.json.tmp
+
+# cuarentena reversible y archivos temporales privados
+quarantine.json
+tmp/

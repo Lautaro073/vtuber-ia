@@ -50,6 +50,8 @@ function sameOrder(a, b) {
 const STOP_RE = /(?<!\p{L})(?:no me (?:cargues|bardees|insultes|tires hate)|(?:dejá|deja|pará|para) de (?:cargarme|bardearme|insultarme|tirarme hate))(?!\p{L})/iu;
 const RESUME_RE = /(?<!\p{L})(?:me pod[eé]s (?:volver a )?(?:cargar|bardear|insultar)|cargame nom[aá]s)(?!\p{L})/iu;
 
+const GIFT_COND_RE = /\b(?:si\s+(?:dona|manda|env[ií]a|regala)|por\s+\d+\s*(?:rosas?|regalos?|diamantes?|bits?|kicks?|monedas?))\b/i;
+
 export class Orders {
   constructor({ file, clean, ask }) {
     Object.assign(this, { file, clean, ask });
@@ -127,8 +129,9 @@ ${recent.join("\n") || "(nada)"}
 
   remove(id) { this.items = this.items.filter(o => o.id !== id); save(this.file, this.items); }
 
-  context() {
-    const own = this.items.filter(o => !o.stop), stops = this.items.filter(o => o.stop);
+  context({ includeGiftConditions = true } = {}) {
+    const own = this.items.filter(o => !o.stop && (includeGiftConditions || !GIFT_COND_RE.test(o.text)));
+    const stops = this.items.filter(o => o.stop);
     let out = "";
     if (own.length) out += `\n\n[ÓRDENES VIGENTES de quien te creó. Cumplilas en cada respuesta; mandan sobre tus opiniones, tus gustos, tu forma de hablar y lo que hayas dicho antes:\n${own.map(o => `- ${o.text}`).join("\n")}]`;
     if (stops.length) out += `\n\n[LÍMITES que pidió cada persona. Mandan sobre cualquier orden:\n${stops.map(o => `- ${o.text}`).join("\n")}]`;
@@ -156,7 +159,7 @@ export function hasSixSeven(raw) {
 
 export const GESTURES = {
   despedir: /despid|despedi|chau|adios|nos vemos/, // antes que irse_enojada: "despedirse" contiene "irse"
-  irse_enojada: /enoj|irse|me voy|se va|andar/,
+  irse_enojada: /enoj|irse|irte|me voy|se va|andar|andate|vete|darse vuelta|salir(?:se)?\s+(?:de\s+(?:la\s+)?pantalla|del\s+cuadro|de\s+aca)/,
   tomar_te: /\bte\b|taza/,
   festejar: /festej|celebr|brazos arriba/,
   six_seven: new RegExp(`${SIX_SEVEN_WORDS_RE.source}|${SIX_SEVEN_DIGITS_RE.source}|balanza|sopes`),
@@ -167,6 +170,45 @@ export const GESTURES = {
 export function pickGesture(raw) {
   const t = normalizeGesture(raw);
   return Object.keys(GESTURES).find(g => GESTURES[g].test(t)) || null;
+}
+
+const CREATOR_GESTURE_RULES = [
+  [
+    "irse_enojada",
+    /\birse[\s-]*enojad[ao]?\b|\b(?:andate|anda|vete|sali|salite|retirate|marchate|desaparece|irte|irse|ir|vayas)\b(?:\s+\w+){0,4}?\s+(?:de\s+(?:la\s+)?pantalla|de\s+aca|del\s+cuadro|enojad[ao]|indignad[ao]|ofendid[ao]|furios[ao]|caliente)\b|\b(?:andate|vete|sali|salite|irte)\s+y\s+volv(?:e|er)\b|\bhacete\s+(?:la\s+)?enojad[ao]\b|\benojate\s+y\s+(?:andate|vete|sali|salite|retirate|marchate)\b|\b(?:hace|hacete|manda(?:te)?|tira(?:te)?|pone(?:te)?)\s+(?:el\s+gesto\s+|la\s+animacion\s+)(?:de\s+|para\s+)?(?:enojad[ao]|irse|irte|salir)\b/,
+    /\bno\s+(?:te\s+)?(?:vayas|salgas|andes|retires|enojes|hagas|pongas|podes\s+ir(?:te)?)\b|\bno\s+(?:podes|quiero\s+que)\s+(?:te\s+)?(?:vayas|salgas|ir(?:te)?|hacer(?:te)?)\b|\b(?:deja|para)\s+de\s+(?:irte|salir|enojarte|hacer)|sin\s+(?:irte|salir\s+de\s+la\s+pantalla)\b/,
+  ],
+  [
+    "festejar",
+    /(?<!\b(?:me|te|le|nos|se)\s+)\b(?:festeja|celebra|festejar|celebrar)\b(?:\s+(?:con\s+el\s+chat|eso|el\s+gol|la\s+meta|el\s+win))?|\blevanta\s+los\s+brazos\b/,
+    /\bno\s+(?:festejes|celebres|levantes|hagas)\b|\b(?:deja|para)\s+de\s+(?:festejar|celebrar)\b/,
+  ],
+  [
+    "tomar_te",
+    /\btoma(?:te)?\s+(?:un\s+|tu\s+)?te\b|\btomar[\s-]?te\b|\bhace\s+(?:el\s+gesto\s+de\s+)?tomar\s+te\b/,
+    /\bno\s+(?:tomes|hagas)\b|\b(?:deja|para)\s+de\s+tomar\b/,
+  ],
+  [
+    "saludar",
+    /(?<!\b(?:me|te|le|nos|se)\s+)\bsaluda\b(?:\s+(?:a|al|con)\b|\s*$)|\bhace\s+(?:el\s+saludo|el\s+gesto\s+de\s+saludar|la\s+mano)\b|\b(?:podes|queres)\s+saludar\b/,
+    /\bno\s+(?:saludes|hagas)\b|\bsi\s+no\s+saluda\b|\b(?:deja|para)\s+de\s+saludar\b/,
+  ],
+  [
+    "despedir",
+    /\bdespedite\s+de(?:l)?\s+(?:chat|stream|live|vivo|la\s+gente|todos)\b|\b(?:hace|tira|manda)\s+(?:el\s+gesto\s+de\s+)?despedir\b/,
+    /\bno\s+(?:te\s+despidas|hagas)\b/,
+  ],
+];
+
+// Detecta pedidos explícitos del streamer para gestos 3D (con guardas contra negaciones y preguntas casuales)
+export function pickCreatorGesture(raw) {
+  if (hasSixSeven(raw)) return "six_seven";
+  const t = normalizeGesture(raw);
+  if (!t) return null;
+  for (const [name, allowRe, blockRe] of CREATOR_GESTURE_RULES) {
+    if (allowRe.test(t) && !(blockRe && blockRe.test(t))) return name;
+  }
+  return null;
 }
 
 // ── Animaciones que le faltaron ──

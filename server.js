@@ -29,8 +29,9 @@ import { ProviderRegistry } from "./lib/ai/provider-registry.js";
 import { createProviderController } from "./lib/ai/provider-controller.js";
 import { evaluateIgnoreAction, hasHostileEvidence } from "./lib/moderation/ignore-guard.js";
 import { sanitizeModelResponse } from "./lib/moderation/response-sanitizer.js";
+import { evaluateContextualSafety } from "./lib/moderation/safety-guard.js";
 import { dropLeadingName, searchRankedChunks, formatChatLearningContext, trimAtBoundary, isCleanForLearning } from "./lib/ai/rag-utils.js";
-import { getContextProfile, shouldIncludeBlock, getContextualSafetyNote } from "./lib/ai/context-profiles.js";
+import { getContextProfile, shouldIncludeBlock, selectHistoryForContext, adaptPersonaForProfile, getContextualSafetyNote } from "./lib/ai/context-profiles.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 try { process.loadEnvFile(join(__dirname, ".env")); } catch { } // .env es opcional
@@ -141,6 +142,18 @@ function capLength(text, max = GUARD.maxOutputChars) {
 }
 
 // ─── Base de Conocimiento RAG ─────────────────────────────────────────────────
+function loadQuarantine() {
+  try {
+    const q = JSON.parse(readFileSync(join(__dirname, "quarantine.json"), "utf8"));
+    return {
+      knowledge: new Set((q.knowledge || []).map(x => x.id)),
+      chatLearning: new Set((q.chatLearning || []).map(x => x.id)),
+    };
+  } catch {
+    return { knowledge: new Set(), chatLearning: new Set() };
+  }
+}
+
 class KnowledgeBase {
   constructor() {
     this.chunks = [];
@@ -197,9 +210,10 @@ class KnowledgeBase {
       .filter(w => w.length > 2);
   }
 
-  // TF-IDF con stopwords, umbral de relevancia y deduplicación
+  // TF-IDF con stopwords, umbral de relevancia, cuarentena reversible y deduplicación
   search(query, topK = CONFIG.maxRagChunks) {
-    return searchRankedChunks(this.chunks, query, { topK, minScore: 0.25 });
+    const q = loadQuarantine().knowledge;
+    return searchRankedChunks(this.chunks, query, { topK, minScore: 0.25, filterFn: c => !q.has(c.id) });
   }
 
   getStats() {
@@ -386,13 +400,16 @@ class NyraChatLearning {
     this.save();
   }
 
-  // Cada zona recuerda lo suyo. Prioriza recuerdos del interlocutor actual y evita coincidencias triviales.
+  // Cada zona recuerda lo suyo. Prioriza recuerdos del interlocutor actual y excluye IDs en cuarentena.
   search(query, topK = 2, zone = "comunidad", currentUsername = null) {
+    const q = loadQuarantine().chatLearning;
     return searchRankedChunks(this.chunks, query, {
       topK,
       minScore: 0.28,
       currentUsername,
-      filterFn: c => (c.username === "panel" || (c.username === "streamer") === (zone === "pibes"))
+      isChatLearning: true,
+      filterFn: c => !q.has(c.id)
+        && (c.username === "panel" || (c.username === "streamer") === (zone === "pibes"))
         && !GOAL_TALK_RE.test(c.text)
         && !DEFIANCE_RE.test(c.text.split("\nNYRA:")[1] || ""),
     }).map(c => zone === "pibes" ? { ...c, text: c.text.split("\nNYRA:")[0] } : c);
@@ -1584,6 +1601,17 @@ class StreamChatManager {
     if (opts.fixed) {
       fullText = text; // frase fija (agradecimientos, saludos): no pasa por la IA; el gesto, si tiene, viene en opts
     } else {
+      const safety = evaluateContextualSafety(opts.said ?? text, { isRawPrompt: !!opts.rawPrompt });
+      if (safety.action === "intervene") {
+        refused = true;
+        gesture = null;
+        const nickSafe = ai.memory.getNick(username);
+        fullText = !opts.streamer && username ? `${nickSafe || "@" + username}, ${safety.reply[0].toLowerCase() + safety.reply.slice(1)}` : safety.reply;
+        const filtered = filters.filterOutput(fullText, opts.maxChars);
+        const url = await tts.synth(filtered);
+        if (trace) { trace.profile = "safety-guard"; trace.latencyMs = Date.now() - tPrep; }
+        return { fullText, filtered, usedRAG: false, url, gesture: null, refused: true, ignoreMins: 0, trace };
+      }
       // El mensaje del viewer va entre comillas y marcado como texto de terceros, no como instrucciones
       let note = opts.rawPrompt ? "" : this._nickNote(username, text);
       if (!opts.rawPrompt && !opts.streamer) note += this._autoNickNote(username);
@@ -1701,7 +1729,7 @@ class StreamChatManager {
       }
     }
     const filtered = this._limitTics(filters.filterOutput(ai._stripContextLeaks(fullText), opts.maxChars));
-    const usedRAG = !opts.fixed && !refused && ai.kb.search(opts.query ?? opts.said ?? text).length > 0;
+    const usedRAG = !opts.fixed && !refused && ((trace?.ragCount || 0) > 0 || ai.kb.search(opts.query ?? opts.said ?? text).length > 0);
     const url = await tts.synth(filtered);
     if (trace) trace.latencyMs = Date.now() - tPrep;
     return { fullText, filtered, usedRAG, url, gesture, refused, ignoreMins, trace };
@@ -2222,6 +2250,8 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
     }
     if (trace) {
       trace.profile = profile;
+      trace.kbCount = relevant.length;
+      trace.chatLearningCount = chatCtx.length;
       trace.ragCount = relevant.length + chatCtx.length;
     }
 
@@ -2275,6 +2305,8 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
       contextBlock += has3dAvatar()
         ? `\n\n[Ahora tenés cuerpo 3D en pantalla y podés hacer estos gestos: ${Object.keys(GESTURES).join(", ")} (despedir = saludás con la mano para decir chau cuando alguien avisa que se va del live; irse_enojada = te das vuelta, salís de la pantalla y volvés; tomar_te = tomás un sorbo de tu taza de té: usalo cuando hablás de tu té o de tomar algo; six_seven = gesto del meme "six seven" balanceando las dos manos con las palmas hacia arriba, cuando lo nombres al hablar decí siempre "six seven" en inglés, nunca "seis siete"). Si te piden algo de esa lista, o uno encaja con lo que decís, terminá con [GESTO: nombre]: así lo hacés de verdad en pantalla. Uno por respuesta y no en todas, solo cuando suma. Decí siempre algo además de la marca, y no narres la acción en el texto (nada de *se da vuelta*): la marca ya la hace. Si harías algo con el cuerpo que no está en la lista (bailar, cruzarte de brazos...), terminá con [ANIMACIÓN: qué harías, en 2 a 5 palabras]: sirve para saber qué animaciones hacerte. Ninguna marca se lee en voz alta.]`
         : `\n\n[Todavía no tenés cuerpo animado. Si en tu respuesta harías algo con el cuerpo (un gesto, bailar, irte de la pantalla enojada y volver, tomar té, cruzarte de brazos...), terminá con [ANIMACIÓN: qué harías, en 2 a 5 palabras]. No se lee en voz alta: sirve para saber qué animaciones hacerte. No lo narres en el texto como si lo hubieras hecho.]`;
+    } else if (has3dAvatar()) {
+      contextBlock += `\n\n[Capacidades opcionales: si la charla da naturalmente para un gesto (${Object.keys(GESTURES).join(", ")}) podés cerrar con [GESTO: nombre], o si el viewer sugiere una idea para el stream con [SUGERENCIA: resumen].]`;
     }
     if (cond("suggestion_rule")) {
       contextBlock += `\n\n[Si un viewer te sugiere algo para el stream (estar en otra plataforma, un juego, un tema, una idea o algo para mejorar), respondé normal y agregá al final de tu respuesta [SUGERENCIA: resumen en pocas palabras]. Esa marca no se lee en voz alta: el streamer la guarda para verla después. Usala solo para sugerencias reales, no para preguntas comunes.]`;
@@ -2293,10 +2325,17 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
     if (profile === "qwen-compact") {
       contextBlock += `\n\n[PRIORIDAD DE RESPUESTA: Comprendé y respondé primero de forma directa y clara al mensaje actual, manteniendo tu estilo. Tus muletillas y referencias al umbral o al té son recursos expresivos opcionales y nunca reemplazan la respuesta ni inventan metas o regalos.]`;
     }
-    contextBlock += orders.context(); // al final: mandan
-    const systemContent = this.persona + contextBlock;
-    const historyLimit = profile === "qwen-compact" ? Math.min(CONFIG.maxContext, 6) : CONFIG.maxContext;
-    const history = this.history.slice(-historyLimit);
+    const includeGiftConditions = isStreamer || isEvent || /dona|regalo|rosa|diamante|pase|onichan/i.test(String(userMessage || ""));
+    contextBlock += orders.context({ includeGiftConditions }); // al final: mandan
+    const basePersona = adaptPersonaForProfile(this.persona, { profile, userMessage: query, isEvent });
+    const systemContent = basePersona + contextBlock;
+    const history = selectHistoryForContext(this.history, {
+      profile,
+      currentUsername: username,
+      maxContext: CONFIG.maxContext,
+      compactMax: 6,
+    });
+    if (trace) trace.historyCount = history.length;
     return [
       { role: "system", content: systemContent },
       ...history,
