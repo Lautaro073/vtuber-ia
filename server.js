@@ -31,7 +31,7 @@ import { evaluateIgnoreAction, hasHostileEvidence } from "./lib/moderation/ignor
 import { sanitizeModelResponse } from "./lib/moderation/response-sanitizer.js";
 import { evaluateContextualSafety } from "./lib/moderation/safety-guard.js";
 import { dropLeadingName, searchRankedChunks, formatChatLearningContext, trimAtBoundary, isCleanForLearning } from "./lib/ai/rag-utils.js";
-import { getContextProfile, shouldIncludeBlock, selectHistoryForContext, adaptPersonaForProfile, getContextualSafetyNote } from "./lib/ai/context-profiles.js";
+import { getContextProfile, shouldIncludeBlock, selectHistoryForContext, adaptPersonaForProfile, getContextualSafetyNote, shouldUseTechPriority, TECH_PRIORITY_INSTRUCTION } from "./lib/ai/context-profiles.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 try { process.loadEnvFile(join(__dirname, ".env")); } catch { } // .env es opcional
@@ -1583,7 +1583,7 @@ class StreamChatManager {
   }
 
   // Genera el texto y el audio de una respuesta, sin mostrar ni reproducir nada todavía
-  async _prepare({ username, text, platform, opts, rank }, client = ai.llm) {
+  async _prepare({ username, text, platform, opts, rank, at }, client = ai.llm) {
     const tPrep = Date.now();
     const trace = opts.fixed ? null : {
       id: uuidv4().slice(0, 8),
@@ -1594,8 +1594,10 @@ class StreamChatManager {
       effectiveModel: client?.modelId || "none",
       fallbackUsed: false,
       profile: "default",
+      techPriority: false,
       ragCount: 0,
       promptChars: 0,
+      queueMs: at ? Math.max(0, tPrep - at) : 0,
     };
     let fullText = "", gesture = opts.gesture || null, refused = false, ignoreMins = 0;
     if (opts.fixed) {
@@ -1663,7 +1665,8 @@ class StreamChatManager {
         : "";
       let modelBlocked = false;
       try {
-        for await (const chunk of ai.chatStream(prompt + gestureNote + askGoalNote + limits, fromCreator ? "streamer" : username, client, await opts.image, opts.query ?? opts.said ?? text, trace)) body += chunk;
+        const auth = { isDonor: !!opts.donor, isStreamer: fromCreator, isEvent: !!opts.rawPrompt };
+        for await (const chunk of ai.chatStream(prompt + gestureNote + askGoalNote + limits, fromCreator ? "streamer" : username, client, await opts.image, opts.query ?? opts.said ?? text, trace, auth)) body += chunk;
       } catch (err) {
         if (err.modelBlocked || isModelFilterError(err?.message)) modelBlocked = true;
         else throw err;
@@ -1754,7 +1757,7 @@ class StreamChatManager {
       broadcast({ type: "stream_chunk", chunk: p.filtered });
       broadcast({ type: "stream_end", fullText: p.filtered, thinking: false, usedRAG: p.usedRAG, emotion: opts.emotion, gesture: p.gesture });
       if (p.trace) {
-        console.log(`📊 [${p.trace.id}] ${p.trace.effectiveModel} (${p.trace.profile}${p.trace.fallbackUsed ? ", fallback" : ""}) rag=${p.trace.ragCount} prompt=${p.trace.promptChars}c ${p.trace.latencyMs}ms`);
+        console.log(`📊 [${p.trace.id}] ${p.trace.effectiveModel} (${p.trace.profile}${p.trace.techPriority ? ", tech" : ""}${p.trace.fallbackUsed ? ", fallback" : ""}) rag=${p.trace.ragCount} prompt=${p.trace.promptChars}c queue=${p.trace.queueMs || 0}ms ${p.trace.latencyMs}ms`);
       }
       console.log(`🗣  NYRA: ${p.filtered.slice(0, 200)}`);
       logTranscript({ who: "NYRA", to: username, platform, text: p.filtered, meta: p.trace || undefined });
@@ -2215,16 +2218,16 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
     this._screenTimestamp = 0;
   }
 
-  buildMessages(userMessage, username = null, freshImage = false, zone = "comunidad", query = userMessage, { modelId = this.currentModel, trace = null } = {}) {
+  buildMessages(userMessage, username = null, freshImage = false, zone = "comunidad", query = userMessage, { modelId = this.currentModel, trace = null, isDonor = false, isStreamer = null, isEvent = null } = {}) {
     const profile = getContextProfile(modelId);
-    const isEvent = /^\s*\[/.test(String(userMessage || ""));
-    const isStreamer = username === "streamer" || /\[MENSAJE DEL STREAMER/.test(String(userMessage || ""));
+    const trustedEvent = isEvent !== null ? !!isEvent : /^\s*\[/.test(String(userMessage || ""));
+    const trustedStreamer = isStreamer !== null ? !!isStreamer : username === "streamer";
     const hasGoalPending = live.goals.some(g => g.points > live.progress);
     const cond = block => shouldIncludeBlock(block, {
       profile,
       userMessage: query,
-      isStreamer,
-      isEvent,
+      isStreamer: trustedStreamer,
+      isEvent: trustedEvent,
       inGame: this._inGame(),
       hasGoalPending,
       has3d: has3dAvatar(),
@@ -2325,9 +2328,14 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
     if (profile === "qwen-compact") {
       contextBlock += `\n\n[PRIORIDAD DE RESPUESTA: Comprendé y respondé primero de forma directa y clara al mensaje actual, manteniendo tu estilo. Tus muletillas y referencias al umbral o al té son recursos expresivos opcionales y nunca reemplazan la respuesta ni inventan metas o regalos.]`;
     }
-    const includeGiftConditions = isStreamer || isEvent || /dona|regalo|rosa|diamante|pase|onichan/i.test(String(userMessage || ""));
+    const techPriority = shouldUseTechPriority(modelId);
+    if (techPriority) {
+      contextBlock += `\n\n[PRIORIDAD TÉCNICA: ${TECH_PRIORITY_INSTRUCTION}]`;
+    }
+    if (trace) trace.techPriority = techPriority;
+    const includeGiftConditions = trustedStreamer || trustedEvent || !!isDonor;
     contextBlock += orders.context({ includeGiftConditions }); // al final: mandan
-    const basePersona = adaptPersonaForProfile(this.persona, { profile, userMessage: query, isEvent });
+    const basePersona = adaptPersonaForProfile(this.persona, { profile, userMessage: query, isEvent: trustedEvent });
     const systemContent = basePersona + contextBlock;
     const history = selectHistoryForContext(this.history, {
       profile,
@@ -2344,10 +2352,10 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
   }
 
   // Streaming vía agy: emite el texto a medida que llega
-  async *chatStream(userMessage, username = null, client = this.llm, image = null, query = userMessage, trace = null) {
+  async *chatStream(userMessage, username = null, client = this.llm, image = null, query = userMessage, trace = null, auth = {}) {
     if (!client?.providerId) throw new Error("IA apagada: activá un proveedor en el panel");
     const buildInput = target => {
-      const prompt = toAgyPrompt(this.buildMessages(userMessage, username, !!image, target.name === "companion" ? "pibes" : "comunidad", query, { modelId: target.modelId, trace }));
+      const prompt = toAgyPrompt(this.buildMessages(userMessage, username, !!image, target.name === "companion" ? "pibes" : "comunidad", query, { modelId: target.modelId, trace, ...auth }));
       if (trace) trace.promptChars = prompt.length;
       return image && target.providerId === "claude-code" ? withSelf(image, prompt) : prompt;
     };
