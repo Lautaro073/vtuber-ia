@@ -20,8 +20,19 @@ const CLIPS = {
 };
 
 const EMOTION = { happy: 'happy', sad: 'sad', angry: 'angry', surprised: 'surprised', thinking: 'relaxed' };
-const VISEME = { a: ['aa', 1], ei: ['ee', 0.8], o: ['oh', 1], u: ['ou', 0.9], fv: ['ih', 0.4], l: ['ih', 0.5] };
-const SHAPES = ['happy', 'happyTalk', 'sad', 'angry', 'surprised', 'relaxed', 'aa', 'ee', 'ih', 'oh', 'ou', 'blink'];
+const VISEME = { a: ['aa', 0.9], ei: ['ee', 0.75], o: ['oh', 0.9], u: ['ou', 0.85], fv: ['ih', 0.4], l: ['ih', 0.5] };
+const VISEME_SHAPES = ['aa', 'ee', 'ih', 'oh', 'ou'];
+// Ojos y cejas separados de la boca por emoción: si no, Fcl_ALL_Surprised/Angry/Sorrow/Fun se suma a aa/oh al hablar y rompe la boca
+const SPLIT_EXPR = {
+  happy: { eyes: [['Fcl_EYE_Joy', 0.3], ['Fcl_BRW_Joy', 0.6]], mouth: [['Fcl_MTH_Fun', 0.65]] },
+  sad: { eyes: [['Fcl_EYE_Sorrow', 1], ['Fcl_BRW_Sorrow', 1]], mouth: [['Fcl_MTH_Sorrow', 0.8]] },
+  angry: { eyes: [['Fcl_EYE_Angry', 1], ['Fcl_BRW_Angry', 1]], mouth: [['Fcl_MTH_Angry', 0.8]] },
+  surprised: { eyes: [['Fcl_EYE_Surprised', 1], ['Fcl_BRW_Surprised', 1]], mouth: [['Fcl_MTH_Surprised', 0.7]] },
+  relaxed: { eyes: [['Fcl_EYE_Fun', 1], ['Fcl_BRW_Fun', 1]], mouth: [['Fcl_MTH_Fun', 0.55]] },
+};
+const EMO_EYES = Object.keys(SPLIT_EXPR).map(k => `${k}Eyes`);
+const EMO_MOUTHS = Object.keys(SPLIT_EXPR).map(k => `${k}Mouth`);
+const SHAPES = ['happy', 'sad', 'angry', 'surprised', 'relaxed', ...EMO_EYES, ...EMO_MOUTHS, ...VISEME_SHAPES, 'blink'];
 
 // Dedos: curl 0 = mano abierta, ~1.2 = puño. En pose T la palma mira abajo: se cierran girando en z
 function hand(side, curl, thumb = curl * 0.6, fingers = ['Index', 'Middle', 'Ring', 'Little']) {
@@ -158,22 +169,31 @@ export async function start(container, url, face, getState) {
   vrm.scene.traverse(o => { o.frustumCulled = false; });
   scene.add(vrm.scene);
 
-  // Alegría = sonrisa tranquila, como en el 2D: la cara feliz del modelo (Fcl_ALL_Joy) es una carcajada con ojos
-  // cerrados y boca abierta (no es NYRA, y sumada a la boca al hablar la abría de más). Ojos apenas entrecerrados,
-  // cejas felices y sonrisa cerrada; al hablar, la boca la abren los visemas
-  const joyTalk = new VRMExpression('happyTalk');
-  let joyBinds = 0;
-  vrm.scene.traverse(o => {
-    const d = o.morphTargetDictionary;
-    if (!o.isMesh || d?.Fcl_EYE_Joy === undefined) return;
-    for (const [n, w] of [['Fcl_EYE_Joy', 0.3], ['Fcl_BRW_Joy', 0.6], ['Fcl_MTH_Fun', 0.7]]) {
-      if (d[n] === undefined) continue;
-      joyTalk.addBind(new VRMExpressionMorphTargetBind({ primitives: [o], index: d[n], weight: w }));
-      joyBinds++;
+  // Separar ojos/cejas de la boca en cada emoción (al hablar solo los visemas mueven los labios; en silencio queda el gesto completo)
+  const registerSplitExpr = (name, pairs) => {
+    const expr = new VRMExpression(name);
+    let binds = 0;
+    vrm.scene.traverse(o => {
+      const d = o.morphTargetDictionary;
+      if (!o.isMesh || !d) return;
+      for (const [n, w] of pairs) {
+        if (d[n] === undefined) continue;
+        expr.addBind(new VRMExpressionMorphTargetBind({ primitives: [o], index: d[n], weight: w }));
+        binds++;
+      }
+    });
+    if (!binds) return false;
+    vrm.scene.add(expr);
+    vrm.expressionManager.registerExpression(expr);
+    return true;
+  };
+  const splitReady = new Set();
+  for (const [emo, { eyes, mouth }] of Object.entries(SPLIT_EXPR)) {
+    if (registerSplitExpr(`${emo}Eyes`, eyes)) {
+      splitReady.add(emo);
+      registerSplitExpr(`${emo}Mouth`, mouth);
     }
-  });
-  vrm.scene.add(joyTalk);
-  vrm.expressionManager.registerExpression(joyTalk);
+  }
 
   const clipLoader = new GLTFLoader();
   clipLoader.register(parser => new VRMAnimationLoaderPlugin(parser));
@@ -256,18 +276,36 @@ export async function start(container, url, face, getState) {
     // Expresiones: suavizadas para que no salten de un frame al otro
     const target = Object.fromEntries(SHAPES.map(s => [s, 0]));
     const emo = g?.expr || EMOTION[face.emo];
-    const happyShape = emo === 'happy' && joyBinds ? 'happyTalk' : emo; // un modelo sin esas formas sigue con happy
-    if (emo) target[happyShape] = face.emo === 'thinking' && !g?.expr ? 0.4 : 1;
+    const emoWeight = face.emo === 'thinking' && !g?.expr ? 0.4 : 1;
+    const talking = state.includes('speaking');
     const v = VISEME[face.mouth];
     if (v) target[v[0]] = v[1];
-    if (t > nextBlink) { blinkUntil = t + 0.13; nextBlink = t + 2.8 + Math.random() * 3.2; }
-    // la cara feliz ya cierra los ojos: parpadear encima los deforma
-    target.blink = t < blinkUntil && weights.happy < 0.3 ? 1 : 0; // la sonrisa (happyTalk) deja los ojos abiertos: parpadea
-    for (const s of SHAPES) {
-      const speed = s === 'blink' ? 40 : s.length === 2 ? 25 : 8; // la boca (aa, ee...) rápida, las emociones lentas
-      weights[s] += (target[s] - weights[s]) * Math.min(1, dt * speed);
-      vrm.expressionManager.setValue(s, weights[s]);
+    if (emo) {
+      if (splitReady.has(emo)) {
+        target[`${emo}Eyes`] = emoWeight;
+        if (!talking && !v) target[`${emo}Mouth`] = emoWeight; // boca emocional solo en reposo; al hablar mandan los visemas
+      } else {
+        target[emo] = emoWeight;
+      }
     }
+    if (t > nextBlink) { blinkUntil = t + 0.13; nextBlink = t + 2.8 + Math.random() * 3.2; }
+    // la cara feliz completa (fallback sin happyEyes) ya cierra los ojos: parpadear encima los deforma
+    target.blink = t < blinkUntil && weights.happy < 0.3 ? 1 : 0;
+    for (const s of SHAPES) {
+      const speed = s === 'blink' ? 40 : (s.length === 2 || s.endsWith('Mouth')) ? 25 : 8; // boca rápida; ojos y emociones suaves
+      weights[s] += (target[s] - weights[s]) * Math.min(1, dt * speed);
+    }
+    // Tope de apertura total: evitar que dos visemas en transición o una emoción residual sumen más de 1.0 y rompan la boca
+    let visemeSum = VISEME_SHAPES.reduce((acc, s) => acc + weights[s], 0);
+    if (visemeSum > 1) {
+      const k = 1 / visemeSum;
+      for (const s of VISEME_SHAPES) weights[s] *= k;
+      visemeSum = 1;
+    }
+    const mouthBudget = Math.max(0, 1 - visemeSum);
+    for (const s of EMO_MOUTHS) weights[s] = Math.min(weights[s], mouthBudget);
+    for (const s of Object.keys(SPLIT_EXPR)) weights[s] = splitReady.has(s) ? 0 : Math.min(weights[s], mouthBudget);
+    for (const s of SHAPES) vrm.expressionManager.setValue(s, weights[s]);
 
     // Cuerpo: respirar, balancearse al hablar, ladear la cabeza al pensar
     const k = still ? 0 : 1;

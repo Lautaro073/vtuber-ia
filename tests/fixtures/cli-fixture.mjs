@@ -28,6 +28,12 @@ if (protocol === "codex" || protocol === "opencode") {
       process.exitCode = 2;
       return;
     }
+    if (behavior === "limit") { // como Codex sin cuota: el motivo va en el JSON y stderr trae ruido de conectores
+      send({ type: "error", message: "You've hit your usage limit." });
+      process.stderr.write("ERROR rmcp::transport::worker: AuthRequired");
+      process.exitCode = 1;
+      return;
+    }
     if (behavior === "malformed") {
       process.stdout.write("not-json\n");
       return;

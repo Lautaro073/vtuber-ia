@@ -47,6 +47,26 @@ test("initialization enables only the configured provider without saved settings
   assert.equal(state.currentModel, "claude-code:claude-code-model");
 });
 
+test("startup does not discover models for disabled providers", async (t) => {
+  let disabledDiscoveries = 0;
+  const { registry } = registryAt(t, {
+    initialProvider: "agy",
+    overrides: {
+      opencode: {
+        discoverModels: async () => {
+          disabledDiscoveries++;
+          return ["opencode:opencode-model"];
+        },
+      },
+    },
+  });
+
+  await registry.initialize();
+
+  assert.equal(disabledDiscoveries, 0);
+  assert.deepEqual(registry.snapshot().providers.find(provider => provider.id === "opencode").models, []);
+});
+
 test("a corrupt settings file falls back to the configured provider", async (t) => {
   const { registry, settingsFile } = registryAt(t, { initialProvider: "codex-cli" });
   writeFileSync(settingsFile, "{not json");
@@ -140,6 +160,44 @@ test("registerClient subjects externally created roles to provider shutdown", as
 
   assert.equal(client.stopCalled, 1);
   assert.equal(registry.snapshot().providers.find(provider => provider.id === "agy").running, false);
+});
+
+test("releaseClient stops and forgets a replaced role without disabling its provider", async (t) => {
+  const { registry } = registryAt(t);
+  await registry.initialize();
+  const client = { stopCalled: 0, stop() { this.stopCalled++; } };
+  registry.registerClient("agy", client);
+
+  await registry.releaseClient("agy", client);
+
+  assert.equal(client.stopCalled, 1);
+  assert.equal(registry.snapshot().providers.find(provider => provider.id === "agy").running, false);
+  assert.equal(registry.snapshot().providers.find(provider => provider.id === "agy").enabled, true);
+});
+
+test("created clients carry normalized provider and model identity", async (t) => {
+  const { registry } = registryAt(t);
+  await registry.initialize();
+
+  const client = await registry.createClient("chat", "agy:agy-model");
+
+  assert.equal(client.providerId, "agy");
+  assert.equal(client.modelId, "agy:agy-model");
+});
+
+test("an on-demand client is not reported as a running process until it has a child", async (t) => {
+  const { registry } = registryAt(t, { initialProvider: "codex-cli" });
+  await registry.initialize();
+  const client = await registry.createClient("chat", "codex-cli:codex-cli-model");
+
+  let provider = registry.snapshot().providers.find(item => item.id === "codex-cli");
+  assert.equal(provider.running, false);
+  assert.equal(provider.status, "listo bajo demanda");
+
+  client.children = new Set([{}]);
+  provider = registry.snapshot().providers.find(item => item.id === "codex-cli");
+  assert.equal(provider.running, true);
+  assert.equal(provider.status, "activo");
 });
 
 test("enabling rechecks a CLI that became available after startup", async (t) => {

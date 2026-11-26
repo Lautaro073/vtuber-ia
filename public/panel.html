@@ -130,6 +130,17 @@
     border-radius: 6px; font-family: 'Noto Sans JP',sans-serif; font-size: 13px; width: 100%; outline: none;
   }
   .model-select:focus { border-color: var(--cyan); }
+  .model-select:disabled { opacity:.45; cursor:not-allowed; }
+  .provider-controls { display:flex; flex-direction:column; gap:7px; margin-bottom:14px; }
+  .provider-row {
+    display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:8px;
+    background:rgba(0,245,255,.025); border:1px solid var(--border); border-radius:7px; padding:7px 9px;
+  }
+  .provider-row input { width:15px; height:15px; accent-color:var(--cyan); }
+  .provider-row label { cursor:pointer; font-size:12px; min-width:0; }
+  .provider-status { color:var(--dim); font-size:9px; text-align:right; white-space:nowrap; }
+  .provider-status--active { color:var(--cyan); }
+  .provider-status--error { color:#ff8800; }
 
   .mem-scroll { max-height: 200px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
   .mem-entry {
@@ -167,7 +178,7 @@
     <div style="display:flex;gap:12px;align-items:center">
       <div class="status-pill">
         <div class="dot" id="ollamaDot" style="background:#666;box-shadow:none"></div>
-        <span id="ollamaStatus" style="color:var(--dim)">Chequeando Ollama...</span>
+        <span id="ollamaStatus" style="color:var(--dim)">Chequeando IA...</span>
       </div>
       <a href="/obs" target="_blank">
         <button class="btn btn-pink btn-sm">ABRIR OBS VIEW</button>
@@ -541,13 +552,36 @@
 
     <!-- Model selector -->
     <div class="panel-section">
+      <div class="panel-title">// PROVEEDORES DE IA</div>
+      <div class="provider-controls" id="providerControls">
+        <div class="provider-row">
+          <input type="checkbox" id="provider-agy" onchange="toggleProvider('agy', this.checked)">
+          <label for="provider-agy">Antigravity</label>
+          <span class="provider-status" id="provider-status-agy">comprobando</span>
+        </div>
+        <div class="provider-row">
+          <input type="checkbox" id="provider-claude-code" onchange="toggleProvider('claude-code', this.checked)">
+          <label for="provider-claude-code">Claude Code</label>
+          <span class="provider-status" id="provider-status-claude-code">comprobando</span>
+        </div>
+        <div class="provider-row">
+          <input type="checkbox" id="provider-codex-cli" onchange="toggleProvider('codex-cli', this.checked)">
+          <label for="provider-codex-cli">Codex CLI</label>
+          <span class="provider-status" id="provider-status-codex-cli">comprobando</span>
+        </div>
+        <div class="provider-row">
+          <input type="checkbox" id="provider-opencode" onchange="toggleProvider('opencode', this.checked)">
+          <label for="provider-opencode">OpenCode</label>
+          <span class="provider-status" id="provider-status-opencode">comprobando</span>
+        </div>
+      </div>
       <div class="panel-title">// MODELO DE TEXTO (CHAT)</div>
       <select class="model-select" id="modelSelect"></select>
-      <button class="btn btn-sm btn-cyan" style="margin-top:8px;width:100%" onclick="changeModel()">CAMBIAR MODELO</button>
+      <button class="btn btn-sm btn-cyan" id="modelChangeBtn" style="margin-top:8px;width:100%" onclick="changeModel()">CAMBIAR MODELO</button>
       <div id="availableModels" style="font-size:10px;color:var(--dim);margin-top:6px"></div>
       <div class="panel-title" style="margin-top:14px">// MODELO DE VISIÓN (PANTALLA)</div>
       <select class="model-select" id="visionModelSelect"></select>
-      <button class="btn btn-sm btn-cyan" style="margin-top:8px;width:100%" onclick="changeVisionModel()">CAMBIAR MODELO DE VISIÓN</button>
+      <button class="btn btn-sm btn-cyan" id="visionModelChangeBtn" style="margin-top:8px;width:100%" onclick="changeVisionModel()">CAMBIAR MODELO DE VISIÓN</button>
       <div id="visionModelInfo" style="font-size:10px;color:var(--dim);margin-top:6px"></div>
     </div>
 
@@ -857,10 +891,99 @@
   }
 
   // ─ Model ─
-  function changeModel() {
+  function addGroupedModelOptions(select, modelIds, providers, selected) {
+    const byProvider = new Map((providers || []).map(provider => [provider.id, provider]));
+    const groups = new Map();
+    for (const modelId of modelIds) {
+      const providerId = modelId.split(':', 1)[0];
+      if (!groups.has(providerId)) {
+        const group = document.createElement('optgroup');
+        group.label = byProvider.get(providerId)?.label || providerId;
+        groups.set(providerId, group);
+        select.appendChild(group);
+      }
+      groups.get(providerId).appendChild(new Option(modelId.slice(providerId.length + 1), modelId, false, modelId === selected));
+    }
+  }
+
+  function refreshModelSelectors(data) {
+    const models = data.models || [];
+    const visionModels = data.visionModels || [];
+    const modelSelect = document.getElementById('modelSelect');
+    const visionModelSelect = document.getElementById('visionModelSelect');
+    modelSelect.innerHTML = '';
+    visionModelSelect.innerHTML = '';
+    addGroupedModelOptions(modelSelect, models, data.providers, data.currentModel);
+    addGroupedModelOptions(visionModelSelect, visionModels, data.providers, data.visionModel);
+    if (!models.length) modelSelect.add(new Option('IA apagada', ''));
+    if (!visionModels.length) visionModelSelect.add(new Option('Visión apagada', ''));
+    modelSelect.disabled = models.length === 0;
+    visionModelSelect.disabled = visionModels.length === 0;
+    document.getElementById('modelChangeBtn').disabled = models.length === 0;
+    document.getElementById('visionModelChangeBtn').disabled = visionModels.length === 0;
+    document.getElementById('availableModels').textContent = data.currentModel ? `Usando: ${data.currentModel}` : 'IA apagada';
+    document.getElementById('visionModelInfo').textContent = data.visionModel
+      ? `Usando: ${data.visionModel}`
+      : 'Visión apagada: activá Antigravity o Claude Code.';
+  }
+
+  function renderProviders(data) {
+    if (!data?.providers) return;
+    window._providerState = data;
+    for (const provider of data.providers) {
+      const checkbox = document.getElementById(`provider-${provider.id}`);
+      const status = document.getElementById(`provider-status-${provider.id}`);
+      if (!checkbox || !status) continue;
+      checkbox.checked = provider.enabled;
+      checkbox.disabled = false;
+      status.textContent = provider.status;
+      status.title = provider.error || '';
+      status.className = `provider-status ${provider.running ? 'provider-status--active' : ''} ${!provider.available ? 'provider-status--error' : ''}`;
+    }
+    const active = !!data.currentModel;
+    const topStatus = document.getElementById('ollamaStatus');
+    const topDot = document.getElementById('ollamaDot');
+    topStatus.textContent = active ? `IA activa · ${data.currentModel}` : 'IA apagada';
+    topStatus.style.color = active ? 'var(--cyan)' : 'var(--dim)';
+    topDot.style.background = active ? 'var(--cyan)' : '#666';
+    topDot.style.boxShadow = active ? '0 0 8px var(--cyan)' : 'none';
+  }
+
+  async function toggleProvider(id, enabled) {
+    const checkbox = document.getElementById(`provider-${id}`);
+    const status = document.getElementById(`provider-status-${id}`);
+    checkbox.disabled = true;
+    status.textContent = enabled ? 'iniciando…' : 'cerrando…';
+    try {
+      const res = await fetch(`/api/providers/${encodeURIComponent(id)}`, {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ enabled })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        renderProviders(window._providerState);
+        status.textContent = data.error || 'no se pudo cambiar';
+        status.className = 'provider-status provider-status--error';
+        throw new Error(data.error || 'No se pudo cambiar el proveedor');
+      }
+      renderProviders(data);
+      refreshModelSelectors(data);
+      toast(`${data.providers.find(provider => provider.id === id)?.label || id}: ${enabled ? 'activado' : 'apagado'}`);
+    } catch (error) {
+      renderProviders(window._providerState);
+      toast(`Error: ${error.message}`);
+    } finally {
+      checkbox.disabled = false;
+    }
+  }
+
+  async function changeModel() {
     const model = document.getElementById('modelSelect').value;
-    fetch('/api/model', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model }) })
-      .then(() => { toast(`Modelo cambiado a ${model}`); document.getElementById('availableModels').textContent = `Usando: ${model}`; });
+    const res = await fetch('/api/model', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ model }) });
+    const data = await res.json();
+    if (!res.ok) return toast(`Error: ${data.error || 'no se pudo cambiar el modelo'}`);
+    renderProviders(data);
+    refreshModelSelectors(data);
+    toast(`Modelo cambiado a ${model}`);
   }
 
   function changeVisionModel() {
@@ -990,20 +1113,9 @@
       document.getElementById('ollamaDot').style.background = '#ff8800';
       return;
     }
-    if (data.llm) {
-      const sel = document.getElementById('modelSelect');
-      sel.innerHTML = '';
-      data.models.forEach(m => sel.add(new Option(m, m, false, m === data.currentModel)));
-      document.getElementById('availableModels').textContent = `Usando: ${data.currentModel}`;
-      const vsel = document.getElementById('visionModelSelect');
-      vsel.innerHTML = '';
-      data.models.forEach(m => vsel.add(new Option(m, m, false, m === data.visionModel)));
-      document.getElementById('visionModelInfo').textContent = `Usando: ${data.visionModel} (claude-code = rápido, cuota de Claude; gemini = lento, cuota de Gemini)`;
-    } else {
-      document.getElementById('ollamaStatus').textContent = 'agy no encontrado';
-      document.getElementById('ollamaDot').style.background = '#ff8800';
-    }
-    updateStats(data.knowledge);
+    renderProviders(data);
+    refreshModelSelectors(data);
+    if (data.knowledge) updateStats(data.knowledge);
   }
 
   // ─ Stream Chat ─

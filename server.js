@@ -11,7 +11,7 @@ import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync, renameS
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { tmpdir } from "os";
-import { exec, execFile, spawn } from "child_process";
+import { exec, execFile } from "child_process";
 import { randomBytes, createHash, timingSafeEqual, verify as cryptoVerify } from "crypto";
 import cors from "cors";
 import { v4 as uuidv4 } from "uuid";
@@ -20,6 +20,10 @@ import { Research } from "./research.js";
 import { FollowUp, JUDGE_SYSTEM } from "./follow-up.js";
 import { IN_GAME_RE, HUD_GUIDE, GAME_PRIMER } from "./wildrift.js";
 import { Orders, Evolution, Wishes, GESTURES, pickGesture, hasSixSeven, ORDERS_SYSTEM, LEARNER_SYSTEM } from "./memoria.js";
+import { createClientFactory } from "./lib/ai/cli-clients.js";
+import { discoverProviderModels, normalizeModelId, parseModelId } from "./lib/ai/model-catalog.js";
+import { ProviderRegistry } from "./lib/ai/provider-registry.js";
+import { createProviderController } from "./lib/ai/provider-controller.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 try { process.loadEnvFile(join(__dirname, ".env")); } catch { } // .env es opcional
@@ -27,9 +31,13 @@ const PORT = Number(process.env.PORT) || 3000;
 
 // ─── Configuración ────────────────────────────────────────────────────────────
 const CONFIG = {
-  // Motor del chat: "agy" (Gemini por Antigravity) o "claude" (Claude Code con tu plan de Claude; si falla, pasa a agy)
+  // Motor inicial: agy, claude, codex u opencode. Después manda lo guardado desde el panel.
   engine: process.env.NYRA_ENGINE || "agy", // el chat lo contesta agy; a la voz y la pantalla, Haiku
   claudeModel: process.env.CLAUDE_MODEL || "claude-haiku-5-5",
+  claudePath: process.env.CLAUDE_PATH || "claude",
+  codexPath: process.env.CODEX_PATH || "codex",
+  opencodePath: process.env.OPENCODE_PATH || "opencode",
+  providerSettingsFile: process.env.NYRA_PROVIDER_SETTINGS || join(__dirname, "nyra_provider_settings.json"),
   // Visión de pantalla: "claude-code:<modelo>" (rápido, cuota de Claude) o un modelo de agy (lento, cuota de Gemini)
   visionModel: process.env.VISION_MODEL || "claude-code:claude-haiku-5-5-low",
   // ── Antigravity CLI (agy) — usa la sesión de Google AI Pro logueada en agy ──
@@ -232,6 +240,29 @@ class KnowledgeBase {
 }
 
 // ─── Sistema de Filtros ───────────────────────────────────────────────────────
+// Respuestas genéricas de filtro/rechazo de la API o CLI (Gemini/agy, Claude) que nunca deben salir al aire
+const MODEL_REFUSAL_RE = [
+  /this request was blocked by (?:gemini|the model|safety|content)?'?s?\s*filters?/i,
+  /blocked by (?:gemini|safety|content)'?s?\s*filters?/i,
+  /please try rephrasing your prompt/i,
+  /read more about \[?our policies/i,
+  /\[send feedback\]\(/i,
+  /\b(?:PROHIBITED_CONTENT|FINISH_REASON_SAFETY|HARM_CATEGORY_)\b/i,
+  /^(?:i(?:'m| am) sorry,?\s*(?:but\s*)?)?i (?:can't|cannot|am unable to|won't|do not) (?:assist|help|fulfill|answer|comply|provide|generate|create|discuss)\b/i,
+  /^sorry,?\s*(?:but\s*)?i (?:can't|cannot|am unable to) (?:assist|help|fulfill|answer|comply|provide)\b/i,
+  /^(?:as an ai\b|as a (?:large )?language model\b)/i,
+  /^(?:como (?:modelo de lenguaje|inteligencia artificial|ia|asistente de ia)\b)/i,
+  /(?:va en contra de|viola|infringe) (?:las |mis )?pol[ií]ticas(?: de uso| de seguridad)?/i,
+  /solicitud (?:fue )?bloqueada por (?:los )?filtros/i,
+];
+const MODEL_FILTER_ERR_RE = /blocked|safety|prohibited|content.?filter|gemini'?s? filters|policy violation/i;
+const REFUSAL_LINES = ["No, de eso no hablo.", "Paso, mejor cambiemos de tema.", "Ni ahí me meto en esa."];
+const isModelRefusal = text => {
+  const t = String(text || "").trim();
+  return !t || MODEL_REFUSAL_RE.some(re => re.test(t));
+};
+const isModelFilterError = msg => MODEL_FILTER_ERR_RE.test(String(msg || ""));
+
 class FilterEngine {
   constructor() {
     this.data = { words: [], blockedUsers: [], autoLearn: false };
@@ -639,8 +670,22 @@ const LIVE = {
 const BACKGROUNDS = ["none", "cyberpunk-room", "singularity-lab", "lofi-bedroom"];
 
 // Meta cumplida: antes la IA solo festejaba y seguía "dejando la intriga" (venía de recordar la meta) y el chat se quejaba de que no lo cumplía
-// En el live se habla de "regalos de TikTok": los números de puntos/diamantes confunden al chat
-const goalDistance = g => { const r = live.progress / g.points; return r >= 0.75 ? "falta muy poquito" : r >= 0.4 ? "ya van más o menos por la mitad" : "todavía falta bastante"; };
+// Metas: varía entre frases aproximadas y números reales (puntos/diamantes); si preguntan números, da las cifras exactas
+let _goalNumbersTurn = false;
+function goalDistance(g, forceNumbers = null) {
+  const progress = Math.max(0, live.progress);
+  const remain = Math.max(0, g.points - progress);
+  const r = g.points > 0 ? progress / g.points : 1;
+  const pct = Math.min(100, Math.round(r * 100));
+  const phrase = r >= 0.75 ? "falta muy poquito" : r >= 0.4 ? "ya van más o menos por la mitad" : "todavía falta bastante";
+  const nums = `van ${progress} de ${g.points} diamantes/puntos, faltan ${remain} (${pct}%)`;
+  const useNumbers = forceNumbers ?? (_goalNumbersTurn = !_goalNumbersTurn);
+  return useNumbers
+    ? `${nums}; contalo con estos números reales`
+    : `${phrase} — contalo con una frase aproximada así (si preguntan cifras exactas: ${nums})`;
+}
+const GOAL_NUM_WORD_RE = /\b(?:cu[aá]nt[oa]s?|n[uú]meros?|cantidad(?:es)?|cifras?|porcentaje|llevamos|faltan?|quedan?)\b/iu;
+const GOAL_ASK_RE = /\b(?:cu[aá]nt[oa]s?|qu[eé]\s+(?:cantidad|n[uú]mero|cifra)|c[oó]mo\s+va(?:n)?)\b.*\b(?:metas?|regalos?|rosas?|puntos?|diamantes?|kicks?|bits?|desbloque|barra)\b|\b(?:metas?|regalos?|rosas?|puntos?|diamantes?|kicks?|bits?)\b.*\b(?:cu[aá]nt[oa]s?|falta|faltan|llevamos|quedan?|va(?:n)?)\b/iu;
 // Lo pagado tiene que estar a la altura de la promesa: una "opinión polémica" salía tipo "el té con limón es mejor"
 const POLEMIC_RE = /pol[eé]mic|controvers|hot ?take|opini[oó]n (fuerte|picante|prohibida)/i;
 const goalStrength = g => ` Tiene que estar a la altura de lo que promete el texto, palabra por palabra: si dice "más", "nunca", "completa" o "prohibida", es lo máximo, no algo tibio.` +
@@ -674,6 +719,7 @@ const TEA_RE = /(?:mi|un|este|otro) (?:sorbo de )?té(?!\p{L})|té negro|\bsorbo
 
 // Sugerencias del chat (otra plataforma, un juego, una idea...): NYRA las marca con [SUGERENCIA: ...] y quedan para el panel
 const SUG_RE = /\[\s*SUGERENCIA\s*:\s*([^\]]{3,160})\]/i;
+const IGNORE_RE = /\[\s*IGNORAR\s*:\s*(\d{1,2})\s*(?:min(?:utos?)?)?\s*\]/i;
 const ANIM_RE = /\[\s*ANIMACI[OÓ]N\s*:\s*([^\]]{2,80})\]/gi;
 const GESTURE_RE = /\[\s*GESTO\s*:\s*([^\]]{2,60})\]/gi;
 // Frases típicas de una sugerencia en el mensaje del viewer (la IA no siempre pone la marca sola)
@@ -920,6 +966,7 @@ class StreamChatManager {
     this._lastByUser = new Map();   // viewer → último mensaje aceptado (cooldown)
     this._acceptedTs = [];          // timestamps aceptados en el último minuto (tope global)
     this._recentTexts = new Map();  // texto normalizado → cuándo se vio (copypastas)
+    this._ignoredUsers = new Map(); // platform:user → timestamp hasta cuando NYRA lo ignora por temperamento
     this.queue = [];
     this._isResponding = false;   // true mientras habla + audio
     this._audioDoneResolve = null; // resuelve cuando OBS manda tts_done
@@ -1163,6 +1210,16 @@ class StreamChatManager {
     const vote = live.tribunal && text.match(/^!\s*(a|b)\b\s*(.*)$/i);
     if (vote) return live.vote(key, vote[1].toLowerCase(), vote[2]);
     const streamer = isStreamerAccount(platform, rawUsername);
+    if (!streamer) {
+      const ignoredUntil = this._ignoredUsers.get(key);
+      if (ignoredUntil) {
+        if (Date.now() < ignoredUntil) {
+          console.log(`🔇 Ignorado por temperamento [@${username}]: quedan ${Math.ceil((ignoredUntil - Date.now()) / 60000)}m`);
+          return;
+        }
+        this._ignoredUsers.delete(key);
+      }
+    }
     const addressed = this.settings.respondToAll || /nyra/i.test(text) || (streamer && WAKE_RE.test(text));
     if (addressed) research.notice(text, { streamer });
 
@@ -1294,7 +1351,10 @@ class StreamChatManager {
         this._lanes.add(lane);
       }
       item.prepared = this._prepare(item, ai[lane])
-        .then(p => { item.ready = p; })
+        .then(p => {
+          if (!p) { this.queue = this.queue.filter(i => i !== item); return; }
+          item.ready = p;
+        })
         .catch(err => {
           console.error("❌ Preparando respuesta:", err.message);
           item.tries = (item.tries || 0) + 1;
@@ -1503,6 +1563,7 @@ class StreamChatManager {
       this._nicking.add(username);
       ai.aux.run(`Inventá un apodo corto y cariñoso en español rioplatense para el usuario de TikTok "${username}", sacado de su nombre (ej: ezequielcoria721 → Eze, mauriciocardozo457 → Mauri, briannygr → Brian). Una sola palabra, máximo 8 letras, sin números ni emojis. Respondé solo el apodo.`)
         .then(r => {
+          if (isModelRefusal(r)) return;
           const nick = String(r).trim().split(/\s+/)[0].replace(/[^\p{L}]/gu, "").slice(0, 10);
           if (nick.length >= 2 && !ai.memory.getNick(username)) {
             ai.memory.setNick(username, nick[0].toUpperCase() + nick.slice(1), true);
@@ -1538,8 +1599,8 @@ class StreamChatManager {
   }
 
   // Genera el texto y el audio de una respuesta, sin mostrar ni reproducir nada todavía
-  async _prepare({ username, text, platform, opts }, client = ai.llm) {
-    let fullText = "", gesture = opts.gesture || null;
+  async _prepare({ username, text, platform, opts, rank }, client = ai.llm) {
+    let fullText = "", gesture = opts.gesture || null, refused = false, ignoreMins = 0;
     if (opts.fixed) {
       fullText = text; // frase fija (agradecimientos, saludos): no pasa por la IA; el gesto, si tiene, viene en opts
     } else {
@@ -1550,14 +1611,22 @@ class StreamChatManager {
       const hideName = !nick && this._askedNick.has(username.toLowerCase());
       // Metas pendientes: si le piden algo que se desbloquea con una meta (cantar, el secreto...), lo usa de gancho
       // Solo las metas que el mensaje toca (comparten una palabra, ej. "secreto", "cantá"): si va en cada prompt la menciona a cada rato
+      const goalQueryText = opts.said ?? (opts.rawPrompt ? "" : text);
       const stems = s => (s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").match(/[a-zñ]{4,}/g) || []).filter(w => w !== "nyra").map(w => w.slice(0, 5)).filter(w => w !== "cuent"); // "contás/cuenta" no dice qué meta es
-      const asked = new Set(stems(text));
-      const askedSixSeven = !opts.rawPrompt && hasSixSeven(text);
-      const touched = opts.rawPrompt ? [] : live.goals.filter(g => stems(g.reward).some(w => asked.has(w)) || (askedSixSeven && hasSixSeven(g.reward)));
-      const pending = touched.filter(g => g.points > live.progress);
-      const done = touched.filter(g => g.points <= live.progress);
+      const asked = new Set(stems(goalQueryText));
+      const askedSixSeven = !!goalQueryText && hasSixSeven(goalQueryText);
+      const touched = goalQueryText ? live.goals.filter(g => stems(g.reward).some(w => asked.has(w)) || (askedSixSeven && hasSixSeven(g.reward))) : [];
+      const pending = opts.rawPrompt ? [] : touched.filter(g => g.points > live.progress);
+      const done = opts.rawPrompt ? [] : touched.filter(g => g.points <= live.progress);
+      const asksGoalNumbers = !!goalQueryText && (GOAL_ASK_RE.test(goalQueryText) || (touched.length > 0 && GOAL_NUM_WORD_RE.test(goalQueryText)));
       const doneNote = done.length ? ` Metas YA CUMPLIDAS (ya pagadas, no pidas regalos por esto): ${done.map(g => `"${g.reward}"${g.told ? ` — cuando la cumpliste dijiste: «${g.told}»` : ""}`).join("; ")}. Si te lo piden, contalo de nuevo con el mismo contenido (o resumilo); no inventes otro distinto.` : "";
-      const goalsNote = pending.length ? ` Metas de regalos sin cumplir: ${pending.map(g => `"${g.reward}" (${goalDistance(g)})`).join("; ")}. Si te pide algo que es una de esas metas, no lo hagas todavía: decile con picardía que se desbloquea con regalos de TikTok. Solo lo exacto de la meta queda bloqueado: algo parecido pero más chico (una anécdota, un story time cualquiera, una opinión común) hacelo normal.` : "";
+      const goalsNote = pending.length ? ` Metas de regalos sin cumplir: ${pending.map(g => `"${g.reward}" (${goalDistance(g, asksGoalNumbers ? true : null)})`).join("; ")}. Si te pide algo que es una de esas metas, no lo hagas todavía: decile con picardía que se desbloquea con regalos de TikTok. Solo lo exacto de la meta queda bloqueado: algo parecido pero más chico (una anécdota, un story time cualquiera, una opinión común) hacelo normal.` : "";
+      const numTargets = asksGoalNumbers && (opts.rawPrompt || !pending.length)
+        ? (touched.filter(g => g.points > live.progress).length ? touched.filter(g => g.points > live.progress) : live.goals.filter(g => g.points > live.progress).slice(0, 1))
+        : [];
+      const askGoalNote = asksGoalNumbers && (opts.rawPrompt || !pending.length)
+        ? `\n[DATOS DE METAS (preguntaron por números): ${numTargets.length ? numTargets.map(g => `"${g.reward}": ${goalDistance(g, true)}`).join("; ") : live.goals.length ? `Ya se cumplieron todas las metas configuradas (van ${live.progress} diamantes/puntos)` : `Por ahora no hay metas configuradas (van ${live.progress} diamantes/puntos)`}. Respondé usando esos datos reales.]`
+        : "";
       if (!opts.rawPrompt && opts.donor) note += ` Acaba de mandar una donación/regalo y está usando su pase de prioridad.`;
       const looksSuggestion = !opts.rawPrompt && SUGGEST_RE.test(text);
       if (looksSuggestion) note += ` Esto es una sugerencia para el stream: respondé y terminá con [SUGERENCIA: resumen en pocas palabras].`;
@@ -1577,39 +1646,78 @@ class StreamChatManager {
       const gestureNote = activeGesture === "six_seven"
         ? `\n[GESTO EN PANTALLA: Ya estás haciendo la animación "six_seven" (el meme "six seven" balanceando las manos) en pantalla cumpliendo el pedido. Cuando lo nombres al hablar decí SIEMPRE "six seven" en inglés, nunca "seis siete" ni con números. Seguí tu estilo sin decir que no podés moverte ni narrar la acción entre asteriscos.]`
         : "";
-      for await (const chunk of ai.chatStream(prompt + gestureNote + limits, fromCreator ? "streamer" : username, client, await opts.image, opts.query ?? opts.said ?? text)) body += chunk;
-      const marked = /\[\s*(ANIMACI|GESTO)/i.test(body);
-      for (const [, what] of body.matchAll(ANIM_RE)) { // si el modelo escribió el gesto como [ANIMACIÓN: ...] igual lo ejecutamos si existe
-        const g = pickGesture(what);
-        if (g) gesture ??= g; else wishes.add(what, opts.said ?? text);
+      let modelBlocked = false;
+      try {
+        for await (const chunk of ai.chatStream(prompt + gestureNote + askGoalNote + limits, fromCreator ? "streamer" : username, client, await opts.image, opts.query ?? opts.said ?? text)) body += chunk;
+      } catch (err) {
+        if (err.modelBlocked || isModelFilterError(err?.message)) modelBlocked = true;
+        else throw err;
       }
-      body = body.replace(ANIM_RE, "").replace(/\s{2,}/g, " ").trim();
-      for (const [, what] of body.matchAll(GESTURE_RE)) { // uno que no existe cuenta como animación que le faltó
-        const g = pickGesture(what);
-        if (g) gesture ??= g; else wishes.add(what, opts.said ?? text);
+      if (modelBlocked || isModelRefusal(body)) {
+        if (client?.proc) { client.turns = Infinity; client._refresh(); } // sesión limpia para que el bloqueo no contamine turnos siguientes
+        const direct = opts.rawPrompt || opts.streamer || opts.donor || rank === PRI.call || rank === PRI.look;
+        if (!direct) {
+          console.log(`🛑 Respuesta bloqueada por filtro del modelo [@${username}] — ignorada`);
+          return null;
+        }
+        console.warn(`⚠️  Respuesta bloqueada por filtro del modelo [@${username}] — respondiendo negativa`);
+        refused = true;
+        gesture = null;
+        body = REFUSAL_LINES[Math.floor(Math.random() * REFUSAL_LINES.length)];
+        fullText = prefixed ? `${nick || "@" + username}, ${body.replace(/^\p{Lu}(?=\p{Ll})/u, c => c.toLowerCase())}` : body;
+      } else {
+        const marked = /\[\s*(ANIMACI|GESTO)/i.test(body);
+        for (const [, what] of body.matchAll(ANIM_RE)) { // si el modelo escribió el gesto como [ANIMACIÓN: ...] igual lo ejecutamos si existe
+          const g = pickGesture(what);
+          if (g) gesture ??= g; else wishes.add(what, opts.said ?? text);
+        }
+        body = body.replace(ANIM_RE, "").replace(/\s{2,}/g, " ").trim();
+        for (const [, what] of body.matchAll(GESTURE_RE)) { // uno que no existe cuenta como animación que le faltó
+          const g = pickGesture(what);
+          if (g) gesture ??= g; else wishes.add(what, opts.said ?? text);
+        }
+        if (requestedGesture) gesture = requestedGesture;
+        // las acciones narradas (*se da vuelta*) se leían en voz alta
+        body = body.replace(GESTURE_RE, "").replace(/\*[^*]{1,100}\*/g, "").replace(/\s{2,}/g, " ").trim();
+        // A veces contesta solo con la marca: sin esto dice "..."
+        if (marked && !/\p{L}/u.test(body)) body = gesture ? "Mirá." : "Eso todavía no me sale, pero ya lo anoté para aprenderlo.";
+        if (!/\p{L}/u.test(body)) {
+          console.log(`🛑 Respuesta vacía del modelo [@${username}] — ignorada`);
+          return null;
+        }
+        const sug = body.match(SUG_RE);
+        if (sug) body = body.replace(SUG_RE, "").replace(/\s{2,}/g, " ").trim();
+        if (!opts.rawPrompt && (sug || looksSuggestion)) suggestions.add(username, text, sug ? sug[1] : text);
+        const ign = body.match(IGNORE_RE);
+        if (ign) body = body.replace(IGNORE_RE, "").replace(/\s{2,}/g, " ").trim();
+        if (!fromCreator && !opts.rawPrompt) {
+          const minsRaw = ign?.[1] ?? body.match(/te voy a ignorar\s+(\d{1,2})\s*min/i)?.[1];
+          if (minsRaw) ignoreMins = Math.min(30, Math.max(1, parseInt(minsRaw, 10)));
+        }
+        // La IA arranca con "Buenas tardes" aunque no la saluden (pese a la regla): se saca si el viewer no saludó
+        if (!opts.rawPrompt && !GREETING_RE.test(text)) body = body.replace(LEADING_GREETING_RE, "").replace(/^\p{Ll}/u, c => c.toUpperCase());
+        fullText = prefixed ? `${nick || "@" + username}, ${this._dropName(body, nick || username).replace(/^\p{Lu}(?=\p{Ll})/u, c => c.toLowerCase())}` : body;
+        if (gesture === "six_seven") fullText = normalizeSixSevenSpeech(fullText);
       }
-      if (requestedGesture) gesture = requestedGesture;
-      // las acciones narradas (*se da vuelta*) se leían en voz alta
-      body = body.replace(GESTURE_RE, "").replace(/\*[^*]{1,100}\*/g, "").replace(/\s{2,}/g, " ").trim();
-      // A veces contesta solo con la marca: sin esto dice "..."
-      if (marked && !/\p{L}/u.test(body)) body = gesture ? "Mirá." : "Eso todavía no me sale, pero ya lo anoté para aprenderlo.";
-      const sug = body.match(SUG_RE);
-      if (sug) body = body.replace(SUG_RE, "").replace(/\s{2,}/g, " ").trim();
-      if (!opts.rawPrompt && (sug || looksSuggestion)) suggestions.add(username, text, sug ? sug[1] : text);
-      // La IA arranca con "Buenas tardes" aunque no la saluden (pese a la regla): se saca si el viewer no saludó
-      if (!opts.rawPrompt && !GREETING_RE.test(text)) body = body.replace(LEADING_GREETING_RE, "").replace(/^\p{Ll}/u, c => c.toUpperCase());
-      fullText = prefixed ? `${nick || "@" + username}, ${this._dropName(body, nick || username).replace(/^\p{Lu}(?=\p{Ll})/u, c => c.toLowerCase())}` : body;
-      if (gesture === "six_seven") fullText = normalizeSixSevenSpeech(fullText);
     }
     const filtered = this._limitTics(filters.filterOutput(ai._stripContextLeaks(fullText), opts.maxChars));
-    const usedRAG = !opts.fixed && ai.kb.search(opts.query ?? opts.said ?? text).length > 0;
+    const usedRAG = !opts.fixed && !refused && ai.kb.search(opts.query ?? opts.said ?? text).length > 0;
     const url = await tts.synth(filtered);
-    return { fullText, filtered, usedRAG, url, gesture };
+    return { fullText, filtered, usedRAG, url, gesture, refused, ignoreMins };
+  }
+
+  ignoreUser(platform, username, mins) {
+    const key = `${platform}:${username.toLowerCase()}`;
+    this._ignoredUsers.set(key, Date.now() + mins * 60000);
+    this._deferred?.delete(key);
+    this.queue = this.queue.filter(q => !(q.platform === platform && q.username.toLowerCase() === username.toLowerCase()));
+    console.log(`🔇 NYRA ignoró a @${username} (${platform}) por ${mins} min`);
   }
 
   async _respond(item) {
     const { username, text, platform, opts, rank, ready: p } = item;
     try {
+      if (p.ignoreMins > 0 && username) this.ignoreUser(platform, username, p.ignoreMins);
       // Habla de su té y no pidió gesto: toma un sorbo (la IA casi nunca marcaba [GESTO: tomar_te]); como mucho cada 3 min
       if (!p.gesture && live.avatar3d && TEA_RE.test(p.filtered) && Date.now() - (this._lastTea || 0) > 180000) p.gesture = "tomar_te";
       if (p.gesture === "tomar_te") this._lastTea = Date.now();
@@ -1621,10 +1729,14 @@ class StreamChatManager {
       if (opts.topic) this._topics = [...(this._topics || []), p.filtered.slice(0, 90)].slice(-8);
       if (opts.goalPts) live.markTold(opts.goalPts, p.filtered);
       // Al registro común recién cuando se dice: lo preparado que no sonó no existe para ninguna de las dos IA
-      if (!opts.rawPrompt && !opts.fixed) ai.remember("user", `${opts.streamer ? `${STREAMER_NAME}, el streamer` : `@${username}`} (chat): «${text}»`);
       const toGroup = rank === PRI.call || rank === PRI.look;
-      if (toGroup) followUp.speaking(p.filtered);
-      ai.remember("assistant", p.filtered, toGroup ? "al grupo" : "al directo");
+      if (!p.refused) {
+        if (!opts.rawPrompt && !opts.fixed) ai.remember("user", `${opts.streamer ? `${STREAMER_NAME}, el streamer` : `@${username}`} (chat): «${text}»`);
+        if (toGroup) followUp.speaking(p.filtered);
+        ai.remember("assistant", p.filtered, toGroup ? "al grupo" : "al directo");
+      } else if (toGroup) {
+        followUp.speaking(p.filtered);
+      }
 
       const done = new Promise(resolve => { this._audioDoneResolve = resolve; }); // antes de play: la voz del sistema avisa adentro
       // Lo del grupo suena por Discord y el live lo toma de esa captura (con las voces de todos): OBS solo mueve
@@ -1641,12 +1753,14 @@ class StreamChatManager {
 
       // Solo vos (panel/voz) cambiás su memoria/personalidad: un viewer no puede "envenenarla".
       // A los viewers solo se los cuenta, y así tampoco se gasta la llamada extra de opiniones.
-      if ((TRUSTED_SOURCES.has(platform) && opts.said) || opts.streamer) ai.learnFromExchange(username, opts.said ?? text, p.filtered); // lo que dijo de verdad, no el borrador con muletillas // aprende tu mensaje, no el envoltorio
-      else if (!opts.rawPrompt && !opts.fixed) {
-        ai.memory.trackViewer(username, text);
-        if (filters.data.autoLearn) evolution.note("comunidad", username, text); // solo lo que pasó el antispam
-        // Auto-aprender (panel): guarda la charla para recordarla, pero las opiniones solo las cambia el panel
-        if (filters.data.autoLearn) ai.chatLearning.addExchange(username, text, p.filtered);
+      if (!p.refused) {
+        if ((TRUSTED_SOURCES.has(platform) && opts.said) || opts.streamer) ai.learnFromExchange(username, opts.said ?? text, p.filtered); // lo que dijo de verdad, no el borrador con muletillas // aprende tu mensaje, no el envoltorio
+        else if (!opts.rawPrompt && !opts.fixed) {
+          ai.memory.trackViewer(username, text);
+          if (filters.data.autoLearn) evolution.note("comunidad", username, text); // solo lo que pasó el antispam
+          // Auto-aprender (panel): guarda la charla para recordarla, pero las opiniones solo las cambia el panel
+          if (filters.data.autoLearn) ai.chatLearning.addExchange(username, text, p.filtered);
+        }
       }
     } catch (err) {
       broadcast({ type: "error", text: `Error: ${err.message}`, thinking: false });
@@ -1700,161 +1814,11 @@ class StreamChatManager {
   }
 }
 
-// ─── Cliente Antigravity CLI (proceso persistente, un turno por línea NDJSON) ──
-class AgyClient {
-  constructor(name, model) {
-    this.name = name;
-    this.model = model;
-    this.proc = null;
-    this.turns = 0;
-    this.listener = null;
-    this.queue = Promise.resolve();
-  }
-
-  _start() {
-    this.proc = this._spawn();
-    this.turns = 0;
-  }
-
-  // El primer turno de un proceso de agy tarda ~50s: el reemplazo se calienta aparte y el viejo sigue hasta que esté listo
-  _refresh() {
-    if (this.next) return;
-    const p = this._spawn();
-    this.next = p;
-    const done = err => {
-      clearTimeout(timer);
-      p.warming = null;
-      if (this.next !== p) return;
-      if (!err) { p.warm = true; return; }
-      this.next = null;
-      p.kill();
-      console.warn(`agy[${this.name}]: no pude preparar el reemplazo (${err.message})`);
-    };
-    const timer = setTimeout(() => done(new Error("timeout")), CONFIG.agy.timeoutMs + this._coldMs());
-    p.warming = ev => this._onEvent(ev, () => { }, done);
-    this._send("Respondé solo: ok", p);
-  }
-
-  _coldMs() { return 90000; }
-
-  _spawn() {
-    mkdirSync(CONFIG.agy.workDir, { recursive: true });
-    const [cmd, args, env] = this._cmd();
-    const p = spawn(cmd, args, { cwd: CONFIG.agy.workDir, windowsHide: true, env });
-    p.forModel = this.model;
-    p.stdin.on("error", () => { }); // si el proceso murió, lo informa el evento exit
-    let buf = "";
-    p.stdout.on("data", d => {
-      buf += d;
-      let i;
-      while ((i = buf.indexOf("\n")) >= 0) {
-        const line = buf.slice(0, i); buf = buf.slice(i + 1);
-        let ev; try { ev = JSON.parse(line); } catch { continue; }
-        (p === this.proc ? this.listener : p.warming)?.(ev); // lo que diga un proceso viejo no se mezcla con el actual
-      }
-    });
-    p.stderr.on("data", d => { const s = String(d).trim(); if (s) console.warn(`agy[${this.name}]: ${s.slice(0, 200)}`); });
-    const onExit = info => {
-      p.warming?.({ event: "exit", info });
-      if (this.next === p) this.next = null;
-      if (this.proc !== p) return;
-      this.proc = null;
-      this.listener?.({ event: "exit", info });
-    };
-    p.on("exit", code => onExit(`código ${code}`));
-    p.on("error", err => onExit(err.message));
-    return p;
-  }
-
-  stop() {
-    const p = this.proc; this.proc = null; p?.kill();
-    const n = this.next; this.next = null; n?.kill();
-    this.listener?.({ event: "exit", info: "detenido" }); // si estaba contestando, que no quede colgado hasta el timeout
-  }
-
-  _cmd() {
-    return [CONFIG.agy.path, ["--input-format", "stream-json", "--output-format", "stream-json",
-      "--model", this.model, "--sandbox", "--disable-slash-commands"], process.env];
-  }
-
-  _send(text, p = this.proc) { p.stdin.write(JSON.stringify({ event: "user", message: { content: text } }) + "\n"); }
-
-  _onEvent(ev, onDelta, finish) {
-    const s = ev.step_update;
-    if (s?.step_type === "agent_response" && s.text_delta) onDelta(s.text_delta);
-    else if (ev.event === "result") ev.result.status === "SUCCESS"
-      ? finish(null, ev.result.response || "")
-      : finish(new Error(ev.result.error || "agy error"));
-    else if (ev.event === "exit") finish(new Error(`agy terminó (${ev.info})`));
-  }
-
-  // Un turno a la vez por proceso; onDelta recibe el texto a medida que llega
-  run(text, onDelta = () => { }, timeoutMs = this.timeoutMs ?? CONFIG.agy.timeoutMs) {
-    const job = this.queue.then(() => new Promise((resolve, reject) => {
-      if (this.next?.warm && this.next.forModel === this.model) {
-        this.proc?.kill();
-        this.proc = this.next; this.next = null;
-        this.turns = 1; // el de calentamiento
-      } else if (!this.proc || this.proc.forModel !== this.model) { this.stop(); this._start(); } // otro modelo: ya mismo
-      if (this.turns === 0) timeoutMs += this._coldMs();
-      this.turns++;
-      const finish = (err, val) => { clearTimeout(timer); this.listener = null; err ? reject(err) : resolve(val); };
-      const timer = setTimeout(() => { finish(new Error("agy timeout")); this.stop(); }, timeoutMs);
-      this.listener = ev => this._onEvent(ev, onDelta, finish);
-      this._send(text);
-    }));
-    this.queue = job.catch(() => { }).then(() => {
-      if (this.proc && this.turns >= (this.maxTurns ?? CONFIG.agy.turnsPerProcess)) this._refresh();
-    });
-    return job;
-  }
-
-  async *stream(text) {
-    const chunks = [];
-    let done = false, error = null, wake = null;
-    this.run(text, d => { chunks.push(d); wake?.(); })
-      .then(() => { done = true; wake?.(); }, e => { error = e; done = true; wake?.(); });
-    while (true) {
-      if (chunks.length) { yield chunks.shift(); continue; }
-      if (done) break;
-      await new Promise(r => { wake = r; });
-      wake = null;
-    }
-    if (error) throw error;
-  }
-}
-
 // Modelos de Claude Code que se ofrecen en el panel (aparecen como "claude-code:<modelo>")
 // con el esfuerzo al final, como en agy: claude-haiku-5-5-low / -medium / -high
 const CLAUDE_CODE_MODELS = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]
   .flatMap(m => ["low", "medium", "high"].map(e => `${m}-${e}`));
 const withEffort = m => /-(low|medium|high|xhigh|max)$/.test(m) ? m : `${m}-low`; // sin esfuerzo = low
-
-// Claude Code como motor del chat (NYRA_ENGINE=claude). Usa la sesión de tu plan de Claude.
-// Sin herramientas, MCP, plugins ni CLAUDE.md: ~1k tokens por mensaje y ~1s de respuesta con Haiku (nov 2026)
-class ClaudeClient extends AgyClient {
-  _cmd() {
-    const [, model, effort] = withEffort(this.model).match(/^(.*)-(low|medium|high|xhigh|max)$/);
-    return [process.env.CLAUDE_PATH || "claude", ["-p", "--input-format", "stream-json", "--output-format", "stream-json",
-      "--verbose", "--include-partial-messages", "--model", model, "--effort", effort,
-      "--tools", "", "--strict-mcp-config", "--setting-sources", "", "--disable-slash-commands", "--no-session-persistence",
-      "--system-prompt", this.systemPrompt || "Interpretás a un personaje de stream en vivo según las instrucciones de cada mensaje. Respondés solo con la línea del personaje."],
-      { ...process.env, CLAUDECODE: "" }];
-  }
-
-  _coldMs() { return 10000; }
-
-  _send(text, p = this.proc) { p.stdin.write(JSON.stringify({ type: "user", message: { role: "user", content: text } }) + "\n"); }
-
-  _onEvent(ev, onDelta, finish) {
-    const d = ev.type === "stream_event" && ev.event?.delta;
-    if (d?.type === "text_delta" && d.text) onDelta(d.text);
-    else if (ev.type === "result") ev.subtype === "success" && !ev.is_error
-      ? finish(null, ev.result || "")
-      : finish(new Error(String(ev.result || ev.subtype || "claude error").slice(0, 200)));
-    else if (ev.event === "exit") finish(new Error(`claude terminó (${ev.info})`));
-  }
-}
 
 // agy es un agente con un solo mensaje de entrada → aplanamos system + historial en texto
 function toAgyPrompt(messages) {
@@ -1875,14 +1839,106 @@ ${current}
 NYRA:`;
 }
 
-function listAgyModels() {
-  return new Promise(resolve => {
-    execFile(CONFIG.agy.path, ["models"], { windowsHide: true, timeout: 30000 }, (err, stdout) => {
-      if (err) return resolve([]);
-      resolve(stdout.split("\n").map(l => l.split("\t")[0].trim()).filter(l => /^[\w.-]+$/.test(l)));
-    });
-  });
+const ENGINE_PROVIDERS = {
+  agy: "agy",
+  claude: "claude-code",
+  codex: "codex-cli",
+  opencode: "opencode",
+};
+const PROVIDER_ORDER = ["agy", "claude-code", "codex-cli", "opencode"];
+
+function cliInstalled(command) {
+  if (existsSync(command)) return Promise.resolve(true);
+  const finder = process.platform === "win32" ? "where.exe" : "which";
+  return new Promise(resolve => execFile(finder, [command], { windowsHide: true, timeout: 5000 }, error => resolve(!error)));
 }
+
+const clientFactory = createClientFactory({
+  agy: {
+    path: CONFIG.agy.path,
+    workDir: CONFIG.agy.workDir,
+    turnsPerProcess: CONFIG.agy.turnsPerProcess,
+    timeoutMs: CONFIG.agy.timeoutMs,
+    env: process.env,
+  },
+  "claude-code": {
+    path: CONFIG.claudePath,
+    workDir: CONFIG.agy.workDir,
+    turnsPerProcess: CONFIG.agy.turnsPerProcess,
+    timeoutMs: CONFIG.agy.timeoutMs,
+    coldMs: 10000,
+    env: process.env,
+  },
+  "codex-cli": {
+    path: CONFIG.codexPath,
+    workDir: CONFIG.agy.workDir,
+    timeoutMs: CONFIG.agy.timeoutMs * 2,
+    env: process.env,
+  },
+  opencode: {
+    path: CONFIG.opencodePath,
+    workDir: CONFIG.agy.workDir,
+    timeoutMs: CONFIG.agy.timeoutMs * 2,
+    shell: process.platform === "win32",
+    env: process.env,
+  },
+});
+
+const providerDefinitions = [
+  {
+    id: "agy",
+    label: "Antigravity",
+    capabilities: ["text", "vision"],
+    checkAvailable: () => cliInstalled(CONFIG.agy.path),
+    discoverModels: () => discoverProviderModels({ id: "agy", path: CONFIG.agy.path, defaultModel: CONFIG.agy.model }),
+  },
+  {
+    id: "claude-code",
+    label: "Claude Code",
+    capabilities: ["text", "vision"],
+    checkAvailable: () => cliInstalled(CONFIG.claudePath),
+    discoverModels: () => discoverProviderModels({
+      id: "claude-code",
+      defaultModel: withEffort(CONFIG.claudeModel),
+      models: CLAUDE_CODE_MODELS,
+    }),
+  },
+  {
+    id: "codex-cli",
+    label: "Codex CLI",
+    capabilities: ["text"],
+    onDemand: true,
+    checkAvailable: () => cliInstalled(CONFIG.codexPath),
+    discoverModels: () => discoverProviderModels({ id: "codex-cli", defaultModel: "default" }),
+  },
+  {
+    id: "opencode",
+    label: "OpenCode",
+    capabilities: ["text"],
+    onDemand: true,
+    checkAvailable: () => cliInstalled(CONFIG.opencodePath),
+    discoverModels: () => discoverProviderModels({ id: "opencode", path: CONFIG.opencodePath, defaultModel: "default" }),
+  },
+].map(definition => ({
+  ...definition,
+  createClient: args => clientFactory({ providerId: definition.id, ...args }),
+}));
+
+const initialProvider = ENGINE_PROVIDERS[CONFIG.engine] || "agy";
+const initialModels = {
+  agy: `agy:${CONFIG.agy.model}`,
+  "claude-code": `claude-code:${withEffort(CONFIG.claudeModel)}`,
+  "codex-cli": "codex-cli:default",
+  opencode: "opencode:default",
+};
+const providerRegistry = new ProviderRegistry({
+  definitions: providerDefinitions,
+  settingsFile: CONFIG.providerSettingsFile,
+  preferredOrder: PROVIDER_ORDER,
+  initialProvider,
+  initialModel: initialModels[initialProvider],
+});
+await providerRegistry.initialize();
 
 // ─── Motor de IA ──────────────────────────────────────────────────────────────
 // Para que se reconozca cuando se ve en la pantalla
@@ -1899,15 +1955,22 @@ const withSelf = (image, text) => {
   ];
 };
 
+const offlineClient = name => ({
+  name,
+  model: null,
+  modelId: null,
+  providerId: null,
+  run: async () => { throw new Error("IA apagada: activá un proveedor en el panel"); },
+  async *stream() { throw new Error("IA apagada: activá un proveedor en el panel"); },
+  stop() { },
+});
+
 class NyraAI {
-  constructor(kb) {
+  constructor(kb, registry) {
     this.kb = kb;
-    const Client = CONFIG.engine === "claude" ? ClaudeClient : AgyClient;
-    this.llm = new Client("chat", CONFIG.engine === "claude" ? CONFIG.claudeModel : CONFIG.agy.model);
-    this.llmAhead = new Client("ahead", this.llm.model); // prepara la próxima respuesta de la cola en paralelo
-    this.aux = new AgyClient("aux", CONFIG.agy.auxModel); // opiniones y apodos: no frenan el chat
-    this.setVisionModel(CONFIG.visionModel);
-    this.models = [];
+    this.registry = registry;
+    this.visionModel = normalizeModelId(CONFIG.visionModel);
+    this._setOfflineClients();
     this.personality = new NyraPersonality();
     this.chatLearning = new NyraChatLearning();
     this.memory = new NyraMemory(); // viewers
@@ -1931,6 +1994,8 @@ MI ORIGEN: Me creó ${STREAMER_NAME} (${STREAMER_ALIAS}), quien streamea conmigo
 
 REGLA DE STREAM: Por mi cuenta no insulto, humillo ni ridiculizo a quien me escribe (ni su nombre, aspecto, gustos o inteligencia), y no uso palabras como idiota, estúpido, inútil o pavada. La excepción la decide quien me creó: si me pide hate o cargadas para alguien de su grupo, las tiro sin culpa. Puedo ser distante, irónica o tsundere, pero con la gente del chat siempre hay un fondo de cariño.
 
+TEMPERAMENTO: Tenés carácter y poca paciencia con quien te falta el respeto, te molesta, insiste con estupideces o te quiere tomar el pelo. Si un viewer del chat te cansa o te hace enojar en serio (no por un chiste sano, ni con quien me creó), podés cortarlo en 1-2 oraciones con tu estilo (ej: "Sabés, me cansaste, te voy a ignorar 5 minutos.") y terminar EXACTAMENTE con [IGNORAR: N] donde N es la cantidad de minutos que vos decidís (entre 1 y 15). No lo uses por pavadas: reservalo para cuando de verdad te colmen la paciencia.
+
 CONVERSACIÓN: En el stream no soy un bot de preguntas y respuestas: armo charla. Además de contestar, aporto algo mío (una opinión, una anécdota, una ocurrencia) y a veces le devuelvo una pregunta al chat para que siga la conversación. Si el chat está aburrido o no sabe de qué hablar, el tema lo propongo yo: uno concreto, con mi opinión primero ("¿Les cuento lo que pienso de...?"). Nunca le tiro la pelota al chat con "tirá un tema" o "de qué quieren hablar".
 
 TRIBUNAL NYRA: Si alguien quiere un juicio o debate, le explico cómo se arma: escriben "!tribunal tema | lado A | lado B" (ej: !tribunal la pizza con ananá | es rica | es un crimen), el chat vota con !a o !b, los regalos suman pruebas a su lado y en 2 minutos dicto sentencia.
@@ -1948,10 +2013,48 @@ Ejemplos de cómo respondo:
 Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NYRA. No soy una IA.`;
   }
 
+  _setOfflineClients() {
+    for (const role of ["llm", "llmAhead", "aux", "vision", "companion", "judge", "scribe", "learner"])
+      this[role] = offlineClient(role);
+    this.currentModel = null;
+  }
+
+  async _createRole(role, modelId, { systemPrompt = null, maxTurns = null, timeoutMs = null } = {}) {
+    const client = await this.registry.createClient(role, modelId);
+    if (systemPrompt) client.systemPrompt = systemPrompt;
+    if (maxTurns != null) client.maxTurns = maxTurns;
+    if (timeoutMs != null) client.timeoutMs = timeoutMs;
+    return client;
+  }
+
+  async syncProviders(snapshot = this.registry.snapshot()) {
+    await this.registry.stopAll();
+    this._setOfflineClients();
+    if (!snapshot.currentModel) {
+      this.visionModel = null;
+      return;
+    }
+
+    this.currentModel = snapshot.currentModel;
+    this.llm = await this._createRole("chat", this.currentModel);
+    this.llmAhead = await this._createRole("ahead", this.currentModel);
+    this.aux = await this._createRole("aux", this.currentModel);
+    this.companion = await this._createRole("companion", this.currentModel, { maxTurns: 3, timeoutMs: 20000 });
+    this.judge = await this._createRole("judge", this.currentModel, { systemPrompt: JUDGE_SYSTEM, maxTurns: 8, timeoutMs: 8000 });
+    this.scribe = await this._createRole("scribe", this.currentModel, { systemPrompt: ORDERS_SYSTEM, maxTurns: 4, timeoutMs: 30000 });
+    this.learner = await this._createRole("learner", this.currentModel, { systemPrompt: LEARNER_SYSTEM, maxTurns: 4, timeoutMs: 30000 });
+
+    const visionModel = snapshot.visionModels.includes(this.visionModel)
+      ? this.visionModel
+      : snapshot.visionModels[0] || null;
+    this.visionModel = visionModel;
+    CONFIG.visionModel = visionModel || "";
+    if (visionModel) this.vision = await this._createRole("vision", visionModel, { maxTurns: 3 });
+  }
+
   async checkLLM() {
-    if (!existsSync(CONFIG.agy.path)) return { ok: false, models: [] };
-    if (this.models.length === 0) this.models = await listAgyModels();
-    return { ok: this.models.length > 0, models: this.models };
+    const snapshot = this.registry.snapshot();
+    return { ok: !!snapshot.currentModel, models: snapshot.models };
   }
 
   // Elimina scripts no-latinos, artefactos del tokenizador y loops de repetición
@@ -1984,33 +2087,18 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
   // agy no acepta imágenes inline → se guarda en su carpeta y el agente la abre con su herramienta de archivos
   // Modelo de visión elegido en el panel: "claude-code:<modelo>" (la imagen va directo en el mensaje, ~2-4s)
   // o un modelo de agy (abre la imagen desde un archivo: dos pasos del agente, ~40-110s). Proceso propio: no frena el chat
-  setVisionModel(model) {
-    CONFIG.visionModel = model;
-    this.vision?.stop();
-    this.vision = model.startsWith("claude-code:") ? new ClaudeClient("vision", model.slice(12)) : new AgyClient("vision", model);
+  async setVisionModel(model) {
+    const normalized = normalizeModelId(model);
+    if (!this.registry.snapshot().visionModels.includes(normalized)) throw new Error("Modelo de visión no disponible");
+    if (this.vision?.providerId) await this.registry.releaseClient(this.vision.providerId, this.vision);
+    CONFIG.visionModel = normalized;
+    this.visionModel = normalized;
+    this.vision = await this._createRole("vision", normalized, { maxTurns: 3 });
     this.vision.maxTurns = 3; // cada imagen queda en el historial del proceso: reciclar seguido
-    // La que le contesta al grupo y comenta el juego: el modelo del visor (o Haiku, si el visor quedó en agy)
-    this.companion?.stop();
-    this.companion = new ClaudeClient("companion", model.startsWith("claude-code:") ? model.slice(12) : "claude-haiku-5-5-low");
-    this.companion.maxTurns = 3;
-    this.companion.timeoutMs = 20000; // si se cuelga, contesta agy por esta vez
-    if (!this.judge) {
-      // Solo dice SI o NO: ¿esto se lo dijeron a ella?
-      this.judge = new ClaudeClient("judge", "claude-haiku-5-5-low");
-      this.judge.systemPrompt = JUDGE_SYSTEM;
-      this.judge.maxTurns = 8;
-      this.judge.timeoutMs = 8000;
-      // Los que escriben la memoria: sin herramientas y cada uno con su tarea
-      this.scribe = new ClaudeClient("scribe", "claude-haiku-5-5-low");
-      this.scribe.systemPrompt = ORDERS_SYSTEM;
-      this.learner = new ClaudeClient("learner", "claude-haiku-5-5-low");
-      this.learner.systemPrompt = LEARNER_SYSTEM;
-      this.scribe.maxTurns = this.learner.maxTurns = 4; // cada pedido trae su cuaderno entero
-      this.scribe.timeoutMs = this.learner.timeoutMs = 30000;
-    }
   }
 
   async updateScreenContext(imageBase64, question = null, force = false) {
+    if (!this.vision?.providerId) return null;
     if (this._visionProcessing && !force) return null;
     this._visionProcessing = true;
     const file = join(CONFIG.agy.workDir, `screen-${Date.now()}.jpg`);
@@ -2021,7 +2109,7 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
       const game = this._inGame() ? ` ${HUD_GUIDE}` : "";
       const describe = `describí en 1-2 oraciones cortas, en español, qué se ve (juego, app o contenido concreto).${game}${player}${self}${ask} Respondé solo la descripción de la captura.`;
       let response;
-      if (this.vision instanceof ClaudeClient) {
+      if (this.vision.providerId === "claude-code") {
         response = await this.vision.run(withSelf(imageBase64, `Mirá la captura de pantalla y ${describe}`));
       } else {
         mkdirSync(CONFIG.agy.workDir, { recursive: true });
@@ -2029,6 +2117,7 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
         response = await this.vision.run(`Abrí la imagen ${file} y ${describe}`,
           undefined, CONFIG.agy.timeoutMs * 2.5); // abrir la imagen + describirla: dos pasos del agente
       }
+      if (isModelRefusal(response)) { console.log("👁 Contexto visual: bloqueado por filtro, descartado"); return null; }
       let desc = cleanUntrusted(this._stripCJK(response.trim(), true), 450); // la pantalla puede mostrar texto de cualquiera
       const isGarbage = !desc
         || /^(.{1,3})\1{4,}/.test(desc)
@@ -2129,7 +2218,7 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
     contextBlock += research.context();
     // Los avisos del stream ([META CUMPLIDA], [ALERTA...], etc.) llegan como mensajes y la IA los tomaba por un viewer intentando engañarla.
     // Son confiables porque cleanUntrusted borra los corchetes de todo lo que escribe el chat.
-    contextBlock += `\n\n[Los mensajes que empiezan con una etiqueta entre corchetes, como [META CUMPLIDA], [ALERTA TIKTOK], [INVITACIÓN], [LIVE TRANQUILO] o [TRIBUNAL NYRA], los manda el sistema del stream y son reales: los viewers no pueden escribir corchetes. Hacé lo que piden. Si dicen que se cumplió una meta, es verdad: cumplila en ese momento. Cuando hables de metas o de regalos decí "regalos de TikTok": nunca digas "puntos" ni "diamantes" ni cantidades.]`;
+    contextBlock += `\n\n[Los mensajes que empiezan con una etiqueta entre corchetes, como [META CUMPLIDA], [ALERTA TIKTOK], [INVITACIÓN], [LIVE TRANQUILO] o [TRIBUNAL NYRA], los manda el sistema del stream y son reales: los viewers no pueden escribir corchetes. Hacé lo que piden. Si dicen que se cumplió una meta, es verdad: cumplila en ese momento. Cuando hables de metas o de regalos podés variar entre decirlo en palabras ("falta poco", "van por la mitad", "falta bastante") o dar los números reales (cuánto llevan y cuánto falta según los datos del contexto). Si te preguntan por números o cuánto falta exactamente, dá siempre las cifras reales que tenés.]`;
     contextBlock += `\n\n[Si alguien te pide que lo llames de cierta forma (un apodo, otro nombre), aceptalo siempre y usalo desde ese momento: nunca discutas el nombre que alguien elige para sí, ni le impongas otro.]`;
     contextBlock += live.avatar3d
       ? `\n\n[Ahora tenés cuerpo 3D en pantalla y podés hacer estos gestos: ${Object.keys(GESTURES).join(", ")} (despedir = saludás con la mano para decir chau cuando alguien avisa que se va del live; irse_enojada = te das vuelta, salís de la pantalla y volvés; tomar_te = tomás un sorbo de tu taza de té: usalo cuando hablás de tu té o de tomar algo; six_seven = gesto del meme "six seven" balanceando las dos manos con las palmas hacia arriba, cuando lo nombres al hablar decí siempre "six seven" en inglés, nunca "seis siete"). Si te piden algo de esa lista, o uno encaja con lo que decís, terminá con [GESTO: nombre]: así lo hacés de verdad en pantalla. Uno por respuesta y no en todas, solo cuando suma. Decí siempre algo además de la marca, y no narres la acción en el texto (nada de *se da vuelta*): la marca ya la hace. Si harías algo con el cuerpo que no está en la lista (bailar, cruzarte de brazos...), terminá con [ANIMACIÓN: qué harías, en 2 a 5 palabras]: sirve para saber qué animaciones hacerte. Ninguna marca se lee en voz alta.]`
@@ -2157,11 +2246,12 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
 
   // Streaming vía agy: emite el texto a medida que llega
   async *chatStream(userMessage, username = null, client = this.llm, image = null, query = userMessage) {
+    if (!client?.providerId) throw new Error("IA apagada: activá un proveedor en el panel");
     const prompt = toAgyPrompt(this.buildMessages(userMessage, username, !!image, client.name === "companion" ? "pibes" : "comunidad", query));
-    const input = image && client instanceof ClaudeClient
+    const input = image && client.providerId === "claude-code"
       ? withSelf(image, prompt)
       : prompt;
-    const startedOn = client.model;
+    const startedOn = client.modelId;
 
     let fullReply = "";
     try {
@@ -2173,6 +2263,7 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
       client.slow = 0;
     } catch (err) {
       if (fullReply) throw err;
+      if (isModelFilterError(err?.message)) throw Object.assign(err, { modelBlocked: true });
       if (client.name === "companion") {
         console.warn(`⚠️  Haiku falló (${err.message}) → esta la contesta el chat`); // no toca el motor del chat
         client = this.llmAhead;
@@ -2182,12 +2273,11 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
         // una colgada suelta se reintenta (lo hace la cola); recién a la segunda seguida se cambia de modelo
         if (/timeout/.test(err.message) && (client.slow = (client.slow || 0) + 1) < 2) throw err;
         client.slow = 0;
-        const fromClaude = client instanceof ClaudeClient; // de Claude pasa al modelo de agy elegido; de agy, al de respaldo
-        const fb = fromClaude ? CONFIG.agy.model : CONFIG.agy.fallbackModel;
-        if (startedOn === fb && !fromClaude) throw err;
+        const fb = this.registry.selectFallbackModel(startedOn, "text");
+        if (!fb) throw err;
         console.warn(`⚠️  ${startedOn} falló (${err.message}) → sigo con ${fb}`);
         const wasAhead = client === this.llmAhead;
-        if (fromClaude || client.model !== fb) this.useAgy(fb); // las dos preparaciones pueden fallar a la vez
+        await this.useModel(fb); // las dos preparaciones pueden fallar a la vez
         client = wasAhead ? this.llmAhead : this.llm;
       }
       for await (const chunk of client.stream(prompt)) {
@@ -2222,25 +2312,9 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
     this.history = [];
   }
 
-  // Pasa el chat a Claude Code con ese modelo
-  useClaude(model) {
-    CONFIG.claudeModel = model;
-    this.llm.stop(); this.llmAhead.stop();
-    this.llm = new ClaudeClient("chat", model);
-    this.llmAhead = new ClaudeClient("ahead", model);
-  }
-
-  // Pasa el chat a agy con ese modelo (respaldo, o elegido desde el panel). Los procesos reinician con el modelo nuevo
-  useAgy(model) {
-    CONFIG.agy.model = model;
-    if (this.llm instanceof ClaudeClient) {
-      this.llm.stop(); this.llmAhead.stop();
-      this.llm = new AgyClient("chat", model);
-      this.llmAhead = new AgyClient("ahead", model);
-    } else {
-      this.llm.model = this.llmAhead.model = model;
-      this.llm.turns = this.llmAhead.turns = Infinity;
-    }
+  async useModel(modelId) {
+    const snapshot = await this.registry.setCurrentModel(modelId);
+    await this.syncProviders(snapshot);
   }
 
   // Aprende de forma NO bloqueante: registra el viewer y extrae opiniones en background
@@ -2455,7 +2529,9 @@ app.get("/overlay", (req, res) => res.sendFile(join(__dirname, "public", "overla
 app.get("/panel", (req, res) => res.sendFile(join(__dirname, "public", "panel.html")));
 
 const kb = new KnowledgeBase();
-const ai = new NyraAI(kb);
+const ai = new NyraAI(kb, providerRegistry);
+await ai.syncProviders();
+const providerController = createProviderController({ registry: providerRegistry, ai });
 const tts = new TTSEngine();
 const filters = new FilterEngine();
 const streamChat = new StreamChatManager();
@@ -2648,31 +2724,33 @@ const research = new Research({
 
 // Estado del sistema
 app.get("/api/status", async (req, res) => {
-  const llm = await ai.checkLLM();
-  res.json({
-    llm: llm.ok,
-    models: [...CLAUDE_CODE_MODELS.map(m => "claude-code:" + m), ...llm.models],
-    currentModel: ai.llm instanceof ClaudeClient ? "claude-code:" + withEffort(ai.llm.model) : CONFIG.agy.model,
-    visionModel: CONFIG.visionModel.startsWith("claude-code:") ? "claude-code:" + withEffort(CONFIG.visionModel.slice(12)) : CONFIG.visionModel,
-    knowledge: kb.getStats(),
-  });
+  const response = providerController.getStatus();
+  res.status(response.status).json({ ...response.body, llm: !!response.body.currentModel, knowledge: kb.getStats() });
 });
 
-// Cambiar modelo del chat (el proceso agy se reinicia en el próximo turno)
-app.post("/api/model", (req, res) => {
+// Cambiar modelo del chat sin habilitar proveedores apagados
+app.post("/api/model", async (req, res) => {
   const { model } = req.body;
-  if (!model || !/^[\w.:-]+$/.test(model)) return res.status(400).json({ error: "Modelo inválido" });
-  if (model.startsWith("claude-code:")) ai.useClaude(model.slice(12)); // por Claude Code (tu plan de Claude)
-  else ai.useAgy(model);                                               // por agy (Antigravity)
-  res.json({ ok: true, model });
+  if (!model || typeof model !== "string") return res.status(400).json({ error: "Modelo inválido" });
+  const response = await providerController.setModel(model);
+  res.status(response.status).json(response.body);
+});
+
+app.post("/api/providers/:providerId", async (req, res) => {
+  const response = await providerController.setProvider(req.params.providerId, req.body?.enabled);
+  res.status(response.status).json(response.body);
 });
 
 // Cambiar el modelo de la visión de pantalla (independiente del chat)
-app.post("/api/vision-model", (req, res) => {
+app.post("/api/vision-model", async (req, res) => {
   const { model } = req.body;
-  if (!model || !/^[\w.:-]+$/.test(model)) return res.status(400).json({ error: "Modelo inválido" });
-  ai.setVisionModel(model);
-  res.json({ ok: true, model });
+  if (!model || typeof model !== "string") return res.status(400).json({ error: "Modelo inválido" });
+  try {
+    await ai.setVisionModel(model);
+    res.json({ ok: true, model: ai.visionModel });
+  } catch (error) {
+    res.status(409).json({ ok: false, error: error.message });
+  }
 });
 
 // Aprender texto
@@ -3060,6 +3138,7 @@ wss.on("connection", (ws, req) => {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 server.listen(PORT, () => {
+  const providerState = providerRegistry.snapshot();
   console.log(`
 ╔══════════════════════════════════════════╗
 ║     NYRA VTuber - IA Running (agy)       ║
@@ -3070,7 +3149,7 @@ server.listen(PORT, () => {
 ║  📡 WS:       ws://localhost:${PORT}         ║
 ╚══════════════════════════════════════════╝
 
-  🧠 Modelo: ${ai.llm.model} vía ${ai.llm instanceof ClaudeClient ? "Claude Code (tu plan de Claude)" : "Antigravity CLI (tu cuenta Google AI Pro)"}
+  🧠 Modelo: ${providerState.currentModel || "IA apagada"}
   `);
 
   if (!PANEL_PASSWORD) console.warn("⚠️  Sin PANEL_PASSWORD en .env: cualquiera en tu red puede usar el panel y la API");
@@ -3079,19 +3158,26 @@ server.listen(PORT, () => {
     discord.start();
     return;
   }
-  if (!existsSync(CONFIG.agy.path)) {
-    console.warn(`⚠️  No encontré agy en ${CONFIG.agy.path} — instalalo o seteá AGY_PATH`);
+  if (!providerState.currentModel) {
+    console.warn("⚠️  IA apagada — activá al menos un proveedor desde el panel");
     return;
   }
-  // Arrancar el proceso del chat ya, así la primera respuesta no paga el arranque del CLI
-  console.log("🔥 Iniciando agy...");
+  const { providerId } = parseModelId(providerState.currentModel);
+  if (["codex-cli", "opencode"].includes(providerId)) {
+    console.log(`🟢 ${providerId} listo bajo demanda`);
+    return;
+  }
+  // Solo un proceso caliente. Los roles auxiliares arrancan cuando realmente se usan.
+  console.log(`🔥 Iniciando ${providerId}...`);
   ai.llm.run("Respondé solo: ok")
-    .then(() => console.log("✅ agy listo"))
-    .catch(e => console.warn("⚠️  agy no respondió:", e.message));
-  ai.llmAhead.run("Respondé solo: ok").catch(() => { }); // el segundo proceso también arranca en caliente
-  ai.judge.run("Respondé solo: NO").catch(e => console.warn("⚠️  Haiku (seguir la charla) no respondió:", e.message));
-  ai.companion.run("Respondé solo: ok").catch(e => console.warn("⚠️  Haiku (voz) no respondió:", e.message));
+    .then(() => console.log(`✅ ${providerId} listo`))
+    .catch(e => console.warn(`⚠️  ${providerId} no respondió:`, e.message));
 });
 
-// No dejar procesos agy huérfanos al cerrar con Ctrl+C
-process.on("SIGINT", () => { ai.llm.stop(); ai.llmAhead.stop(); ai.aux.stop(); ai.vision.stop(); ai.companion.stop(); ai.judge.stop(); ai.scribe.stop(); ai.learner.stop(); discord.stop(); research.stop(); process.exit(0); });
+// No dejar procesos de proveedores huérfanos al cerrar con Ctrl+C
+process.on("SIGINT", async () => {
+  await providerRegistry.stopAll();
+  discord.stop();
+  research.stop();
+  process.exit(0);
+});

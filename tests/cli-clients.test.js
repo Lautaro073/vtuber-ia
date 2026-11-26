@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { once } from "node:events";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { AgyClient, ClaudeClient, CodexClient, OpenCodeClient, createClientFactory } from "../lib/ai/cli-clients.js";
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "cli-fixture.mjs");
+const WINDOWS_FIXTURE = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "cli-fixture.cmd");
 
 function clientConfig(protocol, overrides = {}) {
   const workDir = mkdtempSync(join(tmpdir(), `nyra-${protocol}-client-`));
@@ -87,9 +89,10 @@ test("persistent stop kills both the active and warm replacement processes", asy
   assert.ok(active);
   assert.ok(warm);
   client.stop();
+  await Promise.all([active, warm].map(child => child.exitCode === null ? once(child, "exit") : null));
 
-  assert.equal(active.killed, true);
-  assert.equal(warm.killed, true);
+  assert.notEqual(active.exitCode, null);
+  assert.notEqual(warm.exitCode, null);
   assert.equal(client.proc, null);
   assert.equal(client.next, null);
 });
@@ -108,6 +111,70 @@ test("OpenCodeClient parses text parts and clears its child", async (t) => {
 
   assert.equal(await collect(client.stream("hola")), "reply:hola");
   assert.equal(client.children.size, 0);
+});
+
+test("OpenCodeClient can launch a Windows command shim", { skip: process.platform !== "win32" }, async (t) => {
+  const config = clientConfig("opencode", {
+    path: WINDOWS_FIXTURE,
+    argsPrefix: [],
+    shell: true,
+    env: { ...process.env, NODE_EXE: process.execPath, FIXTURE_PROTOCOL: "opencode" },
+  });
+  const client = new OpenCodeClient("chat", "default", config);
+  cleanupClient(t, client);
+
+  assert.equal(await client.run("hola"), "reply:hola");
+});
+
+test("stopping a Windows command shim terminates its descendant process tree", { skip: process.platform !== "win32" }, async (t) => {
+  const config = clientConfig("opencode", {
+    path: WINDOWS_FIXTURE,
+    argsPrefix: [],
+    shell: true,
+    env: {
+      ...process.env,
+      NODE_EXE: process.execPath,
+      FIXTURE_PROTOCOL: "opencode",
+      FIXTURE_BEHAVIOR: "hang",
+    },
+  });
+  const client = new OpenCodeClient("chat", "default", config);
+  let descendants = [];
+  const descendantPids = parentPid => {
+    const output = execFileSync("powershell.exe", [
+      "-NoProfile",
+      "-Command",
+      `Get-CimInstance Win32_Process | Where-Object ParentProcessId -eq ${parentPid} | Select-Object -ExpandProperty ProcessId`,
+    ], { encoding: "utf8" }).trim();
+    return output ? output.split(/\s+/).map(Number) : [];
+  };
+  const isAlive = pid => {
+    try { process.kill(pid, 0); return true; } catch { return false; }
+  };
+  t.after(() => {
+    client.stop();
+    for (const pid of descendants.filter(isAlive)) {
+      try { execFileSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], { windowsHide: true }); } catch { }
+    }
+    rmSync(config.workDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  const running = client.run("hola");
+  for (let i = 0; i < 80 && client.children.size === 0; i++) await new Promise(resolve => setTimeout(resolve, 10));
+  const wrapper = [...client.children][0];
+  assert.ok(wrapper?.pid);
+  for (let i = 0; i < 40 && descendants.length === 0; i++) {
+    await new Promise(resolve => setTimeout(resolve, 25));
+    descendants = descendantPids(wrapper.pid);
+  }
+  assert.ok(descendants.length > 0);
+  const interrupted = assert.rejects(running, /detenido/);
+
+  client.stop();
+  await interrupted;
+  for (let i = 0; i < 40 && descendants.some(isAlive); i++) await new Promise(resolve => setTimeout(resolve, 25));
+
+  assert.deepEqual(descendants.filter(isAlive), []);
 });
 
 test("one-shot clients send long prompts through stdin", async (t) => {
@@ -140,6 +207,15 @@ test("one-shot nonzero errors keep stderr bounded", async (t) => {
   assert.ok(error.message.length <= 550);
 });
 
+test("one-shot errors prefer the reason reported in the CLI JSON over stderr noise", async (t) => {
+  const client = new CodexClient("chat", "default", clientConfig("codex", {
+    env: { ...process.env, FIXTURE_PROTOCOL: "codex", FIXTURE_BEHAVIOR: "limit" },
+  }));
+  cleanupClient(t, client);
+
+  await assert.rejects(client.run("hola"), /código 1: You've hit your usage limit\.$/);
+});
+
 test("one-shot stop kills the exact in-flight child and rejects the request", async (t) => {
   const client = new OpenCodeClient("chat", "default", clientConfig("opencode", {
     env: { ...process.env, FIXTURE_PROTOCOL: "opencode", FIXTURE_BEHAVIOR: "hang" },
@@ -154,8 +230,8 @@ test("one-shot stop kills the exact in-flight child and rejects the request", as
 
   await interrupted;
   assert.ok(child);
-  await once(child, "exit");
-  assert.equal(child.killed, true);
+  if (child.exitCode === null) await once(child, "exit");
+  assert.notEqual(child.exitCode, null);
   assert.equal(client.children.size, 0);
 });
 
@@ -169,4 +245,24 @@ test("client factory creates the adapter requested by provider ID", () => {
   assert.ok(client instanceof CodexClient);
   assert.equal(client.name, "chat");
   assert.equal(client.model, "default");
+});
+
+test("non-Claude adapters include role system prompts in their input", async (t) => {
+  const agy = new AgyClient("scribe", "gemini-test", clientConfig("agy"));
+  const codex = new CodexClient("scribe", "default", clientConfig("codex"));
+  cleanupClient(t, agy);
+  cleanupClient(t, codex);
+  agy.systemPrompt = "REGLAS";
+  codex.systemPrompt = "REGLAS";
+
+  assert.equal(await agy.run("hola"), "reply:REGLAS\n\nhola");
+  assert.equal(await codex.run("hola"), "reply:REGLAS\n\nhola");
+});
+
+test("Claude sends role system prompts only through its dedicated CLI flag", async (t) => {
+  const claude = new ClaudeClient("scribe", "claude-test-low", clientConfig("claude"));
+  cleanupClient(t, claude);
+  claude.systemPrompt = "REGLAS";
+
+  assert.equal(await claude.run("hola"), "reply:hola");
 });
