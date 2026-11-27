@@ -273,3 +273,11 @@ necesitó tres versiones y varias rondas cada una. No es opcional ni depende de 
   - **Pliegues del buzo en hombros (`Tops_01_CLOTH`)**: adelantar demasiado la clavícula (`clav_fwd > 0`) junto con codos muy cerrados pincha la malla y genera picos en hombros; validar hombros y axilas en grilla.
   - **`cloth_collision.py` y `pensativa`**: usar `include_face=True` (aislando y cerrando `Face_00_SKIN`, pues `Face` completo tiene bordes abiertos) en gestos faciales. Aun así, contrastar tela-contra-tela, cuello del buzo y paridad radial con renders reales.
   - **Visor y `memoria.js`**: verificar los ejes normalizados de VRM (`x < 0` adelanta el brazo desde reposo) para respaldos procedurales y ubicar los nuevos gestos compuestos antes que reglas más amplias como `saludar` (`/salud|mano/`).
+- **Capa automática del visor (nov 2026)**, en el bucle de `vrm.js`, sin `.vrma`: respiración (spine + upperChest
+  desfasado), peso de cadera lento, cabeza que deriva con dos senos (`wob`) y gira más al hablar, cuello que cabecea con
+  la apertura de boca suavizada (`voice`, sale de los visemas) y mirada con escapes cortos (`gaze`, un Object3D que
+  persigue a la cámara + desvío; pensando, arriba a un costado). Todo ≤ ~5°: medido y visto de frente, 3/4 y perfil.
+  - Para probar el habla sin IA: `POST /api/tts/speak` con `x-panel-key: prueba-local-3d` (texto fijo, en la copia).
+  - El estado sale de `#avatar.className`: forzar `'avatar thinking'` con un `setInterval` para revisar la pose de pensar.
+  - Para mirar de costado mover `__cam` (el bucle pisa `vrm.scene.rotation.y` en cada cuadro) y devolverla al final.
+  - Al copiar un `vrm.js` nuevo a la copia de prueba se pierden los ganchos (`__scene`, `__cam`…): volver a aplicarlos.

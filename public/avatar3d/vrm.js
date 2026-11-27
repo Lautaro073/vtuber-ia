@@ -279,7 +279,10 @@ export async function start(container, url, face, getState) {
   const aim = new THREE.Vector3(0, head.y - 0.18, 0);
   camera.position.set(0, aim.y + 0.03, 2.4);
   camera.lookAt(aim);
-  vrm.lookAt.target = camera;
+  const gaze = new THREE.Object3D(), gazeTo = new THREE.Vector3(), glance = new THREE.Vector3();
+  gaze.position.copy(camera.position);
+  scene.add(gaze);
+  vrm.lookAt.target = gaze;
 
   const resize = () => {
     const { clientWidth: w, clientHeight: h } = container;
@@ -292,7 +295,8 @@ export async function start(container, url, face, getState) {
   resize();
 
   const weights = Object.fromEntries(SHAPES.map(s => [s, 0]));
-  let nextBlink = 2, blinkUntil = 0;
+  let nextBlink = 2, blinkUntil = 0, nextGlance = 3, voice = 0;
+  const wob = (t, a, b) => Math.sin(t * a) * 0.6 + Math.sin(t * b + 1.3) * 0.4; // ruido suave: dos senos que no se repiten igual
   let current = null; // { g, t0 }
   const clock = new THREE.Clock();
 
@@ -342,15 +346,30 @@ export async function start(container, url, face, getState) {
     for (const s of Object.keys(SPLIT_EXPR)) weights[s] = splitReady.has(s) ? 0 : Math.min(weights[s], mouthBudget);
     for (const s of SHAPES) vrm.expressionManager.setValue(s, weights[s]);
 
-    // Cuerpo: respirar, balancearse al hablar, ladear la cabeza al pensar
+    // Cuerpo vivo sin animaciones: respira, se reparte el peso, la cabeza deriva y sigue la voz, la mirada se escapa
     const k = still ? 0 : 1;
-    bone('spine').rotation.x = k * Math.sin(t * 1.6) * 0.015;
-    bone('chest').rotation.z = k * Math.sin(t * 0.7) * 0.012;
     const talk = state.includes('speaking'), think = state.includes('thinking');
-    bone('neck').rotation.x = k * (talk ? Math.sin(t * 9) * 0.025 : 0);
-    const tilt = think ? 0.14 : k * Math.sin(t * 0.5) * 0.03;
+    voice += ((talk ? visemeSum : 0) - voice) * Math.min(1, dt * 6); // apertura de boca suavizada = energía de la voz
+    bone('spine').rotation.x = k * Math.sin(t * 1.6) * 0.015;
+    bone('upperChest') && (bone('upperChest').rotation.x = k * Math.sin(t * 1.6 - 0.4) * 0.012); // el pecho sube un poco después
+    bone('chest').rotation.z = k * Math.sin(t * 0.7) * 0.012;
+    bone('hips').rotation.z = k * wob(t, 0.23, 0.37) * 0.018; // cambia el peso de pierna, lento
+    bone('neck').rotation.x = k * voice * 0.07; // cabecea en las sílabas fuertes, no con un seno fijo
     const headRest = bone('head').userData.rest ??= [0, 0, 0];
-    headRest[2] += (tilt - headRest[2]) * Math.min(1, dt * 4);
+    const headTo = [
+      k * (wob(t, 0.41, 0.67) * 0.025 + (think ? -0.06 : 0)),
+      k * wob(t, 0.29, 0.53) * (talk ? 0.09 : 0.05), // al hablar gira más
+      think ? 0.14 : k * Math.sin(t * 0.5) * 0.03,
+    ];
+    for (let i = 0; i < 3; i++) headRest[i] += (headTo[i] - headRest[i]) * Math.min(1, dt * 4);
+    // Mirada: casi siempre a cámara, con escapes cortos; pensando mira arriba a un costado
+    if (t > nextGlance) {
+      const away = think || Math.random() < 0.3;
+      glance.set(away ? (Math.random() - 0.5) * (think ? 1.2 : 0.5) : 0, away ? (think ? 0.45 : (Math.random() - 0.5) * 0.25) : 0, 0);
+      nextGlance = t + (away ? 0.6 + Math.random() * 0.9 : 1.5 + Math.random() * 3);
+      if (away && Math.random() < 0.4 && t > blinkUntil + 0.5) { blinkUntil = t + 0.13; nextBlink = t + 2.8 + Math.random() * 3.2; } // se parpadea al mover los ojos
+    }
+    gaze.position.lerp(gazeTo.copy(camera.position).add(glance), Math.min(1, dt * 18)); // los ojos saltan rápido
 
     // Gesto encima del reposo
     const base = { ...REST, head: headRest };
