@@ -71,6 +71,7 @@
   .list { display: flex; flex-direction: column; gap: 6px; }
   .scroll { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
   .empty { font-size: 13px; color: var(--dim); }
+  .pibe { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border-radius: 10px; background: var(--bg2); }
 
   /* Formularios */
   input[type=text], input[type=url], input[type=password], input[type=number], textarea, select, .model-select {
@@ -821,11 +822,10 @@
       <div class="page-head"><div><h1 id="h-mod">Moderación y pibes</h1><p class="sub">A quién conoce NYRA, a quién ignora y qué palabras nunca dice.</p></div></div>
       <div class="row">
         <section class="card" style="flex:3 1 520px" aria-labelledby="h-squad">
-          <h2 class="h" id="h-squad">Los pibes</h2>
-          <p class="sub">Una persona por línea: <b>nombre, apodo, otro apodo | cómo es, qué juega, con qué no bromear</b>. Máximo 15 personas y 400 letras cada una. Nada privado.</p>
-          <label class="sr-only" for="squadText">Los pibes</label>
-          <textarea id="squadText" disabled style="min-height:260px" placeholder="Nombre, apodo | juega de jungla, se enoja cuando pierde, se le puede cargar con eso"></textarea>
-          <button class="btn btn-cyan" type="button" id="squadSave" onclick="saveSquad()" disabled style="align-self:flex-start">Guardar pibes</button>
+          <div style="display:flex;justify-content:space-between;align-items:center"><h2 class="h" id="h-squad">Los pibes</h2><span class="chip" id="squadCount">… / 15</span></div>
+          <p class="sub">Cómo los llama, qué juegan y con qué no bromear. Nada privado.</p>
+          <div id="squadList" class="col" style="gap:8px"><span class="empty">Cargando…</span></div>
+          <button class="btn" type="button" id="squadAdd" onclick="editPibe(-1)" disabled style="align-self:flex-start">Agregar a alguien</button>
         </section>
         <div class="col" style="flex:2 1 340px">
           <section class="card" aria-labelledby="h-users">
@@ -1794,31 +1794,62 @@
   setInterval(loadSuggestions, 30000);
   setTimeout(loadSuggestions, 1500);
 
-  const squadLines = list => list.map(p => p.names.join(', ') + (p.about ? ` | ${p.about}` : '')).join('\n');
+  // Los pibes: una tarjeta por persona; se guarda la lista entera (el server limpia y limita)
+  let _squad = null, _editing = null;
+  function renderSquad() {
+    const box = document.getElementById('squadList');
+    document.getElementById('squadCount').textContent = `${_squad.length} / 15`;
+    document.getElementById('squadAdd').disabled = _editing !== null || _squad.length >= 15;
+    const rows = _squad.map((p, i) => i === _editing ? pibeForm(p) : `<div class="pibe">
+        <div style="flex:1;display:flex;flex-direction:column;gap:4px;min-width:0">
+          <span style="font-weight:600">${esc(p.names[0])}${p.names.length > 1 ? ` <span style="color:var(--dim);font-weight:400">· ${esc(p.names.slice(1).join(', '))}</span>` : ''}</span>
+          ${p.about ? `<span class="sub">${esc(p.about)}</span>` : ''}
+        </div>
+        <button class="btn btn-sm" type="button" onclick="editPibe(${i})" ${_editing !== null ? 'disabled' : ''}>Editar</button>
+      </div>`);
+    if (_editing === -1) rows.push(pibeForm({ names: [], about: '' }));
+    box.innerHTML = rows.join('') || '<span class="empty">Todavía no cargaste a nadie.</span>';
+    box.querySelector('#pibeNames')?.focus();
+  }
+  function pibeForm(p) {
+    return `<form class="pibe" style="flex-direction:column;align-items:stretch" onsubmit="event.preventDefault();savePibe()">
+        <div class="field"><label class="label" for="pibeNames">NOMBRE Y APODOS (SEPARADOS POR COMA)</label><input type="text" id="pibeNames" maxlength="180" required value="${esc(p.names.join(', '))}" placeholder="Kira, kiri, la jungla"></div>
+        <div class="field"><label class="label" for="pibeAbout">CÓMO ES, QUÉ JUEGA, CON QUÉ NO BROMEAR</label><textarea id="pibeAbout" maxlength="400" style="min-height:70px" placeholder="Juega de jungla, se enoja cuando pierde. Se le puede cargar con eso.">${esc(p.about || '')}</textarea></div>
+        <div class="inline"><button class="btn btn-cyan btn-sm" type="submit">Guardar</button><button class="btn btn-sm" type="button" onclick="_editing=null;renderSquad()">Cancelar</button>
+        ${_editing >= 0 ? `<button type="button" class="btn btn-sm btn-pink" style="margin-left:auto" onclick="deletePibe()">Quitar</button>` : ''}</div>
+      </form>`;
+  }
+  function editPibe(i) { _editing = i; renderSquad(); }
+  async function saveSquadList(list, msg) {
+    try {
+      const r = await postJSON('/api/squad', { squad: list });
+      if (!r.ok) return toast(`Error: ${r.error}`);
+      _squad = r.squad; _editing = null;
+      renderSquad(); renderPlayerChips(_squad);
+      toast(msg);
+    } catch { toast('No se pudo guardar: ¿está prendido el server?'); }
+  }
+  function savePibe() {
+    const names = document.getElementById('pibeNames').value.split(',').map(s => s.trim()).filter(Boolean);
+    if (!names.length) return toast('Poné al menos el nombre');
+    const pibe = { names, about: document.getElementById('pibeAbout').value.trim() };
+    const list = _squad.slice();
+    if (_editing === -1) list.push(pibe); else list[_editing] = pibe;
+    saveSquadList(list, `✓ ${names[0]} guardado`);
+  }
+  function deletePibe() {
+    const p = _squad[_editing];
+    if (!confirm(`¿Quitar a ${p.names[0]} de los pibes?`)) return;
+    saveSquadList(_squad.filter((_, i) => i !== _editing), `✓ ${p.names[0]} quitado`);
+  }
   async function loadSquad() {
     try {
       const r = await fetch('/api/squad');
       if (!r.ok) throw new Error(r.status);
-      const squad = await r.json();
-      document.getElementById('squadText').value = squadLines(squad);
-      renderPlayerChips(squad);
-      // Recién acá se puede editar: guardar sin haber cargado borraría las fichas
-      document.getElementById('squadText').disabled = document.getElementById('squadSave').disabled = false;
+      _squad = await r.json(); // recién acá se puede editar: guardar sin haber cargado borraría las fichas
+      renderSquad();
+      renderPlayerChips(_squad);
     } catch { setTimeout(loadSquad, 5000); }
-  }
-  async function saveSquad() {
-    const box = document.getElementById('squadText');
-    const list = box.value.split('\n').filter(l => l.trim()).map(l => {
-      const [names, ...about] = l.split('|');
-      return { names: names.split(','), about: about.join(' ') };
-    });
-    try {
-      const r = await postJSON('/api/squad', { squad: list });
-      if (!r.ok) return toast(`Error: ${r.error}`);
-      box.value = squadLines(r.squad);
-      renderPlayerChips(r.squad);
-      toast(r.squad.length < list.length ? `⚠ Guardé ${r.squad.length} de ${list.length}: máximo 15 y cada línea necesita nombre` : `✓ ${r.squad.length} personas guardadas`);
-    } catch { toast('No se pudo guardar: ¿está prendido el server?'); }
   }
   setTimeout(loadSquad, 1500);
 
