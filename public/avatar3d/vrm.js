@@ -123,24 +123,35 @@ const GESTURES = {
   },
 };
 GESTURES.despedir = GESTURES.saludar; // respaldo si no carga despedida.vrma
-// Respaldo si no cargan cruzar_brazos.vrma / pensativa.vrma
+// Respaldo si no cargan cruzar_brazos.vrma / pensativa.vrma (huesos normalizados: x negativo adelanta el brazo)
 GESTURES.cruzar_brazos = {
-  dur: 3.2, ownEase: true, pose: p => {
+  dur: 3.2, ownEase: true, pose: (p, rest) => {
     const k = band(p, 0.25, 2.35, 0.55);
     return {
-      leftUpperArm: [0.55 * k, -0.35 * k, -1.25 + 0.15 * k], rightUpperArm: [0.65 * k, 0.35 * k, 1.25 - 0.15 * k],
-      leftLowerArm: [0, -1.65 * k, 0], rightLowerArm: [0, 1.65 * k, 0],
-      head: [0, 0, -0.1 * k],
+      leftUpperArm: mix(rest('leftUpperArm'), [-0.25, -0.62, -1.25], k),
+      rightUpperArm: mix(rest('rightUpperArm'), [-0.38, 0.62, 1.24], k),
+      leftLowerArm: mix(rest('leftLowerArm'), [0.0, -2.04, -0.12], k),
+      rightLowerArm: mix(rest('rightLowerArm'), [0.0, 2.04, 0.12], k),
+      head: mix(rest('head'), [-0.04, -0.04, -0.08], k),
+      ...Object.fromEntries(Object.entries({ ...hand('left', 0.9, 0.45), ...hand('right', 0.32, 0.2) }).map(([b, v]) => [b, mix(rest(b), v, k)])),
     };
   },
 };
 GESTURES.pensativa = {
-  dur: 3.2, ownEase: true, pose: p => {
+  dur: 3.2, ownEase: true, pose: (p, rest) => {
     const k = band(p, 0.25, 2.35, 0.55);
     return {
-      leftUpperArm: [0.4 * k, -0.25 * k, -1.25], leftLowerArm: [0, -1.45 * k, 0],
-      rightUpperArm: [0.75 * k, 0.25 * k, 1.25 - 0.2 * k], rightLowerArm: [0, 2.1 * k, 0],
-      head: [0.05 * k, 0, -0.14 * k],
+      leftUpperArm: mix(rest('leftUpperArm'), [-0.26, -0.60, -1.24], k),
+      leftLowerArm: mix(rest('leftLowerArm'), [0.0, -2.02, -0.12], k),
+      rightUpperArm: mix(rest('rightUpperArm'), [-0.48, 0.42, 1.24], k),
+      rightLowerArm: mix(rest('rightLowerArm'), [0.0, 2.04, 0.0], k),
+      rightHand: mix(rest('rightHand'), [0.10, -0.35, -0.10], k),
+      head: mix(rest('head'), [0.04, 0.03, -0.18], k),
+      ...Object.fromEntries(Object.entries({
+        ...hand('left', 0.85, 0.45),
+        ...hand('right', 0.95, 0.4),
+        ...hand('right', 0.22, 0.4, ['Index']),
+      }).map(([b, v]) => [b, mix(rest(b), v, k)])),
     };
   },
 };

@@ -21,7 +21,14 @@ import bpy
 from mathutils import Euler, Matrix, Quaternion, Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from cloth_collision import ClothCollider, audit_clip, fix_interpolated_frames, resolve_arm_pose
+from cloth_collision import (
+    ClothCollider,
+    audit_clip,
+    audit_clip_detailed,
+    fix_interpolated_frames,
+    measure_continuity,
+    resolve_both_arms,
+)
 
 
 FPS = 30
@@ -289,21 +296,40 @@ def pose_frame(arm, rest_uchest_mat, rest_head_mat, spec, collider=None):
     chest_delta = arm.pose.bones["J_Bip_C_UpperChest"].matrix.copy() @ rest_uchest_mat.inverted()
     head_delta = arm.pose.bones["J_Bip_C_Head"].matrix.copy() @ rest_head_mat.inverted()
 
-    clean_rest = collider.capture_arm_quats(("L",)) if collider is not None else None
+    clean_rest = collider.capture_arm_quats(("R", "L")) if collider is not None else None
     if "L" in spec:
         pose_arm(arm, "L", chest_delta, spec["L"])
     if "R" in spec:
         delta = head_delta if spec["R"].get("track_head") else chest_delta
         pose_arm(arm, "R", delta, spec["R"])
-    if collider is not None and "L" in spec:
-        resolve_arm_pose(collider, arm, "L", pose_arm, chest_delta, spec["L"], margin=0.0025, allow_uncurl=False, init_quats=clean_rest["L"])
+    if collider is not None:
+        jobs = []
+        if "L" in spec:
+            l_hold = "hand_aim" in spec["L"]
+            jobs.append(dict(
+                side="L", delta=chest_delta, spec=spec["L"],
+                margin=0.0022 if l_hold else 0.0020,
+                zone_margins={"R_SLV": 0.0005, "TORSO": 0.0022} if l_hold else None,
+                allow_uncurl=(not l_hold), init_quats=clean_rest["L"], solver_stride=1,
+            ))
+        if "R" in spec and spec["R"].get("face_guard"):
+            r_delta = head_delta if spec["R"].get("track_head") else chest_delta
+            jobs.append(dict(
+                side="R", delta=r_delta, spec=spec["R"],
+                margin=0.0018,
+                zone_margins={"FACE": 0.0002, "TORSO": 0.0022},
+                allow_uncurl=True, init_quats=clean_rest["R"],
+                extra_zones=("FACE",), adjust_wrist=False, solver_stride=1,
+            ))
+        if jobs:
+            resolve_both_arms(collider, arm, pose_arm, jobs, passes=2)
 
 
-CHIN_FINGER_K = {"Index": 0.28, "Middle": 1.15, "Ring": 1.25, "Little": 1.32}
+CHIN_FINGER_K = {"Index": 0.34, "Middle": 0.84, "Ring": 0.76, "Little": 0.86}
 
 
-def thinking_pose(jaw_dx=0.0, tilt=-0.16, pitch=0.015, yaw=0.045, lean=0.025):
-    """Pose pensativa con brazo L horizontal de apoyo y mano R bajo el mentón (boca siempre libre)."""
+def thinking_pose(jaw_dx=0.0, jaw_dy=0.0, tilt=-0.16, pitch=0.015, yaw=0.045, lean=0.025):
+    """Pose pensativa: mano L abraza por debajo/frente el codo R; muñeca R carga peso bajo la quijada."""
     return dict(
         lean_left=lean,
         pitch_fwd=0.015,
@@ -312,34 +338,35 @@ def thinking_pose(jaw_dx=0.0, tilt=-0.16, pitch=0.015, yaw=0.045, lean=0.025):
         head_pitch_fwd=pitch,
         head_yaw_left=yaw,
         L=dict(
-            clav_lift=0.0,
+            clav_lift=0.035,
             clav_fwd=0.0,
-            elbow=(0.162, -0.095, 1.066),
-            wrist=(-0.050, -0.204, 1.026),
-            hand_aim=(-0.122, -0.188, 1.028),
-            palm_dir=(0.08, 0.72, 0.68),
-            wrist_cup=0.20,
-            finger_curl=0.82,
-            thumb_curl=0.60,
-            thumb_open=-0.12,
+            elbow=(0.151, -0.118, 1.073),
+            wrist=(-0.091, -0.162, 1.045),
+            hand_aim=(-0.149, -0.174, 1.103),
+            palm_dir=(0.68, 0.60, 0.42),
+            wrist_cup=0.10,
+            finger_curl=0.58,
+            thumb_curl=0.34,
+            thumb_open=0.0,
             finger_splay=0.0,
-            finger_k={"Index": 0.95, "Middle": 1.00, "Ring": 1.05, "Little": 1.10},
+            finger_k={"Index": 0.62, "Middle": 0.72, "Ring": 0.82, "Little": 0.90},
         ),
         R=dict(
             track_head=True,
-            follow=0.20,       # codo apoyado sobre la mano/antebrazo izquierdo
+            face_guard=True,
+            follow=0.20,       # codo apoyado sobre el sostén izquierdo
             wrist_follow=0.20, # evitar que el giro de cabeza arrastre la muñeca hacia el centro
-            clav_lift=0.0,
+            clav_lift=0.035,
             clav_fwd=0.0,
-            elbow=(-0.128, -0.122, 1.102),
-            wrist=(-0.026 + jaw_dx, -0.122, 1.266),
-            hand_aim=(-0.055 + jaw_dx, -0.112, 1.358),
-            # Palma mira hacia la quijada derecha (+X) y apenas atrás: índice visible sobre la quijada y resto bajo barbilla
-            palm_dir=(0.88, 0.44, 0.12),
-            wrist_cup=0.02,
-            finger_curl=0.85,
+            elbow=(-0.112, -0.128, 1.082),
+            wrist=(-0.0510 + jaw_dx, -0.1268 + jaw_dy, 1.302),
+            hand_aim=(-0.0215 + jaw_dx, -0.0752 + jaw_dy, 1.3755),
+            # Antebrazo y muñeca alineados bajo la quijada derecha: índice recorre la mandíbula y nudillos cargan el mentón
+            palm_dir=(0.48, 0.76, 0.44),
+            wrist_cup=0.06,
+            finger_curl=0.76,
             thumb_curl=0.42,
-            thumb_open=0.0,
+            thumb_open=0.04,
             finger_splay=0.0,
             finger_k=CHIN_FINGER_K,
         ),
@@ -371,8 +398,8 @@ def build_timeline_specs():
             head_tilt_left=-0.08, head_pitch_fwd=0.018, head_yaw_left=0.02,
             L=dict(
                 clav_lift=0.0, clav_fwd=0.0,
-                elbow=(0.174, -0.075, 1.070), wrist=(0.010, -0.205, 1.055),
-                palm_dir=(-0.20, 0.80, -0.25), finger_curl=0.42,
+                elbow=(0.174, -0.075, 1.070), wrist=(0.010, -0.220, 1.052),
+                palm_dir=(-0.20, 0.80, -0.25), finger_curl=0.40,
             ),
             R=dict(
                 clav_lift=0.01, clav_fwd=0.0,
@@ -382,9 +409,9 @@ def build_timeline_specs():
             ),
         )),
         # 25: llegada bajo el mentón con cabeza ladeada
-        (25, thinking_pose(jaw_dx=0.0, tilt=-0.16, pitch=0.015, yaw=0.045, lean=0.025)),
+        (25, thinking_pose(jaw_dx=0.0, jaw_dy=-0.001, tilt=-0.16, pitch=0.015, yaw=0.045, lean=0.025)),
         # 42: micro-matiz pensativo 1 (inclina apenas más reflexiva, como cuadros #16-#24 del GIF)
-        (42, thinking_pose(jaw_dx=0.002, tilt=-0.19, pitch=0.035, yaw=0.065, lean=0.028)),
+        (42, thinking_pose(jaw_dx=0.002, jaw_dy=-0.003, tilt=-0.19, pitch=0.035, yaw=0.065, lean=0.028)),
         # 56: micro-matiz 2 (levanta leve el mentón como evaluando)
         (56, thinking_pose(jaw_dx=0.0, tilt=-0.14, pitch=0.002, yaw=0.030, lean=0.022)),
         # 67: cierre de sostén estable antes de bajar
@@ -395,14 +422,14 @@ def build_timeline_specs():
             head_tilt_left=-0.05, head_pitch_fwd=0.005, head_yaw_left=0.015,
             L=dict(
                 clav_lift=0.0, clav_fwd=0.0,
-                elbow=(0.176, -0.065, 1.068), wrist=(0.038, -0.200, 1.018),
-                palm_dir=(-0.35, 0.75, -0.10), finger_curl=0.35,
+                elbow=(0.176, -0.065, 1.068), wrist=(0.025, -0.210, 1.022),
+                palm_dir=(-0.25, 0.78, 0.15), finger_curl=0.32,
             ),
             R=dict(
                 clav_lift=0.005, clav_fwd=0.0,
                 elbow=(-0.145, -0.125, 1.102), wrist=(-0.090, -0.235, 1.165),
                 hand_aim=(-0.040, -0.265, 1.235),
-                palm_dir=(0.76, 0.60, 0.15), finger_curl=0.50,
+                palm_dir=(0.76, 0.60, 0.15), finger_curl=0.38,
             ),
         )),
         # 84: bajada por adelante-costado
@@ -596,20 +623,35 @@ def main():
     scene.frame_start = 0
     scene.frame_end = FRAME_END
 
-    collider = ClothCollider(arm)
+    collider = ClothCollider(arm, include_face=True)
     bpy.ops.object.mode_set(mode="POSE")
     insert_all_keys(arm, collider=collider)
-    fixed = fix_interpolated_frames(collider, arm, range(12, 80, 3), margin=0.0015, uncurl_sides=())
+    fixed = fix_interpolated_frames(
+        collider, arm, range(8, FRAME_END - 8),
+        margin=0.0020, uncurl_sides=("R",), solver_stride=1, passes=2,
+        extra_zones_by_side={"R": ("FACE",)}, lowerarm_sides=("L",),
+        hand_rot_sides=("L",),
+        zone_margins_by_side={
+            "L": {"R_SLV": 0.0002, "TORSO": 0.0022},
+            "R": {"FACE": 0.0002, "TORSO": 0.0022},
+        },
+    )
     if fixed:
         print(f"[CLOTH_FIX] keyframes intermedios ajustados en cuadros: {fixed}", flush=True)
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    hits = audit_clip(collider, arm, range(0, FRAME_END + 1, 3), margin=0.0)
+    audit = audit_clip_detailed(
+        collider, arm, range(0, FRAME_END + 1),
+        margin=0.0025, stride=1, contact_margin=0.0025, include_face=True,
+    )
+    hits = audit["penetration_report"]
     if hits:
         for fr, side, items in hits:
             print(f"[CLOTH_WARN f={fr:02d} {side}]", ", ".join(f"{k}={v*1000:.1f}mm" for v, k in items), flush=True)
     else:
-        print("[CLOTH_OK] 0 penetraciones piel-buzo en toda la animación", flush=True)
+        print(f"[CLOTH_OK] 0 penetraciones piel-buzo ni Face (0..{FRAME_END} paso=1 stride=1, face_open_edges={collider.face_open_edges})", flush=True)
+    cont = measure_continuity(arm, range(0, FRAME_END + 1))
+    print("[CONTINUITY]", {k: cont[k] for k in ("J_Bip_R_Index3", "J_Bip_L_Index3", "J_Bip_R_LowerArm", "J_Bip_L_LowerArm")}, flush=True)
 
     os.makedirs(os.path.dirname(os.path.abspath(vrma_out)), exist_ok=True)
     bpy.ops.export_scene.vrma(filepath=vrma_out, armature_object_name=arm.name)

@@ -66,8 +66,10 @@ try {
   for (const no of ["tengo 67 de ping", "donó 67 bits", "167", "6700", "voy 6/7/2", "me saqué 6,7",
     "mide 1.67", "son 67.5", "no hagas el six seven", "deja de hacer el 6 7", "hola nyra"]) assert.ok(!hasSixSeven(no), no);
   for (const [raw, g] of [["andate enojada", "irse_enojada"], ["salir de la pantalla", "irse_enojada"], ["darse vuelta", "irse_enojada"],
-    ["cruzarse de brazos", "cruzar_brazos"], ["cruzar los brazos con fastidio", "cruzar_brazos"], ["sonreír de lado cruzando brazos", "cruzar_brazos"],
-    ["apoyar mentón en mano", "pensativa"], ["apoyar la barbilla", "pensativa"], ["pensativa", "pensativa"]]) assert.equal(pickGesture(raw), g, `pickGesture:${raw}`);
+    ["cruzar_brazos", "cruzar_brazos"], ["cruzarse de brazos", "cruzar_brazos"], ["cruzar los brazos con fastidio", "cruzar_brazos"], ["sonreír de lado cruzando brazos", "cruzar_brazos"],
+    ["se cruza de brazos enojada", "cruzar_brazos"], ["cruza los brazos sin tomar te", "cruzar_brazos"],
+    ["pensativa", "pensativa"], ["pensativa enojada", "pensativa"], ["apoyar mentón en mano", "pensativa"], ["apoyar la barbilla", "pensativa"],
+    ["enojado sin cruzar brazos", "irse_enojada"], ["tomar_te enojada sin tomar te", "irse_enojada"]]) assert.equal(pickGesture(raw), g, `pickGesture:${raw}`);
   for (const [ok, g] of [
     ["andate enojada", "irse_enojada"],
     ["andate de la pantalla", "irse_enojada"],
