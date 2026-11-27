@@ -2,7 +2,8 @@
 // Lo usan server.js y scripts/discord-prueba.mjs. No guarda audio.
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { join, dirname } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client, Events, GatewayIntentBits } from "discord.js";
 import * as voice from "@discordjs/voice";
@@ -13,6 +14,19 @@ const PAUSE_MS = 800;               // silencio que cierra una frase
 const MIN_BYTES = 16000 * 2 * 0.3;  // menos de 0,3 s es ruido
 const MAX_BYTES = 16000 * 2 * 20;   // frase más larga: se corta y sigue en otra
 const MAX_WAITING = 10;             // frases esperando a Whisper; más que eso ya es charla vieja
+export const VALID_LOCAL_PAUSE_MS = [400, 600, 800, 900, 1000, 1200];
+export const LOCAL_LEGACY_DEFAULTS = Object.freeze({
+  profile: "legacy",
+  beamSize: 5,
+  temperature: 0.0,
+  vadFilter: true,
+  vadThreshold: 0.8,
+  hotwords: "",
+  promptMode: "narrative",
+  secondPassMode: "always_only_name",
+  filterProfile: "legacy",
+  pauseMs: PAUSE_MS,
+});
 // Al entrar saluda. Sin aviso de que escucha: el grupo ya está de acuerdo (lo pidió el streamer el 2026-11-22)
 export const GREETING = "Hola pibes, ¿qué sale hoy?";
 
@@ -36,9 +50,10 @@ export function keepTiming(receiver) {
 }
 
 // Paquetes opus de una persona → audio mono de 16 kHz, en memoria
-export async function readPhrase(packets) {
+export async function readPhrase(packets, pauseMs = PAUSE_MS) {
   const decoder = new OpusScript(16000, 1);
   const parts = [];
+  const tStart = Date.now();
   let bytes = 0, last = 0, endTs = null;
   try {
     for await (const packet of packets) {
@@ -55,7 +70,7 @@ export async function readPhrase(packets) {
         }
         last = now;
         if (gap >= 20) {
-          const silence = Buffer.alloc(Math.round(Math.min(gap, PAUSE_MS) * 16) * 2);
+          const silence = Buffer.alloc(Math.round(Math.min(gap, pauseMs) * 16) * 2);
           parts.push(silence);
           bytes += silence.length;
         }
@@ -69,25 +84,26 @@ export async function readPhrase(packets) {
   } finally {
     decoder.delete();
   }
-  return { pcm: Buffer.concat(parts), cut: bytes >= MAX_BYTES };
+  return { pcm: Buffer.concat(parts), cut: bytes >= MAX_BYTES, segmentationMs: Date.now() - tStart };
 }
 
 // Un solo lector por persona. Se libera al cortar la frase, no al terminar de transcribirla
-export function listenTo(receiver, onPhrase) {
+export function listenTo(receiver, onPhrase, { pauseMs = PAUSE_MS, getPauseMs = null } = {}) {
   const open = new Set();
   const listen = async uid => {
     if (open.has(uid)) return;
     open.add(uid);
     try {
+      const effectivePause = typeof getPauseMs === "function" ? getPauseMs() : pauseMs;
       let phrase;
       try {
         // suscribirse antes de cualquier await: si no, se pierde el principio, justo donde va el nombre
-        phrase = await readPhrase(receiver.subscribe(uid, { end: { behavior: voice.EndBehaviorType.AfterSilence, duration: PAUSE_MS } }));
+        phrase = await readPhrase(receiver.subscribe(uid, { end: { behavior: voice.EndBehaviorType.AfterSilence, duration: effectivePause } }), effectivePause);
       } finally {
         open.delete(uid);
       }
       if (phrase.cut) setImmediate(() => listen(uid)); // recién cuando la suscripción anterior se cerró
-      if (phrase.pcm.length >= MIN_BYTES) await onPhrase(uid, phrase.pcm);
+      if (phrase.pcm.length >= MIN_BYTES) await onPhrase(uid, phrase.pcm, phrase.segmentationMs);
     } catch (err) {
       if (err.code !== "ERR_STREAM_PREMATURE_CLOSE") console.error("🎧 Audio de Discord:", err.message); // ese es solo salir con alguien hablando
     }
@@ -118,10 +134,13 @@ export class Whisper {
         if (m.ready) {
           this.info = {
             where: m.where || null,
+            requestedModel: m.requested_model || "large-v3-turbo",
             model: m.model || null,
             device: m.device || null,
             computeType: m.compute_type || null,
             cudaError: m.cuda_error || null,
+            fallbackReason: m.fallback_reason || null,
+            initMs: m.init_ms ?? null,
           };
           return resolve(m.where);
         }
@@ -130,7 +149,11 @@ export class Whisper {
         if (m.model) this.info.model = m.model;
         if (m.device) this.info.device = m.device;
         if (m.compute_type) this.info.computeType = m.compute_type;
-        if (m.error) p?.reject(new Error(m.error)); else p?.resolve(m);
+        if (m.fallback_reason) this.info.fallbackReason = m.fallback_reason;
+        const totalMs = p ? Date.now() - p.enqueuedAt : (m.ms || 0);
+        const queueMs = p && typeof m.ms === "number" ? Math.max(0, totalMs - m.ms) : 0;
+        if (m.error) p?.reject(Object.assign(new Error(m.error), { status: m.status || "worker_error" }));
+        else p?.resolve({ ...m, queue_ms: queueMs, total_ms: totalMs, pending_count: p.pendingCount });
       });
     });
     this.ready.catch(() => { }); // lo informa quien lo espera
@@ -138,12 +161,32 @@ export class Whisper {
   }
 
   transcribe(pcm, opts = {}) {
-    if (this.pending.size >= MAX_WAITING) return Promise.resolve({ text: "" });
+    const pendingCount = this.pending.size;
+    if (pendingCount >= MAX_WAITING) {
+      return Promise.resolve({
+        text: "",
+        ms: 0,
+        queue_ms: 0,
+        total_ms: 0,
+        pending_count: pendingCount,
+        status: "queue_full",
+        discard_reason: "queue_full",
+      });
+    }
     return new Promise((resolve, reject) => {
-      this.pending.set(++this.id, { resolve, reject });
+      this.pending.set(++this.id, { resolve, reject, enqueuedAt: Date.now(), pendingCount });
       const payload = { id: this.id, pcm: pcm.toString("base64") };
+      if (opts.profile) payload.profile = opts.profile;
       if (opts.noPrompt) payload.no_prompt = true;
+      if (opts.usePrompt !== undefined) payload.use_prompt = opts.usePrompt;
+      if (opts.promptMode) payload.prompt_mode = opts.promptMode;
+      if (opts.hotwords !== undefined) payload.hotwords = opts.hotwords;
+      if (opts.vadFilter !== undefined) payload.vad_filter = opts.vadFilter;
       if (opts.vadThreshold !== undefined) payload.vad_threshold = opts.vadThreshold;
+      if (opts.beamSize !== undefined) payload.beam_size = opts.beamSize;
+      if (opts.temperature !== undefined) payload.temperature = opts.temperature;
+      if (opts.secondPassMode) payload.second_pass_mode = opts.secondPassMode;
+      if (opts.filterProfile) payload.filter_profile = opts.filterProfile;
       this.proc.stdin.write(JSON.stringify(payload) + "\n");
     });
   }
@@ -153,10 +196,14 @@ export class Whisper {
 
 export class DiscordVoice {
   // synth(texto) → archivo o URL de audio · onSpeech({ id, name, streamer, text, raw, ms, secs }) · onState({ state, ... })
-  constructor({ synth, onSpeech, onState = () => { }, listenOnly = false, whisperRemote = null }) {
+  constructor({ synth, onSpeech, onState = () => { }, listenOnly = false, whisperRemote = null, localSettingsFile = null }) {
     Object.assign(this, { synth, onSpeech, onState, listenOnly, whisperRemote }); // listenOnly: entra muda y sin saludar, solo escucha
+    this.localSettingsFile = resolve(localSettingsFile || join(ROOT, "whisper_local_settings.json"));
+    this.localConfig = this._loadLocalConfig();
     this.state = { state: "off" };
     this.run = 0; // invalida un arranque en curso si tocan SALIR
+    this.sessionId = null;
+    this._fragmentSeq = 0;
     this.localMetrics = {
       lastTranscript: "",
       lastMs: 0,
@@ -165,6 +212,77 @@ export class DiscordVoice {
       lastDiscardReason: null,
       lastError: null,
     };
+  }
+
+  _loadLocalConfig() {
+    try {
+      if (!existsSync(this.localSettingsFile)) return { ...LOCAL_LEGACY_DEFAULTS };
+      const parsed = JSON.parse(readFileSync(this.localSettingsFile, "utf8"));
+      return this._validateLocalPatch(parsed, { ...LOCAL_LEGACY_DEFAULTS });
+    } catch {
+      return { ...LOCAL_LEGACY_DEFAULTS };
+    }
+  }
+
+  _validateLocalPatch(patch = {}, base = this.localConfig || LOCAL_LEGACY_DEFAULTS) {
+    const next = { ...base };
+    if (patch.profile !== undefined) {
+      const p = String(patch.profile || "").trim().toLowerCase();
+      if (p !== "legacy" && p !== "experimental") throw new Error("Perfil STT local inválido (legacy o experimental)");
+      next.profile = p;
+      if (p === "legacy" && Object.keys(patch).length === 1) {
+        return { ...LOCAL_LEGACY_DEFAULTS };
+      }
+    }
+    if (patch.beamSize !== undefined) {
+      const b = Math.round(Number(patch.beamSize));
+      if (!Number.isFinite(b) || b < 1 || b > 5) throw new Error("Beam size local inválido (1..5)");
+      next.beamSize = b;
+    }
+    if (patch.temperature !== undefined) {
+      const t = Number(patch.temperature);
+      if (!Number.isFinite(t) || t < 0 || t > 1) throw new Error("Temperatura local inválida (0.0..1.0)");
+      next.temperature = Number(t.toFixed(2));
+    }
+    if (patch.vadFilter !== undefined) next.vadFilter = Boolean(patch.vadFilter);
+    if (patch.vadThreshold !== undefined) {
+      const v = Number(patch.vadThreshold);
+      if (!Number.isFinite(v) || v < 0.1 || v > 0.95) throw new Error("VAD threshold local inválido (0.10..0.95)");
+      next.vadThreshold = Number(v.toFixed(2));
+    }
+    if (patch.hotwords !== undefined) {
+      next.hotwords = String(patch.hotwords || "").slice(0, 300).trim();
+    }
+    if (patch.promptMode !== undefined) {
+      const pm = String(patch.promptMode || "").trim().toLowerCase();
+      if (!["narrative", "none", "minimal"].includes(pm)) throw new Error("Modo de initial_prompt inválido");
+      next.promptMode = pm;
+    }
+    if (patch.secondPassMode !== undefined) {
+      const sp = String(patch.secondPassMode || "").trim().toLowerCase();
+      if (!["always_only_name", "none", "confidence"].includes(sp)) throw new Error("Modo de segunda inferencia inválido");
+      next.secondPassMode = sp;
+    }
+    if (patch.filterProfile !== undefined) {
+      const fp = String(patch.filterProfile || "").trim().toLowerCase();
+      if (!["legacy", "confidence_ghost", "no_ghost"].includes(fp)) throw new Error("Perfil de filtros inválido");
+      next.filterProfile = fp;
+    }
+    if (patch.pauseMs !== undefined) {
+      const pm = Math.round(Number(patch.pauseMs));
+      if (!VALID_LOCAL_PAUSE_MS.includes(pm)) throw new Error(`Pausa Discord inválida (permitidas: ${VALID_LOCAL_PAUSE_MS.join(", ")} ms)`);
+      next.pauseMs = pm;
+    }
+    return next;
+  }
+
+  updateLocalConfig(patch = {}) {
+    this.localConfig = this._validateLocalPatch(patch, this.localConfig);
+    mkdirSync(resolve(this.localSettingsFile, ".."), { recursive: true });
+    const tmp = `${this.localSettingsFile}.${process.pid}.${Date.now()}.tmp`;
+    writeFileSync(tmp, JSON.stringify(this.localConfig, null, 2));
+    renameSync(tmp, this.localSettingsFile);
+    return { ...this.localConfig };
   }
 
   get on() { return this.state.state === "on"; }
@@ -235,17 +353,22 @@ export class DiscordVoice {
       // Primero saluda, recién después escucha
       if (!this.listenOnly && !await this._notice(GREETING)) console.warn("🎧 No pude saludar al entrar: sigo escuchando igual");
       check();
+      this.sessionId = `${Date.now().toString(36)}-${run}`;
+      this._fragmentSeq = 0;
       this.whisperRemote?.resetCancellation();
-      const listen = listenTo(conn.receiver, async (uid, pcm) => {
+      const listen = listenTo(conn.receiver, async (uid, pcm, segmentationMs = 0) => {
         if (run !== this.run || uid === client.user.id) return;
         const capturedAt = Date.now();
+        const fragmentId = `${this.sessionId}:${++this._fragmentSeq}`;
         const member = await guild.members.fetch(uid);
         if (member.user.bot || run !== this.run) return;
         const secs = pcm.length / 32000;
-        const { text, raw, ms } = await this._transcribePhrase(pcm, { uid, capturedAt, secs, run });
+        const res = await this._transcribePhrase(pcm, { uid, capturedAt, secs, run, fragmentId, segmentationMs });
         if (run !== this.run) return; // descartar resultado tardío si ya se detuvo o reinició
-        if (text || raw) await this.onSpeech({ id: uid, name: member.displayName, streamer: uid === this.streamerId, text, raw, ms, secs });
-      });
+        if (res.text || res.raw || res.meta?.discardReason === "queue_full" || res.meta?.discardReason === "inference_error" || res.meta?.discardReason === "worker_error") {
+          await this.onSpeech({ id: uid, name: member.displayName, streamer: uid === this.streamerId, text: res.text, raw: res.raw, ms: res.ms, secs, meta: res.meta });
+        }
+      }, { getPauseMs: () => this.localConfig.pauseMs });
       keepTiming(conn.receiver);
       conn.receiver.speaking.on("start", listen);
 
@@ -297,32 +420,123 @@ export class DiscordVoice {
     });
   }
 
-  async _transcribePhrase(pcm, { uid, capturedAt, secs, run }) {
+  async _transcribePhrase(pcm, { uid, capturedAt, secs, run, fragmentId = null, segmentationMs = 0 }) {
     const useRemote = this.whisperRemote && this.whisperRemote.config.engine === "remote";
+    const requestedEngine = useRemote ? "remote" : "local";
+    let fallbackReason = null;
     if (useRemote) {
       try {
         const res = await this.whisperRemote.transcribePcm(pcm, { speakerId: uid, capturedAt });
-        return { text: res.text, raw: null, ms: res.ms };
+        return {
+          text: res.text,
+          raw: null,
+          ms: res.ms,
+          meta: {
+            requestedEngine,
+            effectiveEngine: "remote",
+            requestedModel: this.whisperRemote.config.model,
+            effectiveModel: res.model || this.whisperRemote.config.model,
+            device: res.device || "cpu",
+            computeType: res.quantization || "int8",
+            fallbackReason: null,
+            sessionId: this.sessionId,
+            fragmentId,
+            audioDurationSec: Number(secs.toFixed(3)),
+            segmentationMs,
+            totalMs: res.ms,
+            discardReason: res.text ? null : "valid_silence",
+          },
+        };
       } catch (err) {
-        if (err.cancelled || run !== this.run) return { text: "", raw: null, ms: 0 };
-        if (err.stale || err.queueFull) return { text: "", raw: null, ms: 0 };
+        if (err.cancelled || run !== this.run) {
+          return { text: "", raw: null, ms: 0, meta: { requestedEngine, effectiveEngine: "remote", sessionId: this.sessionId, fragmentId, discardReason: run !== this.run ? "late_result" : "cancelled" } };
+        }
+        if (err.stale) return { text: "", raw: null, ms: 0, meta: { requestedEngine, effectiveEngine: "remote", sessionId: this.sessionId, fragmentId, discardReason: "expired" } };
+        if (err.queueFull) return { text: "", raw: null, ms: 0, meta: { requestedEngine, effectiveEngine: "remote", sessionId: this.sessionId, fragmentId, discardReason: "queue_full" } };
         const ageMs = Date.now() - capturedAt;
         if (!this.whisperRemote.config.fallbackLocal || ageMs > this.whisperRemote.config.maxAgeMs) {
-          return { text: "", raw: null, ms: 0 };
+          return { text: "", raw: null, ms: 0, meta: { requestedEngine, effectiveEngine: "remote", sessionId: this.sessionId, fragmentId, discardReason: ageMs > this.whisperRemote.config.maxAgeMs ? "expired" : "inference_error" } };
         }
+        fallbackReason = `remote_error: ${err.message}`;
         this.whisperRemote.recordFallback();
         console.warn(`🎧 STT remoto falló (${err.message}) → fallback a Whisper local`);
       }
     }
-    const localRes = await this.whisper.transcribe(pcm);
-    this.localMetrics.lastTranscript = localRes.text || "";
-    this.localMetrics.lastMs = localRes.ms || 0;
-    this.localMetrics.lastSecs = secs;
-    if (!localRes.text && localRes.raw) {
+    try {
+      const lc = this.localConfig || LOCAL_LEGACY_DEFAULTS;
+      const localRes = await this.whisper.transcribe(pcm, {
+        profile: lc.profile === "experimental" ? "EXPERIMENTAL" : "LEGACY",
+        beamSize: lc.beamSize,
+        temperature: lc.temperature,
+        vadFilter: lc.vadFilter,
+        vadThreshold: lc.vadThreshold,
+        hotwords: lc.hotwords,
+        promptMode: lc.promptMode,
+        secondPassMode: lc.secondPassMode,
+        filterProfile: lc.filterProfile,
+      });
+      const discardReason = localRes.text
+        ? null
+        : (localRes.discard_reason === "vad_no_speech" && !localRes.raw ? "valid_silence" : (localRes.discard_reason || "empty_transcript"));
+      this.localMetrics.lastTranscript = localRes.text || "";
+      this.localMetrics.lastMs = localRes.ms || 0;
+      this.localMetrics.lastSecs = secs;
+      if (!localRes.text && (localRes.raw || discardReason === "queue_full")) {
+        this.localMetrics.discardedCount += 1;
+        this.localMetrics.lastDiscardReason = discardReason;
+      }
+      return {
+        ...localRes,
+        meta: {
+          requestedEngine,
+          effectiveEngine: "local",
+          requestedModel: localRes.requested_model || this.whisper?.info?.requestedModel || "large-v3-turbo",
+          effectiveModel: localRes.model || this.whisper?.info?.model || null,
+          device: localRes.device || this.whisper?.info?.device || null,
+          computeType: localRes.compute_type || this.whisper?.info?.computeType || null,
+          fallbackReason: fallbackReason || localRes.fallback_reason || this.whisper?.info?.fallbackReason || null,
+          sessionId: this.sessionId,
+          fragmentId,
+          audioDurationSec: localRes.audio_duration_sec ?? Number(secs.toFixed(3)),
+          postVadDurationSec: localRes.post_vad_duration_sec ?? null,
+          segmentationMs,
+          queueMs: localRes.queue_ms ?? 0,
+          pendingCount: localRes.pending_count ?? 0,
+          inferenceMs: localRes.inference_ms ?? localRes.ms ?? 0,
+          postprocessMs: localRes.postprocess_ms ?? 0,
+          totalMs: localRes.total_ms ?? localRes.ms ?? 0,
+          rtf: localRes.rtf ?? null,
+          beamSize: localRes.beam_size ?? null,
+          temperature: localRes.temperature ?? null,
+          vadThreshold: localRes.vad_threshold ?? null,
+          profile: localRes.profile || "A",
+          usePrompt: localRes.use_prompt ?? null,
+          hotwords: localRes.hotwords ?? null,
+          passes: localRes.passes ?? 1,
+          avgLogprob: localRes.avg_logprob ?? null,
+          noSpeechProb: localRes.no_speech_prob ?? null,
+          compressionRatio: localRes.compression_ratio ?? null,
+          discardReason: run !== this.run ? "late_result" : discardReason,
+        },
+      };
+    } catch (err) {
+      this.localMetrics.lastError = err.message;
       this.localMetrics.discardedCount += 1;
-      this.localMetrics.lastDiscardReason = "local_filter";
+      this.localMetrics.lastDiscardReason = err.status || "inference_error";
+      return {
+        text: "",
+        raw: null,
+        ms: 0,
+        meta: {
+          requestedEngine,
+          effectiveEngine: "local",
+          sessionId: this.sessionId,
+          fragmentId,
+          discardReason: err.status || "inference_error",
+          error: err.message,
+        },
+      };
     }
-    return localRes;
   }
 
   getSttStatus() {
@@ -337,6 +551,7 @@ export class DiscordVoice {
         ...localInfo,
         ...this.localMetrics,
       },
+      localConfig: { ...this.localConfig },
       remote: remoteCfg,
     };
   }

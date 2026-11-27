@@ -2992,12 +2992,28 @@ try {
     if (/^\d{4}-\d{2}-\d{2}\.jsonl$/.test(f) && Date.now() - new Date(f.slice(0, 10)) > 30 * 86400000) unlinkSync(join(TRANSCRIPT_DIR, f));
 } catch { } // todavía no hay logs
 
-async function onDiscordSpeech({ id, name, streamer, text, raw, ms, secs }, waited = false) {
+async function onDiscordSpeech({ id, name, streamer, text, raw, ms, secs, meta = null }, waited = false) {
   let said = cleanUntrusted(text, 500);
-  const log = extra => !waited && logTranscript({ who: cleanUntrusted(name, 32), streamer, secs: secs && +secs.toFixed(1), ms, text: said, ...(raw ? { raw } : {}), ...extra });
-  if (!said) return log({ result: "descartado por los filtros" });
+  const log = extra => !waited && logTranscript({
+    who: cleanUntrusted(name, 32),
+    streamer,
+    secs: secs && +secs.toFixed(1),
+    ms,
+    text: said,
+    ...(raw ? { raw } : {}),
+    ...(meta ? { stt: meta } : {}),
+    ...extra,
+  });
+  if (!said) {
+    const reason = meta?.discardReason;
+    if (reason === "queue_full") return log({ result: "cola llena" });
+    if (reason === "inference_error" || reason === "worker_error") return log({ result: "error de inferencia" });
+    return log({ result: "descartado por los filtros" });
+  }
   if (LISTEN_ONLY) return log({ result: "solo escucha" }); // modo log: no contesta ni recuerda nada
-  if (!hasWordsOrGesture(said) || filters.checkMessage(said, name).blocked) return log({ result: "ignorado" });
+  if (!hasWordsOrGesture(said) || filters.checkMessage(said, name).blocked) {
+    return log({ result: "ignorado", stt: meta ? { ...meta, discardReason: "node_filter" } : { discardReason: "node_filter" } });
+  }
   let named = WAKE_RE.test(said);
   const key = `discord:${id}`; // por ID: el nombre de Discord lo cambia cualquiera
   const asked = named ? voiceNick(said) : null;
@@ -3056,6 +3072,7 @@ const LISTEN_ONLY = process.env.NYRA_SOLO_ESCUCHA === "1";
 const discord = new DiscordVoice({
   listenOnly: LISTEN_ONLY,
   whisperRemote,
+  localSettingsFile: join(__dirname, "whisper_local_settings.json"),
   synth: async text => audioSource(await tts.synth(text, { source: "discord" })),
   onSpeech: onDiscordSpeech,
   onState: s => {
@@ -3265,6 +3282,19 @@ app.delete("/api/tts/fish/voices/:id", (req, res) => {
 // STT (Whisper local y remoto)
 app.get("/api/stt/config", (req, res) => {
   res.json({ ok: true, status: discord.getSttStatus() });
+});
+
+app.get("/api/stt/local/config", (req, res) => {
+  res.json({ ok: true, localConfig: discord.localConfig, status: discord.getSttStatus() });
+});
+
+app.post("/api/stt/local/config", (req, res) => {
+  try {
+    discord.updateLocalConfig(req.body || {});
+    res.json({ ok: true, localConfig: discord.localConfig, status: discord.getSttStatus() });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
 });
 
 app.post("/api/stt/config", (req, res) => {

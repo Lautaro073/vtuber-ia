@@ -681,6 +681,66 @@
       <div id="sttStatusLine" style="font-size:10px;color:var(--dim);margin-bottom:8px;line-height:1.4">
         Motor efectivo: - · Modelo: - · Dispositivo: - · Estado: <span id="sttConnBadge">unknown</span>
       </div>
+      <details id="sttLocalConfigPanel" style="margin-bottom:6px;border:1px solid var(--border);border-radius:8px;padding:8px;background:rgba(10,6,24,.35)">
+        <summary style="cursor:pointer;font-size:11px;color:var(--lime);font-weight:700">🎤 Configurar Whisper Local (sin tocar Remoto)</summary>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:11px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+            <label style="color:var(--dim)">Perfil
+              <select id="sttLocalProfile" class="model-select" style="margin:0" onchange="onLocalProfileSelect()">
+                <option value="legacy">Legacy (producción)</option>
+                <option value="experimental">Experimental</option>
+              </select>
+            </label>
+            <label style="color:var(--dim)">Filtros
+              <select id="sttLocalFilter" class="model-select" style="margin:0">
+                <option value="legacy">legacy (GHOST estricto)</option>
+                <option value="confidence_ghost">confidence_ghost (por confianza)</option>
+                <option value="no_ghost">no_ghost (diagnóstico)</option>
+              </select>
+            </label>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">
+            <label style="color:var(--dim)">Beam<input type="number" min="1" max="5" id="sttLocalBeam" value="5" style="width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px"></label>
+            <label style="color:var(--dim)">Temp<input type="number" step="0.1" min="0" max="1" id="sttLocalTemp" value="0.0" style="width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px"></label>
+            <label style="color:var(--dim)">VAD thr<input type="number" step="0.05" min="0.1" max="0.95" id="sttLocalVadThr" value="0.8" style="width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px"></label>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+            <label style="color:var(--dim)">Initial prompt
+              <select id="sttLocalPrompt" class="model-select" style="margin:0">
+                <option value="narrative">narrative (Legacy)</option>
+                <option value="minimal">minimal (lista términos)</option>
+                <option value="none">none (sin prompt)</option>
+              </select>
+            </label>
+            <label style="color:var(--dim)">2ª pasada
+              <select id="sttLocalSecondPass" class="model-select" style="margin:0">
+                <option value="always_only_name">always_only_name (Legacy)</option>
+                <option value="confidence">confidence</option>
+                <option value="none">none</option>
+              </select>
+            </label>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center">
+            <label style="color:var(--dim)">Pausa Discord
+              <select id="sttLocalPause" class="model-select" style="margin:0">
+                <option value="400">400 ms</option>
+                <option value="600">600 ms</option>
+                <option value="800">800 ms (Legacy)</option>
+                <option value="900">900 ms (Exp)</option>
+                <option value="1000">1000 ms</option>
+                <option value="1200">1200 ms</option>
+              </select>
+            </label>
+            <label style="cursor:pointer;color:var(--dim);margin-top:14px"><input type="checkbox" id="sttLocalVad" checked> VAD activo</label>
+          </div>
+          <input type="text" id="sttLocalHotwords" placeholder="Hotwords locales (vacío = sin hotwords)" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-sm" onclick="saveLocalSttConfig()" style="flex:1;background:var(--panel);color:var(--lime);border:1px solid var(--border)">Guardar Local</button>
+            <button class="btn btn-sm" onclick="resetLocalToLegacy()" style="background:var(--panel);color:var(--cyan);border:1px solid var(--border)">Volver a Legacy</button>
+          </div>
+          <div style="font-size:10px;color:var(--dim)">Se aplica en la siguiente transcripción sin reiniciar el worker.</div>
+        </div>
+      </details>
       <details id="sttConfigPanel" style="margin-bottom:4px;border:1px solid var(--border);border-radius:8px;padding:8px;background:rgba(10,6,24,.35)">
         <summary style="cursor:pointer;font-size:11px;color:var(--cyan);font-weight:700">🎙️ Configurar STT Remoto / Diagnóstico</summary>
         <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:11px">
@@ -1320,13 +1380,26 @@
     document.getElementById('sttVad').checked = rem.vadFilter !== false;
     document.getElementById('sttFallback').checked = rem.fallbackLocal !== false;
 
+    const lc = st.localConfig || {};
+    document.getElementById('sttLocalProfile').value = lc.profile || 'legacy';
+    document.getElementById('sttLocalFilter').value = lc.filterProfile || 'legacy';
+    document.getElementById('sttLocalBeam').value = lc.beamSize ?? 5;
+    document.getElementById('sttLocalTemp').value = lc.temperature ?? 0.0;
+    document.getElementById('sttLocalVad').checked = lc.vadFilter !== false;
+    document.getElementById('sttLocalVadThr').value = lc.vadThreshold ?? 0.8;
+    document.getElementById('sttLocalPrompt').value = lc.promptMode || 'narrative';
+    document.getElementById('sttLocalSecondPass').value = lc.secondPassMode || 'always_only_name';
+    document.getElementById('sttLocalPause').value = String(lc.pauseMs ?? 800);
+    document.getElementById('sttLocalHotwords').value = lc.hotwords || '';
+
     const effModel = st.effectiveEngine === 'remote' ? (m.effectiveModel || rem.model || '-') : (loc.model || 'no iniciado');
     const effDev = st.effectiveEngine === 'remote' ? (m.effectiveDevice || 'cpu') : (loc.device || '-');
     const effQuant = st.effectiveEngine === 'remote' ? (m.effectiveQuantization || 'int8') : (loc.computeType || '-');
     const conn = st.selectedEngine === 'remote' ? (m.status || 'unknown') : (loc.ready ? 'local-ready' : 'idle');
+    const localExtra = st.effectiveEngine === 'local' ? ` · Perfil: <b>${lc.profile || 'legacy'}</b> (${lc.filterProfile || 'legacy'}, ${lc.pauseMs || 800}ms)` : '';
 
     document.getElementById('sttStatusLine').innerHTML =
-      `Efectivo: <b>${st.effectiveEngine}</b> · Modelo: <b>${effModel}</b> · ${effDev} (${effQuant}) · <span id="sttConnBadge">${conn}</span>`;
+      `Efectivo: <b>${st.effectiveEngine}</b> · Modelo: <b>${effModel}</b> · ${effDev} (${effQuant})${localExtra} · <span id="sttConnBadge">${conn}</span>`;
 
     const discards = (rem.metrics?.discardedCount || 0) + (loc.discardedCount || 0);
     const reason = m.lastDiscardReason || loc.lastDiscardReason || '-';
@@ -1340,6 +1413,44 @@
       const data = await fetch('/api/stt/config').then(r => r.json());
       if (data.ok) renderSttStatus(data.status);
     } catch { }
+  }
+
+  function onLocalProfileSelect() {
+    if (document.getElementById('sttLocalProfile').value === 'legacy') resetLocalToLegacy();
+  }
+
+  async function resetLocalToLegacy() {
+    try {
+      const data = await fetch('/api/stt/local/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile: 'legacy' }),
+      }).then(r => r.json());
+      if (!data.ok) throw new Error(data.error || 'Error restaurando Legacy');
+      renderSttStatus(data.status);
+      toast('Whisper local restaurado a Legacy');
+    } catch (e) { toast('Error STT local: ' + e.message); }
+  }
+
+  async function saveLocalSttConfig() {
+    try {
+      const body = {
+        profile: document.getElementById('sttLocalProfile').value,
+        filterProfile: document.getElementById('sttLocalFilter').value,
+        beamSize: Number(document.getElementById('sttLocalBeam').value),
+        temperature: Number(document.getElementById('sttLocalTemp').value),
+        vadFilter: document.getElementById('sttLocalVad').checked,
+        vadThreshold: Number(document.getElementById('sttLocalVadThr').value),
+        promptMode: document.getElementById('sttLocalPrompt').value,
+        secondPassMode: document.getElementById('sttLocalSecondPass').value,
+        pauseMs: Number(document.getElementById('sttLocalPause').value),
+        hotwords: document.getElementById('sttLocalHotwords').value,
+      };
+      const data = await fetch('/api/stt/local/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      }).then(r => r.json());
+      if (!data.ok) throw new Error(data.error || 'Error guardando STT local');
+      renderSttStatus(data.status);
+      toast(`Whisper local: ${data.localConfig.profile} (${data.localConfig.filterProfile})`);
+    } catch (e) { toast('Error STT local: ' + e.message); }
   }
 
   async function saveSttConfig() {

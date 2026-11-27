@@ -91,4 +91,6 @@ tmp/
 fish_voices.json
 tts_settings.json
 stt_settings.json
+whisper_local_settings.json
+whisper_local_settings.json.tmp
 voices/
