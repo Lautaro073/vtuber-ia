@@ -1895,7 +1895,7 @@ class StreamChatManager {
       if (p.gesture === "tomar_te") this._lastTea = Date.now();
       broadcast({ type: "stream_start" });
       broadcast({ type: "stream_chunk", chunk: p.filtered });
-      broadcast({ type: "stream_end", fullText: p.filtered, thinking: false, usedRAG: p.usedRAG, emotion: p.emotion ?? opts.emotion, mood: p.mood, gesture: p.gesture });
+      broadcast({ type: "stream_end", fullText: p.filtered, thinking: false, usedRAG: p.usedRAG, emotion: p.emotion ?? opts.emotion, mood: p.mood, gesture: p.gesture, to: username, platform }); // to/platform: el chat del Directo muestra a quién le contestó
       if (p.trace) {
         console.log(`📊 [${p.trace.id}] ${p.trace.effectiveModel} (${p.trace.profile}${p.trace.techPriority ? ", tech" : ""}${p.trace.fallbackUsed ? ", fallback" : ""}) rag=${p.trace.ragCount} prompt=${p.trace.promptChars}c queue=${p.trace.queueMs || 0}ms ${p.trace.latencyMs}ms`);
       }

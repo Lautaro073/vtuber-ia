@@ -1011,6 +1011,7 @@
       }
 
       if (data.type === 'stream_end') {
+        if (data.fullText) addNyraReply(data.fullText, data.to);
         if (streamEl) {
           streamEl.textContent = data.fullText;
           if (data.usedRAG) {
@@ -1106,6 +1107,7 @@
     const text = input.value.trim();
     if (!text || ws.readyState !== 1) return;
     addMsg('user', text);
+    if (inputId === 'directoInput') streamRow('Vos', 'var(--amber)', esc(text), '', 'desde el panel');
     ws.send(JSON.stringify({ type: 'chat', text }));
     input.value = '';
   }
@@ -2308,28 +2310,32 @@
     }
   }
 
-  function addStreamMessage(username, text, platform) {
+  // Una línea del chat del Directo (estilo del diseño): nombre de color + texto; NYRA va corrida y en celeste
+  function streamRow(name, nameColor, html, style = '', title = '') {
     const log = document.getElementById('streamChatLog');
     if (!log) return;
     const empty = log.querySelector('div[style*="dim"]');
     if (empty && log.children.length === 1) log.innerHTML = '';
-    const color = PLATFORM_COLORS[platform] || 'var(--cyan)';
     const el = document.createElement('div');
-    el.style.cssText = `padding:5px 8px;border-left:2px solid ${color};background:rgba(${hexToRgb(color) || '0,245,255'},.03);border-radius:0 4px 4px 0;font-size:11px`;
-    el.innerHTML = `<span style="color:${color};font-size:10px;opacity:.7">[${esc(platform).toUpperCase()}]</span> <strong style="color:${color}">@${esc(username)}</strong>: <span style="color:var(--text)">${esc(text)}</span>`;
+    el.style.cssText = `display:flex;gap:10px;padding:8px 10px;border-radius:10px;${style}`;
+    if (title) el.title = title;
+    el.innerHTML = `<span style="font:600 13px Inter,sans-serif;color:${nameColor};flex:0 0 auto">${esc(name)}</span><span style="font-size:14px;color:#d4dbf5;min-width:0;overflow-wrap:anywhere">${html}</span>`;
+    const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 60; // si estás leyendo arriba, no te salta
     log.appendChild(el);
-    log.scrollTop = log.scrollHeight;
-    while (log.children.length > 30) log.removeChild(log.firstChild);
+    if (atBottom) log.scrollTop = log.scrollHeight;
+    while (log.children.length > 60) log.removeChild(log.firstChild);
+  }
+  function addStreamMessage(username, text, platform) {
+    streamRow(username, PLATFORM_COLORS[platform] || 'var(--cyan)', esc(text), '', platform);
+  }
+  function addNyraReply(text, to) {
+    const who = to && !['NYRA', 'panel', 'idle', 'research'].includes(to) ? `<span style="color:var(--dim)">@${esc(to)} · </span>` : '';
+    streamRow('NYRA', 'var(--cyan)', who + `<span style="color:var(--text)">${esc(text)}</span>`, 'background:#0f2228;border:1px solid #173c44;margin-left:24px;padding:10px 12px');
   }
 
   const ALERT_ICONS = { gift:'🎁', follow:'👤', share:'🔗', subscribe:'⭐', resub:'🔄', subgift:'🎀', cheer:'💎' };
 
   function addStreamAlert(platform, alertType, username, extra = {}) {
-    const log = document.getElementById('streamChatLog');
-    if (!log) return;
-    const empty = log.querySelector('div[style*="dim"]');
-    if (empty && log.children.length === 1) log.innerHTML = '';
-    const color = PLATFORM_COLORS[platform] || '#fff';
     const icon  = ALERT_ICONS[alertType] || '🔔';
 
     let detail = '';
@@ -2338,12 +2344,8 @@
     if (alertType === 'subgift') detail = ` → @${esc(extra.recipient)}`;
     if (alertType === 'cheer')   detail = ` — ${extra.bits} bits`;
 
-    const el = document.createElement('div');
-    el.style.cssText = `padding:5px 10px;border-left:3px solid ${color};background:rgba(${hexToRgb(color)},.08);border-radius:0 6px 6px 0;font-size:11px;display:flex;align-items:center;gap:6px`;
-    el.innerHTML = `<span style="font-size:14px">${icon}</span><span style="color:${color};font-weight:600">@${esc(username)}</span><span style="color:var(--dim);font-size:10px">${esc(alertType).toUpperCase()}${detail}</span>`;
-    log.appendChild(el);
-    log.scrollTop = log.scrollHeight;
-    while (log.children.length > 30) log.removeChild(log.firstChild);
+    const what = { gift: 'mandó', follow: 'te sigue', share: 'compartió el live', subscribe: 'se suscribió', resub: 'renovó la suscripción', subgift: 'regaló una suscripción', cheer: 'mandó bits' }[alertType] || esc(alertType);
+    streamRow(username, '#ff7aa8', `${icon} ${what}${detail.replace(/^ — /, ' ')}`, 'background:#1d1430;border:1px solid #3a2457', platform);
   }
 
   // ─ Filtros ─
