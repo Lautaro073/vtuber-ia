@@ -162,6 +162,8 @@ export const GESTURES = {
   irse_enojada: /enoj|irse|irte|me voy|se va|andar|andate|vete|darse vuelta|salir(?:se)?\s+(?:de\s+(?:la\s+)?pantalla|del\s+cuadro|de\s+aca)/,
   tomar_te: /\bte\b|taza/,
   festejar: /festej|celebr|brazos arriba/,
+  cruzar_brazos: /cruz(?:ar(?:se)?|ando|o|a|ate)?\s+(?:de\s+|los\s+)?brazos|brazos\s+cruzados/, // antes que saludar: evita choques
+  pensativa: /menton|barbilla|pensativ/, // antes que saludar: "apoyar mentón en mano" contiene "mano"
   six_seven: new RegExp(`${SIX_SEVEN_WORDS_RE.source}|${SIX_SEVEN_DIGITS_RE.source}|balanza|sopes`),
   saludar: /salud|mano/,
   asentir: /asent|\bsi\b/,
@@ -177,6 +179,16 @@ const CREATOR_GESTURE_RULES = [
     "irse_enojada",
     /\birse[\s-]*enojad[ao]?\b|\b(?:andate|anda|vete|sali|salite|retirate|marchate|desaparece|irte|irse|ir|vayas)\b(?:\s+\w+){0,4}?\s+(?:de\s+(?:la\s+)?pantalla|de\s+aca|del\s+cuadro|enojad[ao]|indignad[ao]|ofendid[ao]|furios[ao]|caliente)\b|\b(?:andate|vete|sali|salite|irte)\s+y\s+volv(?:e|er)\b|\bhacete\s+(?:la\s+)?enojad[ao]\b|\benojate\s+y\s+(?:andate|vete|sali|salite|retirate|marchate)\b|\b(?:hace|hacete|manda(?:te)?|tira(?:te)?|pone(?:te)?)\s+(?:el\s+gesto\s+|la\s+animacion\s+)(?:de\s+|para\s+)?(?:enojad[ao]|irse|irte|salir)\b/,
     /\bno\s+(?:te\s+)?(?:vayas|salgas|andes|retires|enojes|hagas|pongas|podes\s+ir(?:te)?)\b|\bno\s+(?:podes|quiero\s+que)\s+(?:te\s+)?(?:vayas|salgas|ir(?:te)?|hacer(?:te)?)\b|\b(?:deja|para)\s+de\s+(?:irte|salir|enojarte|hacer)|sin\s+(?:irte|salir\s+de\s+la\s+pantalla)\b/,
+  ],
+  [
+    "cruzar_brazos",
+    /\bcruzar[\s-]*brazos\b|\b(?:cruzate|cruza(?:r)?|podes\s+cruzar)\s+(?:los\s+|de\s+)?brazos\b|\bbrazos\s+cruzados\b/,
+    /\bno\s+(?:te\s+)?(?:cruces|hagas)\b|\b(?:deja|para)\s+de\s+cruzar\b/,
+  ],
+  [
+    "pensativa",
+    /^\s*pensativ[ao]\s*!?$|\b(?:pone(?:te)?|hace(?:te)?|manda(?:te)?|tira(?:te)?|podes(?:\s+ponerte)?)\s+(?:la\s+|en\s+modo\s+|el\s+gesto\s+de\s+|la\s+pose\s+de\s+)?pensativ[ao]\b|\b(?:apoya(?:te)?|pone(?:te)?)\s+(?:la\s+)?mano\s+en\s+(?:el\s+menton|la\s+barbilla)\b|\bmano\s+en\s+(?:el\s+menton|la\s+barbilla)\b/,
+    /\bno\s+(?:te\s+)?(?:pongas|apoyes|hagas)\b|\b(?:deja|para)\s+de\s+(?:apoyar|hacer)\b/,
   ],
   [
     "festejar",

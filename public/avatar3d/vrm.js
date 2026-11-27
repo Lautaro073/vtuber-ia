@@ -12,11 +12,14 @@ const RIGHT_FINGERS = ['Index', 'Middle', 'Ring', 'Little'].flatMap(f => ['Proxi
 const LEFT_FINGERS = ['Index', 'Middle', 'Ring', 'Little'].flatMap(f => ['Proximal', 'Intermediate', 'Distal'].map(j => `left${f}${j}`))
   .concat(['leftThumbMetacarpal', 'leftThumbProximal', 'leftThumbDistal']);
 const BODY = ['spine', 'chest', 'upperChest', 'neck', 'head', 'leftShoulder', 'leftUpperArm', 'leftLowerArm']; // el cuerpo acompaña
+const BOTH_ARMS = ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', ...RIGHT_FINGERS, ...BODY, 'leftHand', ...LEFT_FINGERS];
 const CLIPS = {
-  saludar: { file: 'avatar3d/saludo_agy.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', ...RIGHT_FINGERS, ...BODY, 'leftHand', 'leftIndexProximal', 'leftIndexIntermediate', 'leftIndexDistal', 'leftMiddleProximal', 'leftMiddleIntermediate', 'leftMiddleDistal', 'leftRingProximal', 'leftRingIntermediate', 'leftRingDistal', 'leftLittleProximal', 'leftLittleIntermediate', 'leftLittleDistal', 'leftThumbMetacarpal', 'leftThumbProximal', 'leftThumbDistal'] }, // el de agy: más contenido y hacia la cámara
+  saludar: { file: 'avatar3d/saludo_agy.vrma', bones: BOTH_ARMS }, // el de agy: más contenido y hacia la cámara
   despedir: { file: 'avatar3d/despedida.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', ...RIGHT_FINGERS, ...BODY] }, // más amplio: chau a quien se va
   tomar_te: { file: 'avatar3d/tomar_te.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', ...RIGHT_FINGERS, ...BODY] }, // la taza y su inclinación siguen en código (tilt)
-  six_seven: { file: 'avatar3d/six_seven.vrma', bones: ['rightShoulder', 'rightUpperArm', 'rightLowerArm', 'rightHand', ...RIGHT_FINGERS, ...BODY, 'leftHand', ...LEFT_FINGERS] },
+  six_seven: { file: 'avatar3d/six_seven.vrma', bones: BOTH_ARMS },
+  cruzar_brazos: { file: 'avatar3d/cruzar_brazos.vrma', bones: BOTH_ARMS },
+  pensativa: { file: 'avatar3d/pensativa.vrma', bones: BOTH_ARMS },
 };
 
 const EMOTION = { happy: 'happy', sad: 'sad', angry: 'angry', surprised: 'surprised', thinking: 'relaxed' };
@@ -120,6 +123,27 @@ const GESTURES = {
   },
 };
 GESTURES.despedir = GESTURES.saludar; // respaldo si no carga despedida.vrma
+// Respaldo si no cargan cruzar_brazos.vrma / pensativa.vrma
+GESTURES.cruzar_brazos = {
+  dur: 3.2, ownEase: true, pose: p => {
+    const k = band(p, 0.25, 2.35, 0.55);
+    return {
+      leftUpperArm: [0.55 * k, -0.35 * k, -1.25 + 0.15 * k], rightUpperArm: [0.65 * k, 0.35 * k, 1.25 - 0.15 * k],
+      leftLowerArm: [0, -1.65 * k, 0], rightLowerArm: [0, 1.65 * k, 0],
+      head: [0, 0, -0.1 * k],
+    };
+  },
+};
+GESTURES.pensativa = {
+  dur: 3.2, ownEase: true, pose: p => {
+    const k = band(p, 0.25, 2.35, 0.55);
+    return {
+      leftUpperArm: [0.4 * k, -0.25 * k, -1.25], leftLowerArm: [0, -1.45 * k, 0],
+      rightUpperArm: [0.75 * k, 0.25 * k, 1.25 - 0.2 * k], rightLowerArm: [0, 2.1 * k, 0],
+      head: [0.05 * k, 0, -0.14 * k],
+    };
+  },
+};
 const smooth = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x);
 const mix = (a, b, k) => a.map((v, i) => v + (b[i] - v) * k);
 // 0 → 1 entre a y a+r, 1 hasta b, y 1 → 0 entre b y b+r

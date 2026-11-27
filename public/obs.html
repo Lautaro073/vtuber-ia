@@ -308,14 +308,15 @@
   }
   // ── Avatar 3D: el módulo lee la misma cara y estado que el 2D; si no carga, queda el 2D ──
   const FORCE_3D = new URLSearchParams(location.search).has('3d');
-  let loading3d = null, nyra3d = null, pendingGesture = null;
+  let loading3d = null, nyra3d = null, pendingGesture = null, obs3dActive = FORCE_3D, failed3d = false;
+  const notify3d = () => { if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'obs_3d', on: obs3dActive })); };
   function set3d(on) {
     document.body.classList.toggle('mode3d', on);
     if (!on || loading3d) return;
     loading3d = import('./avatar3d/vrm.js')
       .then(m => m.start(document.getElementById('stage3d'), 'avatar3d/NYRA.vrm', face, () => avatar.className))
       .then(ctl => { nyra3d = ctl; })
-      .catch(err => { console.warn('El avatar 3D no cargó, sigo en 2D:', err); document.body.classList.remove('mode3d'); loading3d = null; });
+      .catch(err => { console.warn('El avatar 3D no cargó, sigo en 2D:', err); document.body.classList.remove('mode3d'); loading3d = null; failed3d = true; if (FORCE_3D) { obs3dActive = false; notify3d(); } });
   }
   if (FORCE_3D) set3d(true);
 
@@ -362,7 +363,8 @@
 
   // Reconectar si se reinicia el server (si no, la fuente de OBS/TikTok Studio queda "muda" hasta recargarla)
   function connectWS() {
-    ws = new WebSocket(`${wsProto}//${location.host}`);
+    ws = new WebSocket(`${wsProto}//${location.host}${obs3dActive ? '?3d=1' : ''}`);
+    ws.onopen = () => { if (FORCE_3D) notify3d(); };
     ws.onmessage = onWsMessage;
     ws.onclose = () => setTimeout(connectWS, 2000);
   }
@@ -413,7 +415,7 @@
     // OBS dispara estos eventos al activar/desactivar la fuente o cambiar escena
     window.addEventListener('obsSceneActiveChanged',  (e) => { if (e.detail?.active)  _unlock(); });
     window.addEventListener('obsSourceActiveChanged', (e) => { if (e.detail?.active)  _unlock(); });
-    window.addEventListener('obsSourceVisibleChanged',(e) => { if (e.detail?.visible) _unlock(); });
+    window.addEventListener('obsSourceVisibleChanged',(e) => { if (e.detail?.visible) _unlock(); if (FORCE_3D && typeof e.detail?.visible === 'boolean') { obs3dActive = e.detail.visible && !failed3d; notify3d(); } });
   } else {
     // ── Browser normal: requiere interacción del usuario ──
     document.addEventListener('click',   _unlock, { once: false });
