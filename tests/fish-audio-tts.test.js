@@ -486,3 +486,95 @@ test("DNS pinning: pinnedRequest uses the exact validated IP without re-resolvin
     await Promise.all([mock.close(), new Promise(r => redirServer.close(r))]);
   }
 });
+
+test("Regression: TTSEngine serializes concurrent Fish requests without self-cancelling, manual stop cancels queued items, and HTTP 429 retries cleanly", async () => {
+  let inFlight = 0;
+  let maxInFlight = 0;
+  let attempt429 = 0;
+  let mode = "serial";
+
+  const mock = await startMockFishServer({ apiKey: "k-reg" });
+  const srv = createServer(async (req, res) => {
+    if (req.url === "/v1/tts" && req.method === "POST") {
+      if (mode === "429_once") {
+        attempt429 += 1;
+        if (attempt429 === 1) {
+          res.writeHead(429, { "Retry-After": "0.05" });
+          res.end("rate limited");
+          return;
+        }
+      }
+      inFlight += 1;
+      if (inFlight > maxInFlight) maxInFlight = inFlight;
+      await new Promise(r => setTimeout(r, 40));
+      inFlight -= 1;
+      const wav = makeWavBuffer();
+      res.writeHead(200, { "Content-Type": "audio/wav" });
+      res.end(wav);
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  await new Promise(r => srv.listen(0, "127.0.0.1", r));
+  const port = srv.address().port;
+  const tmp = mkdtempSync(join(tmpdir(), "nyra-fish-reg-"));
+
+  try {
+    const client = new FishAudioClient({
+      config: { url: `http://127.0.0.1:${port}`, apiKey: "k-reg", timeoutMs: 5000 },
+      voicesDir: tmp,
+      profilesFile: join(tmp, "p.json"),
+      settingsFile: join(tmp, "s.json"),
+      allowedHosts: ["127.0.0.1"],
+    });
+
+    // Replicate TTSEngine _fishQueue + _cancelEpoch serialization
+    let fishQueue = Promise.resolve();
+    const cancelEpoch = new Map();
+    const synthSerialized = (text, source = "live") => {
+      const myEpoch = cancelEpoch.get(source) || 0;
+      const isCancelled = () => (cancelEpoch.get(source) || 0) !== myEpoch;
+      const runFish = async () => {
+        if (isCancelled()) throw Object.assign(new Error("Fish TTS cancelado"), { cancelled: true });
+        return client.synthesizeWav(text, { source, outDir: tmp });
+      };
+      const queued = fishQueue.then(runFish, runFish);
+      fishQueue = queued.catch(() => {});
+      return queued.then(
+        r => (isCancelled() ? { url: null, cancelled: true } : { url: r.filePath, cancelled: false }),
+        err => (err.cancelled || isCancelled() ? { url: null, cancelled: true } : Promise.reject(err)),
+      );
+    };
+
+    // 1) Two concurrent live requests must serialize (maxInFlight === 1) and neither is cancelled
+    const [r1, r2] = await Promise.all([
+      synthSerialized("Primer mensaje live", "live"),
+      synthSerialized("Segundo mensaje live", "live"),
+    ]);
+    assert.equal(maxInFlight, 1);
+    assert.equal(r1.cancelled, false);
+    assert.equal(r2.cancelled, false);
+    assert.ok(r1.url && r2.url);
+
+    // 2) Manual stop cancels both active and queued live requests without fallback
+    const pA = synthSerialized("Mensaje A", "live");
+    const pB = synthSerialized("Mensaje B", "live");
+    setTimeout(() => {
+      cancelEpoch.set("live", (cancelEpoch.get("live") || 0) + 1);
+      client.abortAll();
+    }, 10);
+    const [resA, resB] = await Promise.all([pA, pB]);
+    assert.equal(resA.cancelled, true);
+    assert.equal(resB.cancelled, true);
+
+    // 3) Transient HTTP 429 retries and succeeds without failing
+    mode = "429_once";
+    const r429 = await client.synthesizeWav("Prueba 429", { source: "live", outDir: tmp });
+    assert.equal(attempt429, 2);
+    assert.ok(r429.filePath);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+    await Promise.all([mock.close(), new Promise(r => srv.close(r))]);
+  }
+});

@@ -1802,6 +1802,7 @@ class StreamChatManager {
     const filtered = this._limitTics(filters.filterOutput(ai._stripContextLeaks(fullText), opts.maxChars));
     const usedRAG = !opts.fixed && !refused && ((trace?.ragCount || 0) > 0 || ai.kb.search(opts.query ?? opts.said ?? text).length > 0);
     const emotion = refused ? getMoodState(moodAtPrep).baseEmotion : resolveSpeakingEmotion({ explicitEmotion: opts.emotion || llmEmotion, text: filtered, mood: moodAtPrep });
+    if (rank === PRI.look && Date.now() - at > LOOK_TTL_MS) return null;
     const ttsSource = (rank === PRI.call || rank === PRI.look) && discord.on ? "discord" : "live";
     const synthRes = await tts.synth(filtered, { emotion, mood: moodAtPrep, source: ttsSource, returnMeta: true });
     if (synthRes?.cancelled) return null;
@@ -2557,6 +2558,7 @@ class TTSEngine {
     this._piperProc = null;
     this._piperReady = null;
     this._piperQueue = Promise.resolve();
+    this._fishQueue = Promise.resolve();
     this._piperPending = null;
     this._cancelEpoch = new Map();
     this.fish = new FishAudioClient({
@@ -2625,8 +2627,14 @@ class TTSEngine {
     const chosen = engine || this.resolveEngine(source);
     if (chosen === "system") return wrap(null);
     if (chosen === "fish") {
+      const runFish = async () => {
+        if (isCancelled()) throw Object.assign(new Error("Fish TTS cancelado"), { cancelled: true });
+        return this._synthFish(clean, { emotion, mood, source });
+      };
+      const queued = this._fishQueue.then(runFish, runFish);
+      this._fishQueue = queued.catch(() => {});
       try {
-        const url = await this._synthFish(clean, { emotion, mood, source });
+        const url = await queued;
         if (isCancelled()) return wrap(null, true);
         return wrap(url);
       } catch (err) {
