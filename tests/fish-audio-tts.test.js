@@ -266,7 +266,7 @@ test("TTSEngine integrates Fish Audio with fallback, manual cancellation without
 
     const TTSEngine = new Function(
       "deps",
-      `const { CONFIG, FishAudioClient, join, __dirname, mkdirSync, renameSync, rmSync, readdirSync, unlinkSync, spawn, createInterface, applyPiperPhonetics, exec, discord } = deps;
+      `const { CONFIG, FishAudioClient, join, __dirname, mkdirSync, renameSync, rmSync, readdirSync, unlinkSync, spawn, createInterface, applyPhonetics, exec, discord } = deps;
        ${classCode}
        return TTSEngine;`
     )({
@@ -281,7 +281,7 @@ test("TTSEngine integrates Fish Audio with fallback, manual cancellation without
       unlinkSync: () => {},
       spawn: () => {},
       createInterface: () => ({ on: () => {} }),
-      applyPiperPhonetics: s => s,
+      applyPhonetics: s => s,
       exec: (_c, cb) => cb?.(),
       discord: { stopAudio: () => {} },
     });

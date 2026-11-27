@@ -94,3 +94,8 @@ stt_settings.json
 whisper_local_settings.json
 whisper_local_settings.json.tmp
 voices/
+
+# Pronunciaciones editadas desde el panel
+/nyra_pronunciation.json
+/nyra_alerts.json
+public/Alertas/custom-*

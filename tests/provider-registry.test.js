@@ -94,6 +94,17 @@ test("saved provider booleans survive a second registry instance", async (t) => 
   assert.deepEqual(restored.snapshot().providers.filter(provider => provider.enabled).map(provider => provider.id), ["opencode"]);
 });
 
+test("the chosen vision model survives a second registry instance", async (t) => {
+  const { registry, settingsFile } = registryAt(t);
+  await registry.initialize();
+  await registry.rememberVisionModel("agy:agy-model");
+
+  const restored = new ProviderRegistry({ definitions: definitions(), settingsFile, preferredOrder: ORDER, initialProvider: "agy" });
+  await restored.initialize();
+
+  assert.equal(restored.visionModel, "agy:agy-model");
+});
+
 test("unknown saved provider keys are discarded", async (t) => {
   const { registry, settingsFile } = registryAt(t);
   writeFileSync(settingsFile, JSON.stringify({
@@ -301,4 +312,21 @@ test("disabling every provider leaves NYRA in IA apagada state", async (t) => {
 
   assert.equal(registry.snapshot().currentModel, null);
   assert.equal(registry.snapshot().status, "IA apagada");
+});
+
+test("vision list skips text-only models of a vision provider", async (t) => {
+  const { registry } = registryAt(t, {
+    overrides: {
+      agy: {
+        discoverModels: async () => ["agy:gemini-4-neon-low", "agy:gpt-oss-120b-medium"],
+        textOnlyModel: model => /gpt-oss/.test(model),
+      },
+    },
+  });
+
+  await registry.initialize();
+  const state = registry.snapshot();
+
+  assert.deepEqual(state.visionModels, ["agy:gemini-4-neon-low"]);
+  assert.ok(state.models.includes("agy:gpt-oss-120b-medium")); // para charlar sigue disponible
 });

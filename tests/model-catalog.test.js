@@ -53,7 +53,7 @@ test("advertises text for all providers and vision only for current image provid
     assert.equal(providerSupports(id, "text"), true);
   assert.equal(providerSupports("agy", "vision"), true);
   assert.equal(providerSupports("claude-code", "vision"), true);
-  assert.equal(providerSupports("codex-cli", "vision"), false);
+  assert.equal(providerSupports("codex-cli", "vision"), true);
   assert.equal(providerSupports("opencode", "vision"), false);
 });
 

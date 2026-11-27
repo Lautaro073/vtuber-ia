@@ -2,616 +2,515 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NYRA - Panel de Control</title>
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+JP:wght@300;400&display=swap" rel="stylesheet">
+<link rel="icon" href="/avatar/nyra-panel.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #05060f; --panel: #0c0e1e; --border: #1a1f3e;
-    --cyan: #00f5ff; --pink: #ff2d78; --purple: #7c3aed;
-    --text: #e0e8ff; --dim: #6b7db3;
+    --bg: #070812; --bg2: #0a0c1c; --panel: #0e1124; --panel2: #12152c; --border: #232a4d; --border2: #2e3768;
+    --cyan: #22e4f0; --cyan-soft: #8ff4fa; --pink: #ff4d8d; --pink-soft: #ff7aa8; --purple: #a78bfa; --violet: #a78bfa;
+    --lime: #9be15d; --amber: #ffb547; --text: #e6ecff; --dim: #97a3cf; --muted: #5a6390;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Noto Sans JP', sans-serif; min-height: 100vh; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.45 Inter, system-ui, sans-serif; min-height: 100vh; }
+  a { color: var(--cyan); }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
-  .grid-bg {
-    position: fixed; inset: 0; z-index: 0;
-    background-image: linear-gradient(rgba(0,245,255,.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(0,245,255,.03) 1px, transparent 1px);
-    background-size: 40px 40px; pointer-events: none;
+  /* ── Estructura ── */
+  .topbar { position: sticky; top: 0; z-index: 20; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 12px 20px; border-bottom: 1px solid #1b2040; background: var(--bg2); }
+  .brand { display: flex; align-items: center; gap: 10px; font: 700 18px 'Space Grotesk', sans-serif; letter-spacing: .04em; }
+  .brand-mark { width: 40px; height: 40px; border-radius: 50%; background: #132a33; border: 1px solid #1f5560; object-fit: cover; image-rendering: pixelated; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 360px; }
+  .top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .layout { display: flex; flex-wrap: wrap; min-height: calc(100vh - 59px); }
+  .sidenav { flex: 1 1 220px; max-width: 248px; padding: 16px 12px; border-right: 1px solid #1b2040; background: var(--bg2); display: flex; flex-direction: column; gap: 2px; }
+  .nav-group { font: 600 12px Inter, sans-serif; color: var(--dim); letter-spacing: .02em; padding: 14px 12px 6px; }
+  .nav-group:first-child { padding-top: 4px; }
+  .nav { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 12px; border: 0; border-radius: 10px; background: transparent; color: #a9b4dc; text-align: left; cursor: pointer; font-size: 14px; }
+  .nav:hover { background: var(--panel2); color: var(--text); }
+  .nav[aria-current="page"] { background: #132a33; color: var(--cyan-soft); }
+  .nav svg { flex: 0 0 auto; }
+  main { flex: 999 1 640px; min-width: 0; padding: 24px; }
+  .section { display: none; flex-direction: column; gap: 20px; }
+  .section.active { display: flex; }
+  .page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; }
+  .page-head h1 { font: 700 26px 'Space Grotesk', sans-serif; }
+  .row { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+  @media (max-width: 760px) {
+    .sidenav { max-width: none; flex-basis: 100%; flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid #1b2040; padding: 8px; }
+    .nav-group { display: none; }
+    .nav { white-space: nowrap; }
+    main { padding: 16px; }
   }
 
-  .app { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 340px; grid-template-rows: 56px minmax(0, 1fr); height: 100vh; } /* minmax(0,…): que las columnas no crezcan con el chat y scrollee solo .messages */
+  /* ── Piezas ── */
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+  .h { font: 600 15px 'Space Grotesk', sans-serif; color: var(--text); }
+  .sub { font-size: 13px; color: var(--dim); line-height: 1.45; }
+  .label { font: 600 12px Inter, sans-serif; color: var(--dim); letter-spacing: .02em; }
+  .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .inline > input[type=text], .inline > input[type=url], .inline > .grow { flex: 1 1 160px; min-width: 0; }
+  .chip { font: 500 12px 'JetBrains Mono', monospace; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--border); color: #c4cdf0; white-space: nowrap; }
+  button.chip { cursor: pointer; min-height: 32px; }
+  button.chip[aria-pressed="true"] { background: #132a33; color: var(--cyan-soft); border-color: #1f5560; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); display: inline-block; flex: 0 0 auto; }
+  .divider { border-top: 1px solid #1b2040; padding-top: 12px; }
+  .danger-card { border-color: #4a2350; }
+  .danger-card .h { color: var(--pink-soft); }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .stat-box { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; gap: 4px; }
+  .stat-num { font: 700 24px 'Space Grotesk', sans-serif; }
+  .stat-lbl { font: 600 12px Inter, sans-serif; color: var(--dim); }
+  .list { display: flex; flex-direction: column; gap: 6px; }
+  .scroll { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .empty { font-size: 13px; color: var(--dim); }
 
-  .topbar {
-    grid-column: 1 / -1;
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0 24px; border-bottom: 1px solid var(--border);
-    background: rgba(5,6,15,.95); backdrop-filter: blur(10px);
+  /* Formularios */
+  input[type=text], input[type=url], input[type=password], input[type=number], textarea, select, .model-select {
+    background: var(--bg2); border: 1px solid var(--border2); border-radius: 10px; padding: 0 12px; min-height: 40px; color: var(--text); font-size: 14px; outline: none; width: 100%;
   }
-  .logo { font-family: 'Orbitron',monospace; font-size: 16px; color: var(--cyan); text-shadow: 0 0 20px #00f5ff88; letter-spacing: 4px; }
-  .status-pill {
-    display: flex; align-items: center; gap: 8px; padding: 4px 14px;
-    border: 1px solid var(--border); border-radius: 20px; font-size: 11px;
-  }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: #00f5ff; box-shadow: 0 0 8px #00f5ff; animation: pulse 2s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  textarea { padding: 10px 12px; resize: vertical; min-height: 120px; line-height: 1.45; }
+  input:focus, textarea:focus, select:focus { border-color: var(--cyan); }
+  select:disabled, .model-select:disabled, textarea:disabled { opacity: .5; cursor: not-allowed; }
+  details input[type=text], details input[type=url], details input[type=number], details select, details textarea { min-height: 32px; font-size: 12px; }
 
-  /* chat */
-  .chat-col { display: flex; flex-direction: column; border-right: 1px solid var(--border); min-height: 0; }
+  /* Interruptor: un checkbox real con apariencia de switch */
+  input.switch { appearance: none; -webkit-appearance: none; width: 44px; height: 26px; border-radius: 999px; background: var(--border2); position: relative; cursor: pointer; flex: 0 0 auto; transition: background .15s; }
+  input.switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  input.switch:checked { background: var(--cyan); }
+  input.switch:checked::after { transform: translateX(18px); }
+  input.switch:disabled { opacity: .5; cursor: wait; }
+  .switch-row { display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer; }
+  .switch-row > span { flex: 1; }
 
-  .tabs { display: flex; border-bottom: 1px solid var(--border); }
-  .tab {
-    padding: 12px 20px; font-family: 'Orbitron',monospace; font-size: 10px;
-    letter-spacing: 2px; color: var(--dim); cursor: pointer; border-bottom: 2px solid transparent;
-    transition: all .2s;
-  }
-  .tab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+  /* Botones */
+  .btn { font: 600 13px Inter, sans-serif; min-height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--border2); background: #161a36; color: var(--text); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; text-decoration: none; }
+  .btn:hover { border-color: #46518f; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-sm { min-height: 34px; padding: 0 12px; }
+  .btn-cyan { background: var(--cyan); border-color: var(--cyan); color: #04161a; }
+  .btn-cyan:hover { background: var(--cyan-soft); border-color: var(--cyan-soft); }
+  .btn-pink { background: transparent; border-color: var(--pink); color: var(--pink-soft); }
+  .btn-pink:hover { background: #2a1028; }
+  .icon-btn { width: 40px; height: 40px; padding: 0; }
 
-  .tab-content { display: none; flex-direction: column; flex: 1; overflow: hidden; }
-  .tab-content.active { display: flex; }
+  /* Segmentado */
+  .seg { display: inline-flex; background: var(--bg2); border: 1px solid var(--border2); border-radius: 10px; padding: 3px; }
+  .seg button { min-height: 36px; padding: 0 14px; border: 0; border-radius: 8px; background: transparent; color: #a9b4dc; font-weight: 600; font-size: 13px; cursor: pointer; flex: 1; }
+  .seg button[aria-pressed="true"] { background: var(--cyan); color: #04161a; }
 
-  .messages {
-    flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px;
-    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
-  }
+  /* Pestañas */
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 12px 0; border-bottom: 1px solid #1b2040; }
+  .tab { min-height: 40px; padding: 0 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #a9b4dc; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .tab[aria-selected="true"] { color: var(--cyan-soft); border-bottom-color: var(--cyan); }
+  .tab-pane { display: none; padding: 16px 20px; flex-direction: column; gap: 10px; }
+  .tab-pane.active { display: flex; }
 
-  .msg {
-    max-width: 80%; padding: 10px 14px; border-radius: 12px;
-    font-size: 14px; line-height: 1.5; animation: fadeUp .3s ease;
-  }
-  @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1} }
-  .msg-user { align-self: flex-end; background: linear-gradient(135deg,#1a0a2e,#2a0a3e); border: 1px solid var(--purple); color: #d4b8ff; }
-  .msg-ai {
-    align-self: flex-start; background: linear-gradient(135deg,#001a20,#001828);
-    border: 1px solid rgba(0,245,255,.3); color: var(--text); position: relative;
-  }
-  .msg-ai::before { content:'// NYRA'; position:absolute; top:-18px; left:0; font-family:'Orbitron',monospace; font-size:9px; color:var(--cyan); letter-spacing:2px; }
-  .msg-rag { font-size: 10px; color: var(--purple); margin-top: 4px; }
-
-  .chat-form { padding: 14px; border-top: 1px solid var(--border); display: flex; gap: 10px; }
-  input[type=text], textarea {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-    padding: 10px 14px; color: var(--text); font-family: inherit; font-size: 14px; outline: none;
-    transition: border-color .2s;
-  }
-  input[type=text]:focus, textarea:focus { border-color: var(--cyan); box-shadow: 0 0 10px rgba(0,245,255,.1); }
-  input[type=text] { flex: 1; }
-  textarea { width: 100%; resize: vertical; min-height: 140px; }
-
-  .btn {
-    padding: 10px 18px; border-radius: 8px; border: none; cursor: pointer;
-    font-family: 'Orbitron',monospace; font-size: 10px; letter-spacing: 2px; font-weight: 700;
-    transition: all .2s;
-  }
-  .btn-cyan { background: linear-gradient(135deg,#00c8d4,#00f5ff); color: #000; box-shadow: 0 0 15px rgba(0,245,255,.3); }
-  .btn-cyan:hover { box-shadow: 0 0 25px rgba(0,245,255,.6); transform: translateY(-1px); }
-  .btn-cyan:disabled { opacity:.4; cursor:not-allowed; transform:none; }
-  .btn-pink { background: linear-gradient(135deg,#c4005e,#ff2d78); color:#fff; box-shadow:0 0 15px rgba(255,45,120,.3); }
-  .btn-pink:hover { box-shadow:0 0 25px rgba(255,45,120,.6); transform:translateY(-1px); }
-  .btn-sm { padding: 6px 12px; font-size: 9px; }
-
-  .thinking { display:flex; gap:4px; align-items:center; padding:10px 14px; }
-  .thinking span { width:8px;height:8px;border-radius:50%;background:var(--cyan);animation:bounce .9s infinite ease-in-out; }
-  .thinking span:nth-child(2){animation-delay:.15s} .thinking span:nth-child(3){animation-delay:.3s}
-  @keyframes bounce{0%,100%{transform:scale(1)}50%{transform:scale(.5);opacity:.4}}
-
-  /* learn panel */
-  .learn-section { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
-  .platform-card {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 12px 14px;
-    transition: box-shadow .2s;
-  }
-  .platform-badge {
-    font-size: 10px; font-family: 'Orbitron', monospace; letter-spacing: 1px;
-    padding: 3px 8px; border-radius: 4px; border: 1px solid var(--border);
-    transition: color .3s, background .3s, border-color .3s;
-  }
+  /* Plataformas */
+  .platforms { display: flex; flex-wrap: wrap; gap: 12px; }
+  .platform-card { flex: 1 1 280px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--panel); }
+  .platform-card .label { font: 600 14px Inter, sans-serif; color: var(--text); letter-spacing: 0; }
+  .platform-card input { flex: 1 1 120px; min-height: 34px; }
+  .platform-badge { font: 500 11px 'JetBrains Mono', monospace; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--border); margin-left: auto; }
   .platform-badge--off { color: var(--dim); background: rgba(255,255,255,.04); }
-  .form-group { display: flex; flex-direction: column; gap: 6px; }
-  .label { font-family:'Orbitron',monospace; font-size:10px; letter-spacing:2px; color:var(--dim); }
 
-  /* right panel */
-  .right-col { display: flex; flex-direction: column; background: var(--panel); overflow-y: auto; min-height: 0; scrollbar-width: thin; scrollbar-color: var(--border) transparent; } /* scroll propio: si no, lo de abajo queda cortado */
-  .right-col > * { flex-shrink: 0; } /* que las secciones no se aplasten: desbordan y se scrollea */
+  /* Chats */
+  .messages { display: flex; flex-direction: column; gap: 12px; padding: 20px; height: calc(100vh - 330px); min-height: 360px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .msg { max-width: 75%; padding: 12px 14px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; animation: fadeUp .2s ease; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; } }
+  .msg-user { align-self: flex-end; border-radius: 14px 14px 4px 14px; background: #1d2148; }
+  .msg-ai { align-self: flex-start; border-radius: 14px 14px 14px 4px; background: #0f2228; border: 1px solid #173c44; }
+  .msg-rag { font-size: 11px; color: var(--purple); margin-top: 4px; }
+  .thinking { display: flex; gap: 4px; align-items: center; }
+  .thinking span { width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); animation: bounce .9s infinite ease-in-out; }
+  .thinking span:nth-child(2) { animation-delay: .15s; } .thinking span:nth-child(3) { animation-delay: .3s; }
+  @keyframes bounce { 0%,100% { transform: scale(1); } 50% { transform: scale(.5); opacity: .4; } }
+  .log { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .log > div { overflow-wrap: anywhere; }
+  #streamChatLog { height: 470px; padding: 12px; font-size: 13px !important; }
+  #streamChatLog > div { font-size: 13px !important; }
 
-  .panel-section { border-bottom: 1px solid var(--border); padding: 16px; }
-  .panel-title { font-family:'Orbitron',monospace; font-size:10px; letter-spacing:3px; color:var(--pink); text-shadow:0 0 10px #ff2d7888; margin-bottom:12px; }
+  /* Proveedores */
+  .provider-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .provider-row { border: 1px solid var(--border); border-radius: 12px; padding: 14px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px 10px; align-items: center; }
+  .provider-row label { font-weight: 600; cursor: pointer; }
+  .provider-status { grid-column: 1 / -1; justify-self: start; font: 500 12px 'JetBrains Mono', monospace; padding: 5px 10px; border-radius: 999px; background: var(--panel2); border: 1px solid var(--border); color: var(--dim); }
+  .provider-status--active { color: var(--lime); }
+  .provider-status--error { color: var(--amber); }
 
-  .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .stat-box { background: rgba(0,245,255,.03); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; }
-  .stat-num { font-family:'Orbitron',monospace; font-size: 22px; color: var(--cyan); }
-  .stat-lbl { font-size: 10px; color: var(--dim); letter-spacing: 1px; margin-top: 2px; }
+  /* Avanzado plegado */
+  details.adv { border: 1px solid var(--border) !important; border-radius: 10px !important; padding: 0 14px !important; background: transparent !important; }
+  details.adv > summary { min-height: 44px; display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px !important; color: #c4cdf0 !important; font-weight: 500 !important; list-style: none; }
+  details.adv > summary::before { content: '›'; font-size: 18px; color: var(--dim); transition: transform .15s; }
+  details.adv[open] > summary::before { transform: rotate(90deg); }
+  details.adv > div { padding-bottom: 14px; }
 
-  .model-select {
-    background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 8px 12px;
-    border-radius: 6px; font-family: 'Noto Sans JP',sans-serif; font-size: 13px; width: 100%; outline: none;
-  }
-  .model-select:focus { border-color: var(--cyan); }
-  .model-select:disabled { opacity:.45; cursor:not-allowed; }
-  .provider-controls { display:flex; flex-direction:column; gap:7px; margin-bottom:14px; }
-  .provider-row {
-    display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:8px;
-    background:rgba(0,245,255,.025); border:1px solid var(--border); border-radius:7px; padding:7px 9px;
-  }
-  .provider-row input { width:15px; height:15px; accent-color:var(--cyan); }
-  .provider-row label { cursor:pointer; font-size:12px; min-width:0; }
-  .provider-status { color:var(--dim); font-size:9px; text-align:right; white-space:nowrap; }
-  .provider-status--active { color:var(--cyan); }
-  .provider-status--error { color:#ff8800; }
+  /* Memoria */
+  .mem-scroll { max-height: 420px; overflow-y: auto; }
+  .mem-entry { padding: 10px 12px; margin-bottom: 6px; border-radius: 10px; background: var(--bg2); font-size: 13px; color: var(--dim); overflow-wrap: anywhere; }
+  .mem-source { color: var(--purple); font-size: 12px; }
 
-  .mem-scroll { max-height: 200px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
-  .mem-entry {
-    padding: 6px 10px; margin-bottom: 4px; border-left: 2px solid var(--purple);
-    background: rgba(124,58,237,.05); border-radius: 0 4px 4px 0;
-    font-size: 11px; color: var(--dim);
-    white-space: normal; overflow-wrap: anywhere; /* texto completo en varias líneas */
-  }
-  .mem-source { color: var(--purple); font-size: 10px; }
+  /* Pronunciación */
+  .pron-row { display: grid; grid-template-columns: minmax(0,1fr) 20px minmax(0,1fr) 110px 40px 40px; gap: 10px; align-items: center; padding: 6px 12px; border-radius: 10px; background: var(--bg2); }
+  .pron-row.head { background: transparent; color: var(--dim); font: 600 12px Inter, sans-serif; }
+  .pron-say { color: var(--cyan-soft); }
+  @media (max-width: 600px) { .pron-row { grid-template-columns: minmax(0,1fr) minmax(0,1fr) 40px 40px; } .pron-row > :nth-child(2), .pron-row > :nth-child(4) { display: none; } }
 
-  .obs-link {
-    display: flex; align-items: center; justify-content: space-between;
-    background: rgba(0,245,255,.03); border: 1px solid rgba(0,245,255,.2);
-    border-radius: 8px; padding: 10px 14px; font-size: 12px; margin-top: 10px;
-  }
-  .obs-url { color: var(--cyan); font-family: monospace; font-size: 11px; }
+  /* Meta */
+  .bar { height: 10px; border-radius: 999px; background: #1b2040; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: var(--cyan); border-radius: 999px; transition: width .4s; }
 
-  .toast {
-    position: fixed; bottom: 24px; right: 24px; z-index: 100;
-    padding: 10px 20px; border-radius: 8px; font-size: 13px;
-    background: linear-gradient(135deg,#001a20,#001828);
-    border: 1px solid rgba(0,245,255,.5); color: var(--cyan);
-    animation: fadeUp .3s ease; display: none;
-  }
-  .toast.show { display: block; }
+  .preview { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: var(--bg2); border: 1px solid var(--border); }
+  .preview video { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .src { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px; border-radius: 10px; background: var(--bg2); }
+  .src code { font: 500 13px 'JetBrains Mono', monospace; color: var(--cyan-soft); flex: 1 1 180px; }
+
+  .toast { position: fixed; bottom: 24px; right: 24px; z-index: 100; padding: 12px 18px; border-radius: 10px; font-size: 14px; background: #0f2228; border: 1px solid #1f5560; color: var(--cyan-soft); display: none; max-width: min(420px, calc(100vw - 48px)); }
+  .toast.show { display: block; animation: fadeUp .2s ease; }
+  #keyModal { display: none; position: fixed; inset: 0; z-index: 200; background: rgba(5,6,15,.85); align-items: center; justify-content: center; padding: 16px; }
 </style>
 </head>
 <body>
-<div class="grid-bg"></div>
-<div class="app">
 
-  <!-- Topbar -->
-  <div class="topbar">
-    <span class="logo">NYRA CONTROL PANEL</span>
-    <div style="display:flex;gap:12px;align-items:center">
-      <div class="status-pill">
-        <div class="dot" id="ollamaDot" style="background:#666;box-shadow:none"></div>
-        <span id="ollamaStatus" style="color:var(--dim)">Chequeando IA...</span>
-      </div>
-      <a href="/obs" target="_blank">
-        <button class="btn btn-pink btn-sm">ABRIR OBS VIEW</button>
-      </a>
-    </div>
+<header class="topbar">
+  <div class="brand"><img class="brand-mark" src="/avatar/nyra-panel.png" alt="" width="40" height="40">NYRA</div>
+  <div class="chips" aria-label="Estado">
+    <span class="chip"><span class="dot" id="ollamaDot"></span><span id="ollamaStatus">Chequeando IA…</span></span>
+    <span class="chip"><span class="dot" id="chipStreamDot"></span><span id="chipStream">Sin plataformas</span></span>
+    <span class="chip"><span class="dot" id="chipVoiceDot" style="background:var(--lime)"></span><span id="chipVoice">Voz</span></span>
+    <span class="chip"><span class="dot" id="chipDiscordDot"></span><span id="chipDiscord">Discord apagado</span></span>
+    <span class="chip"><span class="dot" id="chipScreenDot"></span><span id="chipScreen">Pantalla apagada</span></span>
   </div>
+  <div class="top-actions">
+    <button class="btn btn-pink" type="button" onclick="ttsStop()">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+      Callar a NYRA
+    </button>
+    <a class="btn" href="/obs" target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 3h7v7M21 3l-9 9M10 5H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/></svg>
+      Ver en OBS
+    </a>
+  </div>
+</header>
 
-  <!-- Chat col -->
-  <div class="chat-col">
-    <div class="tabs">
-      <div class="tab active" onclick="switchTab('chat')">// CHAT</div>
-      <div class="tab" onclick="switchTab('learn')">// ENSEÑAR</div>
-      <div class="tab" onclick="switchTab('memoria')">// MEMORIA</div>
-      <div class="tab" onclick="switchTab('stream')">// STREAM</div>
-      <div class="tab" onclick="switchTab('vision')">// PANTALLA</div>
-    </div>
+<div class="layout">
+  <nav class="sidenav" aria-label="Secciones">
+    <div class="nav-group">EN VIVO</div>
+    <button class="nav" type="button" data-sec="directo" onclick="switchTab('directo')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8"/></svg>Directo</button>
+    <button class="nav" type="button" data-sec="wildrift" onclick="switchTab('wildrift')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="4"/><path d="M6 12h4M8 10v4M15 11h.01M18 13h.01"/></svg>Modo Wild Rift</button>
+    <button class="nav" type="button" data-sec="vision" onclick="switchTab('vision')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Pantalla y Discord</button>
+    <button class="nav" type="button" data-sec="chat" onclick="switchTab('chat')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Charlar con NYRA</button>
+    <button class="nav" type="button" data-sec="metas" onclick="switchTab('metas')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.5 5.5 21l2-7.5L2 9h7z"/></svg>Metas y tribunal</button>
+    <div class="nav-group">CONFIGURAR</div>
+    <button class="nav" type="button" data-sec="cerebro" onclick="switchTab('cerebro')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg>Cerebro y voz</button>
+    <button class="nav" type="button" data-sec="pron" onclick="switchTab('pron')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 5L6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7"/></svg>Pronunciación</button>
+    <button class="nav" type="button" data-sec="memoria" onclick="switchTab('memoria')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/></svg>Memoria y enseñar</button>
+    <button class="nav" type="button" data-sec="avatar" onclick="switchTab('avatar')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Avatar y OBS</button>
+    <button class="nav" type="button" data-sec="alertas" onclick="switchTab('alertas')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>Alertas</button>
+    <button class="nav" type="button" data-sec="moderacion" onclick="switchTab('moderacion')"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/></svg>Moderación y pibes</button>
+  </nav>
 
-    <!-- Chat tab -->
-    <div class="tab-content active" id="tab-chat">
-      <div class="messages" id="messages">
-        <div class="msg msg-ai">Iniciando sistema. Conectá al servidor... te espero.</div>
+  <main>
+    <!-- ═════════ DIRECTO ═════════ -->
+    <section class="section" id="tab-directo" aria-labelledby="h-directo">
+      <div class="page-head">
+        <div><h1 id="h-directo">Directo</h1><p class="sub">Todo lo que necesitás mientras transmitís, en una sola pantalla.</p></div>
+        <label class="switch-row" style="min-height:40px"><span class="label">RESPONDER A TODOS <span style="font-weight:400">(apagado = solo @nyra)</span></span><input type="checkbox" class="switch" id="respondToAll" onchange="setRespondToAll(this.checked)"></label>
       </div>
-      <div class="chat-form">
-        <input type="text" id="chatInput" placeholder="Habla con NYRA..." onkeydown="if(event.key==='Enter')sendMsg()">
-        <button class="btn btn-cyan" onclick="sendMsg()" id="sendBtn">ENVIAR</button>
-        <button class="btn btn-sm" onclick="clearHistory()" title="Limpiar historial" style="background:var(--panel);color:var(--dim);border:1px solid var(--border)">✕</button>
-      </div>
-    </div>
 
-    <!-- Learn tab -->
-    <div class="tab-content" id="tab-learn">
-      <div class="learn-section">
-        <div style="font-size:11px;color:var(--dim);line-height:1.7;padding:4px 0 8px">
-          Acá soló vas vos: enseñále info, URLs o textos a NYRA.<br>
-          Las conversaciones del chat se guardan automáticamente en <strong style="color:var(--cyan)">MEMORIA</strong>.
-        </div>
-        <div class="form-group">
-          <label class="label">TEXTO A APRENDER</label>
-          <textarea id="learnText" placeholder="Pegá cualquier texto aquí...&#10;&#10;• Artículos de Wikipedia&#10;• Noticias&#10;• Cualquier información que quieras que NYRA sepa"></textarea>
-        </div>
-        <div class="form-group">
-          <label class="label">FUENTE (opcional)</label>
-          <input type="text" id="learnSource" placeholder="Wikipedia, noticias, manual...">
-        </div>
-        <button class="btn btn-pink" onclick="learnText()">⬆ ENSEÑAR A NYRA</button>
-        <div id="learnResult" style="font-size:12px;color:var(--dim);display:none"></div>
-
-        <div style="border-top:1px solid var(--border);padding-top:14px">
-          <div class="label" style="margin-bottom:8px">MODO BATCH — MÚLTIPLES TEXTOS</div>
-          <textarea id="batchText" placeholder="Texto 1&#10;---&#10;Texto 2&#10;---&#10;Texto 3" style="min-height:100px"></textarea>
-          <button class="btn btn-sm btn-cyan" style="margin-top:8px" onclick="learnBatch()">APRENDER BATCH</button>
-        </div>
-
-        <div style="border-top:1px solid var(--border);padding-top:14px">
-          <div class="label" style="margin-bottom:8px">INGESTAR DESDE URL</div>
-          <input type="text" id="ingestUrl" placeholder="https://es.wikipedia.org/wiki/..." style="margin-bottom:8px">
-          <button class="btn btn-sm btn-cyan" onclick="ingestUrl()">&#x2B07; IMPORTAR URL</button>
-          <div id="ingestResult" style="font-size:11px;color:var(--dim);margin-top:6px;display:none"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Memoria tab -->
-    <div class="tab-content" id="tab-memoria">
-      <div class="learn-section">
-
-        <!-- Evolución -->
-        <div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div class="label">🧠 CÓMO EVOLUCIONA</div>
-            <button class="btn btn-sm" onclick="loadEvolution()" style="font-size:9px">ACTUALIZAR</button>
+      <div class="platforms">
+        <div class="platform-card" id="card-tiktok">
+          <span class="label">TikTok</span>
+          <span id="status-tiktok" class="platform-badge platform-badge--off">● OFF</span>
+          <div class="inline" style="flex-basis:100%">
+            <label class="sr-only" for="channel-tiktok">Usuario de TikTok</label>
+            <input type="text" id="channel-tiktok" placeholder="@usuario"><button class="btn btn-sm" type="button" onclick="connectPlatform('tiktok')">Conectar</button>
+            <button class="btn btn-sm icon-btn" type="button" id="disc-tiktok" onclick="disconnectPlatform('tiktok')" aria-label="Desconectar TikTok" title="Desconectar">✕</button>
           </div>
-          <div style="font-size:10px;color:var(--dim);margin-bottom:8px">Tus órdenes mandan sobre todo. De los pibes y de la comunidad aprende por separado cada tantas charlas (con Auto-aprender prendido). La ✕ borra lo que no te guste.</div>
-          <div id="evolutionList" style="display:flex;flex-direction:column;gap:4px;max-height:300px;overflow-y:auto"></div>
         </div>
-
-        <!-- Personalidad -->
-        <div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div class="label">💜 PERSONALIDAD <span id="statPersonality" style="color:var(--cyan)">0 opiniones</span></div>
-            <button class="btn btn-sm" onclick="clearPersonality()" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3);font-size:9px">BORRAR TODO</button>
+        <div class="platform-card" id="card-twitch">
+          <span class="label">Twitch</span>
+          <span id="status-twitch" class="platform-badge platform-badge--off">● OFF</span>
+          <div class="inline" style="flex-basis:100%">
+            <label class="sr-only" for="channel-twitch">Canal de Twitch</label>
+            <input type="text" id="channel-twitch" placeholder="nombre del canal"><button class="btn btn-sm" type="button" onclick="connectPlatform('twitch')">Conectar</button>
+            <button class="btn btn-sm icon-btn" type="button" id="disc-twitch" onclick="disconnectPlatform('twitch')" aria-label="Desconectar Twitch" title="Desconectar">✕</button>
           </div>
-          <div style="font-size:10px;color:var(--dim);margin-bottom:8px">Opiniones que NYRA formó automáticamente por sus conversaciones.</div>
-          <div id="personalityList" style="display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent"></div>
-          <div style="border-top:1px solid var(--border);padding-top:8px;margin-top:8px">
-            <div class="label" style="margin-bottom:6px;font-size:10px">AGREGAR OPINIÓN MANUAL</div>
-            <div style="display:flex;gap:6px;margin-bottom:4px">
-              <input type="text" id="opinionTopic" placeholder="tema (ej: música)" style="flex:1;font-size:11px;padding:5px 8px">
-              <input type="text" id="opinionText" placeholder="opinión de NYRA..." style="flex:2;font-size:11px;padding:5px 8px">
-              <button class="btn btn-sm btn-cyan" onclick="addOpinion()">+</button>
+        </div>
+        <div class="platform-card" id="card-kick">
+          <span class="label">Kick</span>
+          <span id="status-kick" class="platform-badge platform-badge--off">● OFF</span>
+          <div class="inline" style="flex-basis:100%">
+            <label class="sr-only" for="channel-kick">Cuenta de Kick</label>
+            <input type="text" id="channel-kick" placeholder="iniciá sesión →" readonly><button class="btn btn-sm" type="button" onclick="connectPlatform('kick')">Conectar</button>
+            <a class="btn btn-sm" href="/auth/kick" id="login-kick" title="Iniciar sesión con Kick (API oficial)">Login</a>
+            <button class="btn btn-sm icon-btn" type="button" id="disc-kick" onclick="disconnectPlatform('kick')" aria-label="Desconectar Kick" title="Desconectar">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <section class="card" style="flex:2 1 520px;padding:0;gap:0;overflow:hidden" aria-labelledby="h-livechat">
+          <div class="card-head" style="padding:14px 20px;border-bottom:1px solid #1b2040">
+            <h2 class="h" id="h-livechat">Chat en vivo</h2>
+            <button class="btn btn-sm" type="button" onclick="clearStreamLog()">Limpiar</button>
+          </div>
+          <div id="streamChatLog" class="log"><div style="font-size:11px;color:var(--dim)">Sin mensajes aún.</div></div>
+          <form class="inline" style="padding:12px;border-top:1px solid #1b2040" onsubmit="event.preventDefault();sendMsg('directoInput')">
+            <label class="sr-only" for="directoInput">Decirle algo a NYRA</label>
+            <input type="text" id="directoInput" class="grow" placeholder="Decile algo a NYRA (lo responde en el directo)…">
+            <button class="btn btn-cyan" type="submit">Enviar</button>
+          </form>
+        </section>
+
+        <div class="col" style="flex:1 1 300px">
+          <section class="card" aria-labelledby="h-dgoal">
+            <div class="card-head"><h2 class="h" id="h-dgoal">Meta de regalos</h2><button class="btn btn-sm" type="button" onclick="switchTab('metas')">Editar metas</button></div>
+            <div class="sub" id="directoGoal">Sin metas cargadas.</div>
+            <div class="bar" aria-hidden="true"><div id="directoGoalBar"></div></div>
+          </section>
+          <section class="card" aria-labelledby="h-gest">
+            <div class="card-head"><h2 class="h" id="h-gest">Animación 3D</h2><span class="chip" id="gestState">avatar 3D</span></div>
+            <p class="sub" id="gestHint">Tocá una y NYRA la hace ahora en pantalla. Las animaciones nuevas aparecen solas.</p>
+            <div class="inline" id="gestureList"><span class="empty">Cargando…</span></div>
+          </section>
+          <section class="card" aria-labelledby="h-dtrib">
+            <div class="card-head"><h2 class="h" id="h-dtrib">Tribunal NYRA</h2><button class="btn btn-sm" type="button" onclick="switchTab('metas')">Abrir / cerrar</button></div>
+            <p class="sub" id="directoTrib">Sin tribunal abierto. El chat vota con !a / !b.</p>
+          </section>
+          <section class="card" aria-labelledby="h-sugg">
+            <div class="card-head"><h2 class="h" id="h-sugg">Sugerencias del chat</h2><button class="btn btn-sm" type="button" onclick="loadSuggestions()">Actualizar</button></div>
+            <p class="sub">Lo que NYRA anotó cuando alguien sugirió algo. Marcalas cuando ya las viste.</p>
+            <div id="suggestionsList" class="list"></div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════ MODO WILD RIFT ═════════ -->
+    <section class="section" id="tab-wildrift" aria-labelledby="h-wr">
+      <div class="page-head">
+        <div><h1 id="h-wr">Modo Wild Rift</h1><p class="sub">NYRA relata la partida como caster: en cada mirada junta 4 capturas en una sola imagen y cuenta lo que pasó en ese lapso.</p></div>
+        <div class="inline">
+          <label class="label" for="wrInterval">MIRA CADA</label>
+          <select id="wrInterval" onchange="setWrInterval()" style="width:auto">
+            <option value="8">8 s</option><option value="10" selected>10 s</option><option value="15">15 s</option><option value="20">20 s</option><option value="30">30 s</option>
+          </select>
+          <button class="btn btn-cyan" type="button" id="wrBtn" onclick="toggleWildRift()" style="min-height:48px;padding:0 22px">Empezar modo caster</button>
+        </div>
+      </div>
+      <div class="row">
+        <section class="card" style="flex:2 1 520px" aria-labelledby="h-wrlog">
+          <div class="card-head"><h2 class="h" id="h-wrlog">Lo que NYRA ve y escucha</h2><span class="chip" id="wrState">modo partida apagado</span></div>
+          <div id="wrLog" class="log" style="max-height:420px"><div style="font-size:11px;color:var(--dim)">Sin capturas aún.</div></div>
+          <form class="inline" onsubmit="event.preventDefault();askScreen('wrQuestion')">
+            <label class="sr-only" for="wrQuestion">Pregunta sobre la pantalla</label>
+            <input type="text" id="wrQuestion" class="grow" placeholder="Preguntale algo de lo que ve (ej: ¿cómo vamos de oro?)">
+            <button class="btn" type="submit">Mirar ahora</button>
+          </form>
+        </section>
+        <div class="col" style="flex:1 1 320px">
+          <section class="card" aria-labelledby="h-wrwho">
+            <h2 class="h" id="h-wrwho">Quién juega</h2>
+            <div class="field">
+              <label class="label" for="wrPlayer">LA PANTALLA ES DE</label>
+              <input type="text" id="wrPlayer" maxlength="40" placeholder="ej: El Yisus, Kira" onchange="setScreenPlayer(this.value)">
+            </div>
+            <div class="inline" id="wrPlayers"></div>
+            <p class="sub">Atajos sacados de los pibes. Así no dice "jugaste mal" cuando juega otro.</p>
+          </section>
+          <section class="card" aria-labelledby="h-wrpron">
+            <div class="card-head"><h2 class="h" id="h-wrpron">Nombres del juego</h2><button class="btn btn-sm" type="button" onclick="switchTab('pron');pronFilter('wildrift')">Ver todos</button></div>
+            <p class="sub" id="wrPronInfo">Campeones y términos que NYRA ya pronuncia bien.</p>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════ PANTALLA Y DISCORD ═════════ -->
+    <section class="section" id="tab-vision" aria-labelledby="h-vision">
+      <div class="page-head"><div><h1 id="h-vision">Pantalla y Discord</h1><p class="sub">Qué ve y qué escucha NYRA. Usa lo que ve en cualquier charla y comenta los cambios importantes sola.</p></div></div>
+      <div class="row">
+        <section class="card" style="flex:3 1 520px" aria-labelledby="h-screen">
+          <div class="card-head">
+            <h2 class="h" id="h-screen">Ver la pantalla</h2>
+            <button class="btn btn-cyan" type="button" id="shareScreenBtn" onclick="toggleScreenShare()">Compartir pantalla</button>
+          </div>
+          <div id="liveVisionStatus" class="chip" style="display:none;align-self:flex-start;color:var(--pink-soft)"><span class="dot" style="background:var(--pink)"></span>NYRA mirando la pantalla</div>
+          <div id="visionScreenPreview" class="preview" style="display:none"><video id="visionVideo" autoplay muted playsinline></video></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+            <div class="field">
+              <label class="label" for="visionInterval">MIRA CADA</label>
+              <select id="visionInterval" class="model-select" onchange="if(typeof _visionTimer!=='undefined'&&_visionTimer)startLiveVision()">
+                <option value="10">10 segundos (partidas)</option>
+                <option value="15">15 segundos</option>
+                <option value="30" selected>30 segundos</option>
+                <option value="60">1 minuto</option>
+                <option value="120">2 minutos</option>
+                <option value="300">5 minutos</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="label" for="screenPlayer">LA PANTALLA ES DE</label>
+              <input type="text" id="screenPlayer" class="model-select" maxlength="40" placeholder="ej: El Yisus, Kira" onchange="setScreenPlayer(this.value)">
             </div>
           </div>
+          <form class="inline" onsubmit="event.preventDefault();captureAndSend()">
+            <label class="sr-only" for="visionQuestion">Pregunta opcional</label>
+            <input type="text" id="visionQuestion" class="grow" placeholder="Pregunta opcional (ej: ¿qué juego es?)">
+            <button class="btn" type="submit" id="captureBtn" disabled>Mirar ahora</button>
+          </form>
+          <div class="card-head divider"><span class="label">LO QUE VIO Y ESCUCHÓ</span><button class="btn btn-sm" type="button" onclick="clearVisionLog()">Limpiar</button></div>
+          <div id="visionLog" class="log" style="max-height:260px"><div style="font-size:11px;color:var(--dim)">Sin capturas aún.</div></div>
+        </section>
+        <div class="col" style="flex:2 1 340px">
+          <section class="card" aria-labelledby="h-discord">
+            <h2 class="h" id="h-discord">Discord (voz)</h2>
+            <p class="sub">Escucha siempre y contesta si la nombran (✓) o si le responden hasta 30 s después de que habló (↪). Lo del grupo suena por Discord: capturá el audio de Discord en OBS si querés que salga en el directo.</p>
+            <div class="inline">
+              <button class="btn btn-cyan" type="button" id="discordBtn" onclick="toggleDiscord()">Conectar a Discord</button>
+              <span id="discordStatus" class="sub" role="status">Desconectada</span>
+            </div>
+          </section>
+          <section class="card" aria-labelledby="h-mic">
+            <h2 class="h" id="h-mic">Tu micrófono</h2>
+            <p class="sub">Para hablarle sin Discord (Chrome o Edge). Te contesta si la nombrás.</p>
+            <div class="inline">
+              <button class="btn" type="button" id="micBtn" onclick="toggleMic()">Activar micrófono</button>
+              <span id="micStatus" class="sub">Inactivo</span>
+            </div>
+            <div id="speechTranscript" class="sub" style="display:none"></div>
+          </section>
         </div>
-
-        <!-- Chat Learning -->
-        <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div class="label">💬 CHAT APRENDIDO <span id="statChatLearning" style="color:var(--cyan)">0 intercambios</span></div>
-            <button class="btn btn-sm" onclick="clearChatLearning()" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3);font-size:9px">BORRAR TODO</button>
-          </div>
-          <div style="font-size:10px;color:var(--dim);margin-bottom:8px">Conversaciones del stream que NYRA recuerda automáticamente.</div>
-          <div id="chatLearningList" style="display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent"></div>
-        </div>
-
-        <!-- Viewers -->
-        <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div class="label">👥 VIEWERS <span id="statViewers" style="color:var(--cyan)">0</span></div>
-            <button class="btn btn-sm" onclick="clearViewers()" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3);font-size:9px">BORRAR TODO</button>
-          </div>
-          <div id="viewersList" style="display:flex;flex-direction:column;gap:3px;max-height:140px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--border) transparent"></div>
-        </div>
-
       </div>
-    </div>
+    </section>
 
-    <!-- Stream tab -->
-    <div class="tab-content" id="tab-stream">
-      <div class="learn-section">
-
-        <!-- Twitch card -->
-        <div class="platform-card" id="card-twitch" style="--pc:#9146ff">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <span class="label" style="color:#9146ff;letter-spacing:2px">TWITCH</span>
-            <span id="status-twitch" class="platform-badge platform-badge--off">&#x25CF; OFF</span>
-          </div>
-          <div style="display:flex;gap:8px">
-            <input type="text" id="channel-twitch" placeholder="nombre_canal" style="flex:1">
-            <button class="btn btn-sm" style="background:#9146ff22;color:#9146ff;border:1px solid #9146ff55"
-              onclick="connectPlatform('twitch')">CONECTAR</button>
-            <button class="btn btn-sm" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3)"
-              id="disc-twitch" onclick="disconnectPlatform('twitch')" title="Desconectar">✕</button>
-          </div>
-        </div>
-
-        <!-- TikTok card -->
-        <div class="platform-card" id="card-tiktok" style="--pc:#ff0050">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <span class="label" style="color:#ff0050;letter-spacing:2px">TIKTOK</span>
-            <span id="status-tiktok" class="platform-badge platform-badge--off">&#x25CF; OFF</span>
-          </div>
-          <div style="display:flex;gap:8px">
-            <input type="text" id="channel-tiktok" placeholder="@usuario" style="flex:1">
-            <button class="btn btn-sm" style="background:#ff005022;color:#ff0050;border:1px solid #ff005055"
-              onclick="connectPlatform('tiktok')">CONECTAR</button>
-            <button class="btn btn-sm" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3)"
-              id="disc-tiktok" onclick="disconnectPlatform('tiktok')" title="Desconectar">✕</button>
-          </div>
-        </div>
-
-        <!-- Kick card -->
-        <div class="platform-card" id="card-kick" style="--pc:#53b934">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <span class="label" style="color:#53b934;letter-spacing:2px">KICK</span>
-            <span id="status-kick" class="platform-badge platform-badge--off">&#x25CF; OFF</span>
-          </div>
-          <div style="display:flex;gap:8px">
-            <input type="text" id="channel-kick" placeholder="iniciá sesión →" style="flex:1" readonly>
-            <button class="btn btn-sm" style="background:#53b93422;color:#53b934;border:1px solid #53b93455"
-              onclick="connectPlatform('kick')">CONECTAR</button>
-            <a class="btn btn-sm" href="/auth/kick" id="login-kick" title="Iniciar sesión con Kick (API oficial)"
-              style="background:#53b93422;color:#53b934;border:1px solid #53b93455;text-decoration:none">LOGIN</a>
-            <button class="btn btn-sm" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3)"
-              id="disc-kick" onclick="disconnectPlatform('kick')" title="Desconectar">✕</button>
-          </div>
-        </div>
-
-        <!-- Live: metas de regalos y tribunal -->
-        <div style="border-top:1px solid var(--border);padding-top:12px;display:flex;flex-direction:column;gap:8px">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <div class="label">SUGERENCIAS DEL CHAT</div>
-            <button class="btn btn-sm" style="background:transparent;color:var(--text);border:1px solid var(--border)" onclick="loadSuggestions()">ACTUALIZAR</button>
-          </div>
-          <div style="font-size:10px;color:var(--dim)">Lo que NYRA anotó cuando alguien sugirió algo para el stream. Borralas cuando ya las viste.</div>
-          <div id="suggestionsList" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto"></div>
-
-          <label class="label" for="squadText">LOS PIBES</label>
-          <div style="font-size:10px;color:var(--dim)">Una persona por línea: <b>nombre, apodo, otro apodo | cómo es, qué juega, con qué no bromear</b>. Máximo 15 personas y 400 letras cada una. No pongas nada privado: NYRA habla en vivo.</div>
-          <textarea id="squadText" style="min-height:80px" disabled placeholder="Nombre, apodo | juega de jungla, se enoja cuando pierde, se le puede cargar con eso"></textarea>
-          <button class="btn btn-sm btn-cyan" id="squadSave" onclick="saveSquad()" style="align-self:flex-start" disabled>GUARDAR PIBES</button>
-
-          <div class="label">TEMA DEL DIRECTO</div>
-          <div style="font-size:10px;color:var(--dim)">Si preguntan de qué va el live, NYRA lo cuenta con sus palabras.</div>
-          <div style="display:flex;gap:8px">
-            <input type="text" id="liveTitle" maxlength="200" placeholder="Ej: Una IA te juzga en vivo" style="flex:1">
-            <button class="btn btn-sm btn-cyan" onclick="saveTitle()">GUARDAR</button>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <div class="label">LIVE · METAS DE REGALOS</div>
-            <span id="liveProgress" style="font-size:11px;color:var(--cyan)">0 puntos</span>
-          </div>
-          <div style="font-size:10px;color:var(--dim)">Una meta por línea: <b>puntos | recompensa</b>. Puntos = diamantes de TikTok (kicks en Kick, bits en Twitch). Overlay para OBS: <b>localhost:3000/overlay</b> (720×420).</div>
-          <textarea id="liveGoals" style="min-height:70px" placeholder="1000 | NYRA cuenta su historia secreta&#10;5000 | NYRA canta una canción&#10;20000 | NYRA habla como abuela por 5 minutos"></textarea>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-sm btn-cyan" onclick="saveGoals()">GUARDAR METAS</button>
-            <input type="text" id="liveAdd" placeholder="+ puntos" style="width:90px">
-            <button class="btn btn-sm" style="background:transparent;color:var(--text);border:1px solid var(--border)" onclick="addPoints()">SUMAR</button>
-            <button class="btn btn-sm" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3)" onclick="resetProgress()">REINICIAR</button>
-          </div>
-
-          <div class="label" style="margin-top:6px">FONDO DEL AVATAR</div>
-          <select class="model-select" id="liveBackground" onchange="setBackground(this.value)">
-            <option value="none">Ninguno (transparente)</option>
-            <option value="cyberpunk-room">Cuarto cyberpunk</option>
-            <option value="singularity-lab">Laboratorio Singularity</option>
-            <option value="lofi-bedroom">Cuarto lo-fi (lluvia)</option>
-          </select>
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);cursor:pointer">
-            <input type="checkbox" id="liveFloat" onchange="setFloat(this.checked)"
-              style="accent-color:var(--cyan);width:14px;height:14px">
-            Efecto de flotar (respirar, balancearse al hablar/pensar)
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);cursor:pointer">
-            <input type="checkbox" id="liveAvatar3d" onchange="setAvatar3d(this.checked)"
-              style="accent-color:var(--cyan);width:14px;height:14px">
-            Avatar 3D (modelo VRoid) en vez del 2D
-          </label>
-
-          <div class="label" style="margin-top:6px">TRIBUNAL NYRA</div>
-          <input type="text" id="tribTopic" placeholder="Tema: ¿la pizza con ananá es aceptable?">
-          <div style="display:flex;gap:8px">
-            <input type="text" id="tribA" placeholder="Lado A: Sí, es rica" style="flex:1">
-            <input type="text" id="tribB" placeholder="Lado B: Es un crimen" style="flex:1">
-          </div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-sm btn-cyan" onclick="openTribunal()">ABRIR</button>
-            <button class="btn btn-sm" style="background:#53b93422;color:#53b934;border:1px solid #53b93455" onclick="closeTribunal()">DAR SENTENCIA</button>
-            <button class="btn btn-sm" style="background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3)" onclick="cancelTribunal()">CANCELAR</button>
-          </div>
-          <div id="tribStatus" style="font-size:11px;color:var(--dim)">Sin tribunal abierto. El chat vota con !a / !b.</div>
-        </div>
-
-        <!-- Respond mode -->
-        <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div class="label" style="margin-bottom:8px">MODO DE RESPUESTA</div>
-          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);cursor:pointer">
-            <input type="checkbox" id="respondToAll" onchange="setRespondToAll(this.checked)"
-              style="accent-color:var(--cyan);width:14px;height:14px">
-            Responder a todos (desactivado = solo menciones @nyra)
-          </label>
-        </div>
-
-        <!-- Live chat -->
-        <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div class="label">CHAT EN VIVO</div>
-            <button class="btn btn-sm" onclick="clearStreamLog()"
-              style="background:transparent;color:var(--dim);border:1px solid var(--border);padding:2px 8px;font-size:10px">
-              LIMPIAR
-            </button>
-          </div>
-          <div id="streamChatLog" style="
-            max-height:220px; overflow-y:auto; display:flex; flex-direction:column; gap:6px;
-            scrollbar-width:thin; scrollbar-color:var(--border) transparent;
-          ">
-            <div style="font-size:11px;color:var(--dim)">Sin mensajes aún.</div>
-          </div>
-        </div>
-
+    <!-- ═════════ CHARLAR ═════════ -->
+    <section class="section" id="tab-chat" aria-labelledby="h-chat">
+      <div class="page-head">
+        <div><h1 id="h-chat">Charlar con NYRA</h1><p class="sub">Le hablás vos. Lo que contesta suena en el directo, como algo suyo.</p></div>
+        <button class="btn" type="button" onclick="clearHistory()">Nueva charla</button>
       </div>
-    </div>
-
-    <!-- Vision tab -->
-    <div class="tab-content" id="tab-vision">
-      <div class="learn-section">
-
-        <div style="font-size:11px;color:var(--dim);line-height:1.7">
-          Compartí la pantalla y NYRA <strong style="color:var(--cyan)">siempre sabe</strong> lo que hay en ella.<br>
-          Usa esa info naturalmente en cualquier conversación y comenta cambios importantes sola.
+      <section class="card" style="padding:0;gap:0" aria-label="Conversación">
+        <div class="messages" id="messages"><div class="msg msg-ai">Iniciando sistema. Conectá al servidor… te espero.</div></div>
+        <div style="padding:12px 20px;border-top:1px solid #1b2040;display:flex;flex-direction:column;gap:10px">
+          <div class="inline">
+            <span class="label">ATAJOS</span>
+            <button class="chip" type="button" onclick="useShortcut('decí que yo te dije que ')">"decí que yo te dije…"</button>
+            <button class="chip" type="button" onclick="useShortcut('te preguntaron ')">"te preguntaron…"</button>
+            <button class="chip" type="button" onclick="useShortcut('a @ ponele de apodo ')">"a @usuario ponele de apodo…"</button>
+          </div>
+          <form class="inline" onsubmit="event.preventDefault();sendMsg()">
+            <label class="sr-only" for="chatInput">Mensaje para NYRA</label>
+            <input type="text" id="chatInput" class="grow" placeholder="Escribile a NYRA…">
+            <button class="btn btn-cyan" type="submit" id="sendBtn">Enviar</button>
+          </form>
+          <p class="sub">No te nombra salvo que se lo pidas ("decí que yo te dije", "de mi parte"). Lo que te pasa el chat, con "te preguntaron…".</p>
         </div>
+      </section>
+    </section>
 
-        <!-- Live status indicator -->
-        <div id="liveVisionStatus" style="display:none;background:rgba(0,255,100,.08);border:1px solid rgba(0,255,100,.3);border-radius:6px;padding:8px 12px;font-size:11px;color:#0f0;align-items:center;gap:8px">
-          <span style="animation:blink 1.2s step-end infinite">●</span>
-          NYRA ve la pantalla — usa el contexto en cada conversación
+    <!-- ═════════ METAS Y TRIBUNAL ═════════ -->
+    <section class="section" id="tab-metas" aria-labelledby="h-metas">
+      <div class="page-head"><div><h1 id="h-metas">Metas y tribunal</h1><p class="sub">Lo que arma el directo: el tema, las metas de regalos y las votaciones del chat.</p></div></div>
+      <section class="card" aria-labelledby="h-title">
+        <h2 class="h" id="h-title">Tema del directo</h2>
+        <form class="inline" onsubmit="event.preventDefault();saveTitle()">
+          <label class="sr-only" for="liveTitle">Tema del directo</label>
+          <input type="text" id="liveTitle" class="grow" maxlength="200" placeholder="Ej: Una IA te juzga en vivo">
+          <button class="btn" type="submit">Guardar</button>
+        </form>
+        <p class="sub">Si preguntan de qué va el live, NYRA lo cuenta con sus palabras.</p>
+      </section>
+      <div class="row">
+        <section class="card" style="flex:3 1 520px" aria-labelledby="h-goals">
+          <div class="card-head"><h2 class="h" id="h-goals">Metas de regalos</h2><span class="chip" id="liveProgress">0 puntos</span></div>
+          <div class="field">
+            <label class="label" for="liveGoals">UNA META POR LÍNEA: PUNTOS | RECOMPENSA</label>
+            <textarea id="liveGoals" placeholder="1000 | NYRA cuenta su historia secreta&#10;5000 | NYRA canta una canción&#10;20000 | NYRA habla como abuela por 5 minutos"></textarea>
+          </div>
+          <button class="btn btn-cyan" type="button" onclick="saveGoals()" style="align-self:flex-start">Guardar metas</button>
+          <div class="inline divider">
+            <label class="sr-only" for="liveAdd">Puntos a sumar</label>
+            <input type="text" id="liveAdd" placeholder="+ puntos" style="flex:0 1 160px">
+            <button class="btn" type="button" onclick="addPoints()">Sumar a mano</button>
+            <button class="btn btn-pink" type="button" onclick="resetProgress()" style="margin-left:auto">Reiniciar progreso</button>
+          </div>
+          <p class="sub">Puntos = diamantes de TikTok, kicks en Kick, bits en Twitch. Overlay para OBS: localhost:3000/overlay (720×1280).</p>
+        </section>
+        <section class="card" style="flex:2 1 340px" aria-labelledby="h-trib">
+          <h2 class="h" id="h-trib">Tribunal NYRA</h2>
+          <div class="field"><label class="label" for="tribTopic">TEMA</label><input type="text" id="tribTopic" placeholder="¿La pizza con ananá es aceptable?"></div>
+          <div class="field"><label class="label" for="tribA">LADO A · !a</label><input type="text" id="tribA" placeholder="Sí, es rica"></div>
+          <div class="field"><label class="label" for="tribB">LADO B · !b</label><input type="text" id="tribB" placeholder="Es un crimen"></div>
+          <div class="inline">
+            <button class="btn btn-cyan" type="button" onclick="openTribunal()">Abrir</button>
+            <button class="btn" type="button" onclick="closeTribunal()">Dar sentencia</button>
+            <button class="btn btn-pink" type="button" onclick="cancelTribunal()">Cancelar</button>
+          </div>
+          <p class="sub" id="tribStatus" role="status">Sin tribunal abierto. El chat vota con !a / !b.</p>
+        </section>
+      </div>
+    </section>
+
+    <!-- ═════════ CEREBRO Y VOZ ═════════ -->
+    <section class="section" id="tab-cerebro" aria-labelledby="h-cerebro">
+      <div class="page-head"><div><h1 id="h-cerebro">Cerebro y voz</h1><p class="sub">Con qué piensa, con qué habla y con qué escucha NYRA. Lo avanzado queda plegado.</p></div></div>
+      <section class="card" aria-labelledby="h-ia">
+        <div class="card-head"><h2 class="h" id="h-ia">1 · Motores de IA</h2><p class="sub">Si el que usa falla, salta al siguiente prendido. Apagado = no corre nada.</p></div>
+        <div class="provider-controls" id="providerControls">
+          <div class="provider-row"><label for="provider-agy">Antigravity</label><input type="checkbox" class="switch" id="provider-agy" onchange="toggleProvider('agy', this.checked)"><span class="provider-status" id="provider-status-agy">comprobando</span></div>
+          <div class="provider-row"><label for="provider-claude-code">Claude Code</label><input type="checkbox" class="switch" id="provider-claude-code" onchange="toggleProvider('claude-code', this.checked)"><span class="provider-status" id="provider-status-claude-code">comprobando</span></div>
+          <div class="provider-row"><label for="provider-codex-cli">Codex</label><input type="checkbox" class="switch" id="provider-codex-cli" onchange="toggleProvider('codex-cli', this.checked)"><span class="provider-status" id="provider-status-codex-cli">comprobando</span></div>
+          <div class="provider-row"><label for="provider-opencode">OpenCode</label><input type="checkbox" class="switch" id="provider-opencode" onchange="toggleProvider('opencode', this.checked)"><span class="provider-status" id="provider-status-opencode">comprobando</span></div>
         </div>
-
-        <!-- Share button + preview -->
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <button class="btn btn-cyan" id="shareScreenBtn" onclick="toggleScreenShare()">▶ COMPARTIR PANTALLA</button>
-          <div id="visionScreenPreview" style="display:none;border-radius:6px;overflow:hidden;border:1px solid var(--border);position:relative">
-            <video id="visionVideo" autoplay muted playsinline style="width:100%;max-height:140px;object-fit:contain;background:#000"></video>
-            <div style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.7);border-radius:4px;padding:2px 6px;font-size:9px;color:#0f0">● LIVE</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px">
+          <div class="field">
+            <label class="label" for="modelSelect">MODELO PARA CHARLAR</label>
+            <div class="inline"><select class="model-select grow" id="modelSelect"></select><button class="btn btn-sm" type="button" id="modelChangeBtn" onclick="changeModel()">Usar</button></div>
+            <span class="sub" id="availableModels">Chat, Discord, memoria y juez.</span>
+          </div>
+          <div class="field">
+            <label class="label" for="visionModelSelect">MODELO PARA VER LA PANTALLA</label>
+            <div class="inline"><select class="model-select grow" id="visionModelSelect"></select><button class="btn btn-sm" type="button" id="visionModelChangeBtn" onclick="changeVisionModel()">Usar</button></div>
+            <span class="sub" id="visionModelInfo">Solo aparecen los que pueden ver imágenes.</span>
           </div>
         </div>
-
-        <!-- Intervalo auto-comentario -->
-        <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div class="label" style="margin-bottom:8px">FRECUENCIA DE OBSERVACIÓN</div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <select id="visionInterval" class="model-select" style="width:auto;padding:4px 8px" onchange="if(typeof _visionTimer!=='undefined'&&_visionTimer)startLiveVision()">
-              <option value="10">10 seg (partidas)</option>
-              <option value="15">15 seg</option>
-              <option value="30" selected>30 seg</option>
-              <option value="60">1 min</option>
-              <option value="120">2 min</option>
-              <option value="300">5 min</option>
+      </section>
+      <div class="row">
+        <section class="card" style="flex:1 1 380px" aria-labelledby="h-tts">
+          <h2 class="h" id="h-tts">2 · Voz (cómo habla)</h2>
+          <div class="field">
+            <label class="label" for="ttsEngineSelect">VOZ EN EL DIRECTO</label>
+            <select class="model-select" id="ttsEngineSelect" onchange="changeTtsEngine()">
+              <option value="edge">Edge · Elena (Argentina)</option>
+              <option value="piper">Piper local · Daniela</option>
+              <option value="murf">Murf.ai (API)</option>
+              <option value="fish">Fish Audio S2 Pro (experimental)</option>
+              <option value="system">Voz de Windows</option>
             </select>
-            <span style="font-size:11px;color:var(--dim)">Cada cuánto NYRA mira — comenta cambios sola</span>
+            <span class="sub" id="ttsEngineInfo"></span>
           </div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px">
-            <label for="screenPlayer" class="label" style="margin:0">¿DE QUIÉN ES LA PANTALLA?</label>
-            <input id="screenPlayer" class="model-select" style="width:auto;padding:4px 8px" maxlength="40" placeholder="ej: El Yisus, Kira" onchange="sendScreenPlayer()">
+          <label class="switch-row"><span>Usar la misma voz en Discord</span><input type="checkbox" class="switch" id="shareTtsEngineCheck" checked onchange="changeTtsEngine()"></label>
+          <div id="discordTtsWrap" class="field" style="display:none">
+            <label class="label" for="discordTtsSelect">VOZ EN DISCORD</label>
+            <select class="model-select" id="discordTtsSelect" onchange="changeTtsEngine()">
+              <option value="edge">Edge</option>
+              <option value="piper">Piper local</option>
+              <option value="murf">Murf.ai</option>
+              <option value="fish">Fish Audio S2 Pro</option>
+              <option value="system">Voz de Windows</option>
+            </select>
           </div>
-        </div>
-
-        <!-- Discord -->
-        <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div class="label" style="margin-bottom:8px">DISCORD (VOZ)</div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <button class="btn btn-sm btn-cyan" id="discordBtn" onclick="toggleDiscord()">🎧 CONECTAR</button>
-            <span id="discordStatus" role="status" style="font-size:11px;color:var(--dim)">Desconectada</span>
-          </div>
-          <div style="font-size:10px;color:var(--dim);margin-top:6px">Escucha siempre y contesta si la nombran (✓) o si le responden hasta 30 s después de que habló (↪). Lo del grupo suena por Discord: <b>capturá el audio de Discord en el live</b> (con ella sin silenciar). OBS solo hace sonar chat y regalos, así no se escucha doble.</div>
-        </div>
-
-        <!-- Micrófono del streamer -->
-        <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div class="label" style="margin-bottom:8px">MICRÓFONO DEL STREAMER</div>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <button class="btn btn-sm" id="micBtn" onclick="toggleMic()" style="background:rgba(0,200,255,.1);color:var(--cyan);border:1px solid rgba(0,200,255,.3)">🎤 ACTIVAR MIC</button>
-            <span id="micStatus" style="font-size:11px;color:var(--dim)">Inactivo</span>
-          </div>
-          <div id="speechTranscript" style="font-size:11px;color:var(--dim);margin-top:6px;min-height:18px;font-style:italic"></div>
-        </div>
-
-        <!-- Manual capture + pregunta -->
-        <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div class="label" style="margin-bottom:8px">CAPTURA MANUAL</div>
-          <div style="display:flex;gap:8px">
-            <input type="text" id="visionQuestion" placeholder="Pregunta opcional (ej: ¿qué juego es?)" style="flex:1">
-            <button class="btn btn-sm btn-cyan" onclick="captureAndSend()" id="captureBtn" disabled>📷 CAPTURAR</button>
-          </div>
-        </div>
-
-        <!-- Log -->
-        <div style="border-top:1px solid var(--border);padding-top:12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <div class="label">LOG DE VISIÓN</div>
-            <button class="btn btn-sm" onclick="clearVisionLog()"
-              style="background:transparent;color:var(--dim);border:1px solid var(--border);padding:2px 8px;font-size:10px">LIMPIAR</button>
-          </div>
-          <div id="visionLog" style="
-            max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;
-            scrollbar-width:thin;scrollbar-color:var(--border) transparent;">
-            <div style="font-size:11px;color:var(--dim)">Sin capturas aún.</div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-  </div><!-- /chat-col -->
-
-  <!-- Right col -->
-  <div class="right-col">
-
-    <!-- Stats -->
-    <div class="panel-section">
-      <div class="panel-title">// CONOCIMIENTO</div>
-      <div class="stat-grid">
-        <div class="stat-box"><div class="stat-num" id="statChunks">0</div><div class="stat-lbl">CHUNKS</div></div>
-        <div class="stat-box"><div class="stat-num" id="statWords">0</div><div class="stat-lbl">PALABRAS</div></div>
-        <div class="stat-box"><div class="stat-num" id="statSources">0</div><div class="stat-lbl">FUENTES</div></div>
-        <div class="stat-box"><div class="stat-num" id="statMsgs">0</div><div class="stat-lbl">MENSAJES</div></div>
-      </div>
-      <button class="btn btn-sm" onclick="clearKnowledge()" style="margin-top:10px;background:rgba(255,45,120,.1);color:var(--pink);border:1px solid rgba(255,45,120,.3);width:100%">
-        ⚠ BORRAR TODO EL CONOCIMIENTO
-      </button>
-    </div>
-
-    <!-- Model selector -->
-    <div class="panel-section">
-      <div class="panel-title">// PROVEEDORES DE IA</div>
-      <div class="provider-controls" id="providerControls">
-        <div class="provider-row">
-          <input type="checkbox" id="provider-agy" onchange="toggleProvider('agy', this.checked)">
-          <label for="provider-agy">Antigravity</label>
-          <span class="provider-status" id="provider-status-agy">comprobando</span>
-        </div>
-        <div class="provider-row">
-          <input type="checkbox" id="provider-claude-code" onchange="toggleProvider('claude-code', this.checked)">
-          <label for="provider-claude-code">Claude Code</label>
-          <span class="provider-status" id="provider-status-claude-code">comprobando</span>
-        </div>
-        <div class="provider-row">
-          <input type="checkbox" id="provider-codex-cli" onchange="toggleProvider('codex-cli', this.checked)">
-          <label for="provider-codex-cli">Codex CLI</label>
-          <span class="provider-status" id="provider-status-codex-cli">comprobando</span>
-        </div>
-        <div class="provider-row">
-          <input type="checkbox" id="provider-opencode" onchange="toggleProvider('opencode', this.checked)">
-          <label for="provider-opencode">OpenCode</label>
-          <span class="provider-status" id="provider-status-opencode">comprobando</span>
-        </div>
-      </div>
-      <div class="panel-title">// MODELO DE TEXTO (CHAT)</div>
-      <select class="model-select" id="modelSelect"></select>
-      <button class="btn btn-sm btn-cyan" id="modelChangeBtn" style="margin-top:8px;width:100%" onclick="changeModel()">CAMBIAR MODELO</button>
-      <div id="availableModels" style="font-size:10px;color:var(--dim);margin-top:6px"></div>
-      <div class="panel-title" style="margin-top:14px">// MODELO DE VISIÓN (PANTALLA)</div>
-      <select class="model-select" id="visionModelSelect"></select>
-      <button class="btn btn-sm btn-cyan" id="visionModelChangeBtn" style="margin-top:8px;width:100%" onclick="changeVisionModel()">CAMBIAR MODELO DE VISIÓN</button>
-      <div id="visionModelInfo" style="font-size:10px;color:var(--dim);margin-top:6px"></div>
-    </div>
-
-    <!-- TTS -->
-    <div class="panel-section">
-      <div class="panel-title">// MOTOR DE VOZ (TTS)</div>
-      <select class="model-select" id="ttsEngineSelect" onchange="changeTtsEngine()" style="margin-bottom:6px">
-        <option value="edge">Edge TTS (es-AR-ElenaNeural)</option>
-        <option value="piper">Piper Local (es_AR-daniela-high)</option>
-        <option value="murf">Murf.ai (API)</option>
-        <option value="fish">Fish Audio S2 Pro (Experimental)</option>
-        <option value="system">Sistema (Windows)</option>
-      </select>
-      <div id="ttsEngineInfo" style="font-size:10px;color:var(--dim);margin-bottom:8px"></div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);margin-bottom:6px;cursor:pointer">
-        <input type="checkbox" id="shareTtsEngineCheck" checked onchange="changeTtsEngine()">
-        Compartir motor TTS con Discord
-      </label>
-      <div id="discordTtsWrap" style="display:none;margin-bottom:8px">
-        <div style="font-size:10px;color:var(--dim);margin-bottom:4px">Motor TTS Discord:</div>
-        <select class="model-select" id="discordTtsSelect" onchange="changeTtsEngine()">
-          <option value="edge">Edge TTS</option>
-          <option value="piper">Piper Local</option>
-          <option value="murf">Murf.ai</option>
-          <option value="fish">Fish Audio S2 Pro</option>
-          <option value="system">Sistema</option>
-        </select>
-      </div>
-      <details id="fishTtsPanel" style="margin-bottom:10px;border:1px solid var(--border);border-radius:8px;padding:8px;background:rgba(10,6,24,.35)">
-        <summary style="cursor:pointer;font-size:11px;color:var(--cyan);font-weight:700">🐟 Fish Audio S2 Pro · <span id="fishStatusBadge" style="color:var(--dim)">Sin verificar</span></summary>
+          <details id="fishTtsPanel" class="adv">
+        <summary>Avanzado · Fish Audio <span id="fishStatusBadge" class="chip" style="margin-left:auto">Sin verificar</span></summary>
         <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:11px">
           <div style="display:flex;gap:4px">
             <input type="url" id="fishUrlInput" placeholder="https://....ngrok-free.dev" style="flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
@@ -656,33 +555,19 @@
           <div id="fishMetricsInfo" style="font-size:10px;color:var(--dim);line-height:1.35">Latencia: - · Duración: - · RTF: -</div>
         </div>
       </details>
-      <div class="panel-title">// CONTROLES</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-sm btn-pink" onclick="ttsStop()">■ DETENER VOZ</button>
-        <button class="btn btn-sm" onclick="clearHistory()" style="background:var(--panel);color:var(--dim);border:1px solid var(--border)">⟳ NUEVO CHAT</button>
-      </div>
-      <div class="obs-link">
-        <span>Browser Source OBS:</span>
-        <span class="obs-url">localhost:3000/obs</span>
-      </div>
-      <div style="font-size:11px;color:var(--dim);margin-top:8px">
-        Tamaño recomendado: <strong style="color:var(--cyan)">400×480px</strong><br>
-        Fondo ya es transparente — <strong style="color:var(--cyan)">NO activar Chroma Key</strong> en OBS
-      </div>
-    </div>
-
-    <!-- STT -->
-    <div class="panel-section">
-      <div class="panel-title">// RECONOCIMIENTO DE VOZ (STT)</div>
-      <select class="model-select" id="sttEngineSelect" onchange="saveSttConfig()" style="margin-bottom:6px">
-        <option value="local">Whisper Local (predeterminado)</option>
-        <option value="remote">Faster Whisper Remoto (Experimental)</option>
-      </select>
-      <div id="sttStatusLine" style="font-size:10px;color:var(--dim);margin-bottom:8px;line-height:1.4">
-        Motor efectivo: - · Modelo: - · Dispositivo: - · Estado: <span id="sttConnBadge">unknown</span>
-      </div>
-      <details id="sttLocalConfigPanel" style="margin-bottom:6px;border:1px solid var(--border);border-radius:8px;padding:8px;background:rgba(10,6,24,.35)">
-        <summary style="cursor:pointer;font-size:11px;color:var(--lime);font-weight:700">🎤 Configurar Whisper Local (sin tocar Remoto)</summary>
+        </section>
+        <section class="card" style="flex:1 1 380px" aria-labelledby="h-stt">
+          <h2 class="h" id="h-stt">3 · Oído (cómo escucha Discord)</h2>
+          <div class="field">
+            <label class="label" for="sttEngineSelect">RECONOCIMIENTO DE VOZ</label>
+            <select class="model-select" id="sttEngineSelect" onchange="saveSttConfig()">
+              <option value="local">Whisper en esta PC (recomendado)</option>
+              <option value="remote">Whisper remoto (experimental)</option>
+            </select>
+          </div>
+          <div id="sttStatusLine" class="sub">Motor efectivo: - · Modelo: - · Dispositivo: - · Estado: <span id="sttConnBadge">unknown</span></div>
+          <details id="sttLocalConfigPanel" class="adv">
+        <summary>Avanzado · ajustes de Whisper local</summary>
         <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:11px">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
             <label style="color:var(--dim)">Perfil
@@ -741,8 +626,8 @@
           <div style="font-size:10px;color:var(--dim)">Se aplica en la siguiente transcripción sin reiniciar el worker.</div>
         </div>
       </details>
-      <details id="sttConfigPanel" style="margin-bottom:4px;border:1px solid var(--border);border-radius:8px;padding:8px;background:rgba(10,6,24,.35)">
-        <summary style="cursor:pointer;font-size:11px;color:var(--cyan);font-weight:700">🎙️ Configurar STT Remoto / Diagnóstico</summary>
+<details id="sttConfigPanel" class="adv">
+        <summary>Avanzado · Whisper remoto y diagnóstico</summary>
         <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:11px">
           <div style="display:flex;gap:4px">
             <input type="url" id="sttUrlInput" placeholder="https://....ngrok-free.dev" style="flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
@@ -775,58 +660,210 @@
           <div id="sttLastText" style="font-size:10px;color:var(--text);word-break:break-word"></div>
         </div>
       </details>
-    </div>
+        </section>
+      </div>
+    </section>
 
-    <!-- Filtros -->
-    <div class="panel-section">
-      <div class="panel-title">// FILTROS</div>
+    <!-- ═════════ PRONUNCIACIÓN ═════════ -->
+    <section class="section" id="tab-pron" aria-labelledby="h-pron">
+      <div class="page-head"><div><h1 id="h-pron">Pronunciación</h1><p class="sub">Palabras en inglés escritas como tienen que sonar en español. Vale para todas las voces y para lo que mande el chat.</p></div></div>
+      <section class="card" style="border-color:#1f5560" aria-labelledby="h-pronadd">
+        <h2 class="h" id="h-pronadd">Agregar una palabra</h2>
+        <form class="inline" style="align-items:flex-end" onsubmit="event.preventDefault();savePron()">
+          <div class="field" style="flex:1 1 200px"><label class="label" for="pronWord">ASÍ SE ESCRIBE</label><input type="text" id="pronWord" maxlength="60" placeholder="Miss Fortune" required></div>
+          <div class="field" style="flex:1 1 200px"><label class="label" for="pronSay">ASÍ LO DICE NYRA</label><input type="text" id="pronSay" maxlength="80" placeholder="Mis Fórchun" required></div>
+          <div class="field" style="flex:0 1 170px"><label class="label" for="pronGroup">GRUPO</label>
+            <select id="pronGroup"><option value="wildrift">Wild Rift</option><option value="stream">Stream y memes</option><option value="general">General</option></select></div>
+          <button class="btn" type="button" onclick="testPron(document.getElementById('pronSay').value || document.getElementById('pronWord').value)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 5L6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7"/></svg>Escuchar</button>
+          <button class="btn btn-cyan" type="submit">Guardar</button>
+        </form>
+        <p class="sub">Escribilo como lo leerías en voz alta, con tilde donde va la fuerza (Fórchun, Díscord). Si la palabra ya existe, se reemplaza.</p>
+      </section>
+      <section class="card" aria-label="Lista de palabras">
+        <div class="card-head">
+          <div class="inline" role="group" aria-label="Filtrar por grupo" id="pronFilters">
+            <button class="chip" type="button" data-g="" aria-pressed="true" onclick="pronFilter('')">Todas</button>
+            <button class="chip" type="button" data-g="wildrift" aria-pressed="false" onclick="pronFilter('wildrift')">Wild Rift</button>
+            <button class="chip" type="button" data-g="stream" aria-pressed="false" onclick="pronFilter('stream')">Stream y memes</button>
+            <button class="chip" type="button" data-g="general" aria-pressed="false" onclick="pronFilter('general')">General</button>
+          </div>
+          <label class="sr-only" for="pronSearch">Buscar palabra</label>
+          <input type="text" id="pronSearch" placeholder="Buscar…" style="flex:0 1 240px" oninput="renderPron(0)">
+        </div>
+        <div class="list">
+          <div class="pron-row head"><span>SE ESCRIBE</span><span></span><span>SE DICE</span><span>GRUPO</span><span></span><span></span></div>
+          <div id="pronList" class="list"></div>
+          <div class="inline" style="justify-content:space-between;padding-top:6px">
+            <button class="btn btn-sm" type="button" id="pronPrev" onclick="renderPron(_pronPage - 1)">‹ Anterior</button>
+            <span class="sub" id="pronPage" aria-live="polite"></span>
+            <button class="btn btn-sm" type="button" id="pronNext" onclick="renderPron(_pronPage + 1)">Siguiente ›</button>
+          </div>
+        </div>
+      </section>
+    </section>
 
-      <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text);cursor:pointer;margin-bottom:10px">
-        <input type="checkbox" id="autoLearnToggle" onchange="setAutoLearn(this.checked)"
-          style="accent-color:var(--cyan);width:14px;height:14px">
-        Auto-aprender del chat
-      </label>
-
-      <div style="margin-bottom:8px">
-        <div class="label" style="margin-bottom:6px">PALABRAS BLOQUEADAS</div>
-        <div id="wordList" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;min-height:20px"></div>
-        <div style="display:flex;gap:6px">
-          <input type="text" id="newWord" placeholder="palabra..." style="flex:1;font-size:12px;padding:6px 10px">
-          <button class="btn btn-sm btn-pink" onclick="addWord()">+</button>
+    <!-- ═════════ MEMORIA Y ENSEÑAR ═════════ -->
+    <section class="section" id="tab-memoria" aria-labelledby="h-memoria">
+      <div class="page-head"><div><h1 id="h-memoria">Memoria y enseñar</h1><p class="sub">Lo que NYRA sabe y recuerda. Tus órdenes mandan sobre todo lo que aprende sola.</p></div></div>
+      <div class="stat-grid">
+        <div class="stat-box"><span class="stat-lbl">OPINIONES</span><span class="stat-num" id="statPersonality">0</span></div>
+        <div class="stat-box"><span class="stat-lbl">CHARLAS RECORDADAS</span><span class="stat-num" id="statChatLearning">0</span></div>
+        <div class="stat-box"><span class="stat-lbl">VIEWERS CONOCIDOS</span><span class="stat-num" id="statViewers">0</span></div>
+        <div class="stat-box"><span class="stat-lbl">TEXTOS ENSEÑADOS</span><span class="stat-num" id="statSources">0</span></div>
+      </div>
+      <div class="row">
+        <section class="card" style="flex:2 1 520px;padding:0;gap:0" aria-label="Lo que recuerda">
+          <div class="tabs" role="tablist" aria-label="Tipo de memoria">
+            <button class="tab" role="tab" type="button" data-pane="evolucion" onclick="memTab('evolucion')">Cómo evoluciona</button>
+            <button class="tab" role="tab" type="button" data-pane="personalidad" onclick="memTab('personalidad')">Personalidad</button>
+            <button class="tab" role="tab" type="button" data-pane="charlas" onclick="memTab('charlas')">Charlas recordadas</button>
+            <button class="tab" role="tab" type="button" data-pane="viewers" onclick="memTab('viewers')">Viewers</button>
+            <button class="tab" role="tab" type="button" data-pane="conocimiento" onclick="memTab('conocimiento')">Textos enseñados</button>
+          </div>
+          <div class="tab-pane" id="pane-evolucion" role="tabpanel">
+            <div class="card-head"><p class="sub">Tus órdenes mandan sobre todo. De los pibes y de la comunidad aprende por separado cada tantas charlas (con Aprender del chat prendido). La ✕ borra lo que no te guste.</p><button class="btn btn-sm" type="button" onclick="loadEvolution()">Actualizar</button></div>
+            <div id="evolutionList" class="list"></div>
+          </div>
+          <div class="tab-pane" id="pane-personalidad" role="tabpanel">
+            <p class="sub">Opiniones que NYRA se formó charlando. Borrá las que no te gusten.</p>
+            <div id="personalityList" class="list scroll" style="max-height:420px"></div>
+            <form class="inline divider" onsubmit="event.preventDefault();addOpinion()">
+              <label class="sr-only" for="opinionTopic">Tema</label><input type="text" id="opinionTopic" placeholder="Tema (ej: música)" style="flex:1 1 140px">
+              <label class="sr-only" for="opinionText">Opinión</label><input type="text" id="opinionText" placeholder="Qué opina NYRA…" style="flex:3 1 260px">
+              <button class="btn" type="submit">Agregar opinión</button>
+            </form>
+          </div>
+          <div class="tab-pane" id="pane-charlas" role="tabpanel">
+            <p class="sub">Conversaciones del directo que NYRA recuerda sola.</p>
+            <div id="chatLearningList" class="list scroll" style="max-height:480px"></div>
+          </div>
+          <div class="tab-pane" id="pane-viewers" role="tabpanel">
+            <div id="viewersList" class="list scroll" style="max-height:480px"></div>
+          </div>
+          <div class="tab-pane" id="pane-conocimiento" role="tabpanel">
+            <p class="sub"><span id="statChunks">0</span> fragmentos · <span id="statWords">0</span> palabras · <span id="statMsgs">0</span> mensajes en esta sesión</p>
+            <div class="mem-scroll scroll" id="memList"><div class="empty">Sin conocimiento aún.</div></div>
+          </div>
+        </section>
+        <div class="col" style="flex:1 1 320px">
+          <section class="card" aria-labelledby="h-learn">
+            <h2 class="h" id="h-learn">Enseñarle algo</h2>
+            <div class="seg" role="group" aria-label="Qué querés enseñar">
+              <button type="button" data-learn="texto" aria-pressed="true" onclick="learnMode('texto')">Texto</button>
+              <button type="button" data-learn="link" aria-pressed="false" onclick="learnMode('link')">Link</button>
+              <button type="button" data-learn="varios" aria-pressed="false" onclick="learnMode('varios')">Varios</button>
+            </div>
+            <div data-learn-pane="texto" class="col" style="gap:12px">
+              <div class="field"><label class="label" for="learnText">TEXTO</label><textarea id="learnText" placeholder="Pegá lo que querés que sepa (artículos, noticias, info del juego…)"></textarea></div>
+              <div class="field"><label class="label" for="learnSource">DE DÓNDE SALE (OPCIONAL)</label><input type="text" id="learnSource" placeholder="Wikipedia, noticia, manual…"></div>
+              <button class="btn btn-cyan" type="button" onclick="learnText()" style="align-self:flex-start">Enseñar</button>
+              <div id="learnResult" class="sub"></div>
+            </div>
+            <div data-learn-pane="link" class="col" style="gap:12px;display:none">
+              <div class="field"><label class="label" for="ingestUrl">LINK</label><input type="url" id="ingestUrl" placeholder="https://es.wikipedia.org/wiki/..."></div>
+              <button class="btn btn-cyan" type="button" onclick="ingestUrl()" style="align-self:flex-start">Importar link</button>
+              <div id="ingestResult" class="sub" style="display:none"></div>
+            </div>
+            <div data-learn-pane="varios" class="col" style="gap:12px;display:none">
+              <div class="field"><label class="label" for="batchText">VARIOS TEXTOS, SEPARADOS CON ---</label><textarea id="batchText" placeholder="Texto 1&#10;---&#10;Texto 2&#10;---&#10;Texto 3"></textarea></div>
+              <button class="btn btn-cyan" type="button" onclick="learnBatch()" style="align-self:flex-start">Enseñar todos</button>
+            </div>
+          </section>
+          <section class="card danger-card" aria-labelledby="h-danger">
+            <h2 class="h" id="h-danger">Borrar en bloque</h2>
+            <p class="sub">Pide confirmación y no se puede deshacer. Separado para no tocarlo sin querer.</p>
+            <div class="inline">
+              <button class="btn btn-pink" type="button" onclick="clearPersonality()">Personalidad</button>
+              <button class="btn btn-pink" type="button" onclick="clearChatLearning()">Charlas</button>
+              <button class="btn btn-pink" type="button" onclick="clearViewers()">Viewers</button>
+              <button class="btn btn-pink" type="button" onclick="clearKnowledge()">Conocimiento</button>
+            </div>
+          </section>
         </div>
       </div>
+    </section>
 
-      <div>
-        <div class="label" style="margin-bottom:6px">USUARIOS BLOQUEADOS</div>
-        <div id="userList" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;min-height:20px"></div>
-        <div style="display:flex;gap:6px">
-          <input type="text" id="newUser" placeholder="@usuario..." style="flex:1;font-size:12px;padding:6px 10px">
-          <button class="btn btn-sm btn-pink" onclick="addBlockedUser()">+</button>
+    <!-- ═════════ AVATAR Y OBS ═════════ -->
+    <section class="section" id="tab-avatar" aria-labelledby="h-avatar">
+      <div class="page-head"><div><h1 id="h-avatar">Avatar y OBS</h1><p class="sub">Cómo se ve NYRA en pantalla y qué poner en OBS o TikTok LIVE Studio.</p></div></div>
+      <section class="card" aria-labelledby="h-av">
+        <h2 class="h" id="h-av">Avatar</h2>
+        <label class="switch-row"><span>Avatar 3D (modelo VRoid, con gestos) en vez del 2D</span><input type="checkbox" class="switch" id="liveAvatar3d" onchange="setAvatar3d(this.checked)"></label>
+        <label class="switch-row"><span>Flotar (respira y se balancea al hablar o pensar)</span><input type="checkbox" class="switch" id="liveFloat" onchange="setFloat(this.checked)"></label>
+        <div class="field" style="max-width:420px">
+          <label class="label" for="liveBackground">FONDO</label>
+          <select class="model-select" id="liveBackground" onchange="setBackground(this.value)">
+            <option value="none">Ninguno (transparente)</option>
+            <option value="cyberpunk-room">Cuarto cyberpunk</option>
+            <option value="singularity-lab">Laboratorio Singularity</option>
+            <option value="lofi-bedroom">Cuarto lo-fi (lluvia)</option>
+          </select>
+        </div>
+      </section>
+      <section class="card" aria-labelledby="h-obs">
+        <h2 class="h" id="h-obs">Fuentes para OBS / TikTok LIVE Studio</h2>
+        <div class="src"><strong style="flex:0 0 130px">Avatar</strong><code>localhost:3000/obs</code><span class="sub">400 × 480 · fondo transparente, sin chroma key</span><button class="btn btn-sm" type="button" onclick="copyUrl('/obs')">Copiar</button><a class="btn btn-sm" href="/obs" target="_blank" rel="noopener">Abrir</a></div>
+        <div class="src"><strong style="flex:0 0 130px">Alertas y metas</strong><code>localhost:3000/overlay</code><span class="sub">720 × 1280</span><button class="btn btn-sm" type="button" onclick="copyUrl('/overlay')">Copiar</button><a class="btn btn-sm" href="/overlay" target="_blank" rel="noopener">Abrir</a></div>
+        <p class="sub">La voz de NYRA sale por la fuente del avatar: en OBS activá "Controlar audio vía OBS".</p>
+      </section>
+    </section>
+
+    <!-- ═════════ ALERTAS ═════════ -->
+    <section class="section" id="tab-alertas" aria-labelledby="h-alertas">
+      <div class="page-head"><div><h1 id="h-alertas">Alertas</h1><p class="sub">La imagen o GIF de cada alerta del overlay. Subí uno nuevo y probalo: el overlay lo cambia al instante.</p></div></div>
+      <div id="alertCards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px"></div>
+      <p class="sub">GIF, PNG, WEBP o JPG de hasta 15 MB. Se guardan en public/Alertas (fuera de git). Las alertas se ven en localhost:3000/overlay.</p>
+    </section>
+
+    <!-- ═════════ MODERACIÓN Y PIBES ═════════ -->
+    <section class="section" id="tab-moderacion" aria-labelledby="h-mod">
+      <div class="page-head"><div><h1 id="h-mod">Moderación y pibes</h1><p class="sub">A quién conoce NYRA, a quién ignora y qué palabras nunca dice.</p></div></div>
+      <div class="row">
+        <section class="card" style="flex:3 1 520px" aria-labelledby="h-squad">
+          <h2 class="h" id="h-squad">Los pibes</h2>
+          <p class="sub">Una persona por línea: <b>nombre, apodo, otro apodo | cómo es, qué juega, con qué no bromear</b>. Máximo 15 personas y 400 letras cada una. Nada privado.</p>
+          <label class="sr-only" for="squadText">Los pibes</label>
+          <textarea id="squadText" disabled style="min-height:260px" placeholder="Nombre, apodo | juega de jungla, se enoja cuando pierde, se le puede cargar con eso"></textarea>
+          <button class="btn btn-cyan" type="button" id="squadSave" onclick="saveSquad()" disabled style="align-self:flex-start">Guardar pibes</button>
+        </section>
+        <div class="col" style="flex:2 1 340px">
+          <section class="card" aria-labelledby="h-users">
+            <h2 class="h" id="h-users">Usuarios que ignora</h2>
+            <div id="userList" class="inline"></div>
+            <form class="inline" onsubmit="event.preventDefault();addBlockedUser()">
+              <label class="sr-only" for="newUser">Usuario a ignorar</label><input type="text" id="newUser" placeholder="@usuario">
+              <button class="btn" type="submit">Ignorar</button>
+            </form>
+          </section>
+          <section class="card" aria-labelledby="h-words">
+            <h2 class="h" id="h-words">Palabras bloqueadas</h2>
+            <div id="wordList" class="inline"></div>
+            <form class="inline" onsubmit="event.preventDefault();addWord()">
+              <label class="sr-only" for="newWord">Palabra a bloquear</label><input type="text" id="newWord" placeholder="palabra">
+              <button class="btn" type="submit">Bloquear</button>
+            </form>
+          </section>
+          <section class="card" aria-labelledby="h-autolearn">
+            <label class="switch-row"><span><span class="h" id="h-autolearn" style="display:block">Aprender del chat</span><span class="sub">Forma opiniones y recuerda charlas sola. Lo ves en Memoria.</span></span><input type="checkbox" class="switch" id="autoLearnToggle" onchange="setAutoLearn(this.checked)"></label>
+          </section>
         </div>
       </div>
-    </div>
-
-    <!-- Recent memories -->
-    <div class="panel-section" style="display:flex;flex-direction:column;padding-bottom:24px">
-      <div class="panel-title">// MEMORIAS RECIENTES</div>
-      <div class="mem-scroll" id="memList" style="max-height:320px">
-        <div style="font-size:12px;color:var(--dim)">Sin conocimiento aún.</div>
-      </div>
-    </div>
-
-  </div>
+    </section>
+  </main>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <!-- Login del panel: formulario propio porque prompt() no existe en navegadores embebidos -->
-<div id="keyModal" style="display:none;position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.75);align-items:center;justify-content:center">
-  <form id="keyForm" style="background:#0d0a1c;border:1px solid var(--cyan);border-radius:12px;padding:22px;width:min(360px,90vw);display:flex;flex-direction:column;gap:12px;box-shadow:0 0 24px rgba(0,245,255,.25)">
-    <div class="label" style="color:var(--cyan)">🔒 CONTRASEÑA DEL PANEL</div>
-    <div style="font-size:12px;color:var(--dim)">Es el valor de <b>PANEL_PASSWORD</b> en tu archivo <b>.env</b>. Se guarda en este navegador.</div>
+<div id="keyModal">
+  <form id="keyForm" class="card" style="width:min(380px,100%)">
+    <h2 class="h">Contraseña del panel</h2>
+    <p class="sub">Es el valor de <b>PANEL_PASSWORD</b> en tu archivo <b>.env</b>. Se guarda en este navegador.</p>
+    <label class="sr-only" for="keyInput">Contraseña</label>
     <input type="password" id="keyInput" autocomplete="current-password" placeholder="Contraseña" required>
-    <div id="keyError" style="font-size:11px;color:var(--pink);display:none">Contraseña incorrecta, probá de nuevo.</div>
-    <button class="btn btn-cyan" type="submit">ENTRAR</button>
+    <div id="keyError" style="display:none;color:var(--pink-soft);font-size:13px">Contraseña incorrecta, probá de nuevo.</div>
+    <button class="btn btn-cyan" type="submit">Entrar</button>
   </form>
 </div>
 
@@ -877,14 +914,37 @@
   }
 
   // ─ Tabs ─
-  const TAB_NAMES = ['chat', 'learn', 'memoria', 'stream', 'vision'];
+  // Texto que viene del chat, de la memoria o de la pantalla: siempre escapado antes de meterlo como HTML
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+  // ─ Secciones (menú lateral) ─
   function switchTab(name) {
-    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', TAB_NAMES[i] === name));
-    document.querySelectorAll('.tab-content').forEach((c, i) => c.classList.toggle('active', TAB_NAMES[i] === name.replace('tab-', '')));
-    // fix: match by id
-    document.querySelectorAll('.tab-content').forEach(c => {
-      c.classList.toggle('active', c.id === `tab-${name}`);
-    });
+    if (!document.getElementById(`tab-${name}`)) name = 'directo';
+    document.querySelectorAll('.section').forEach(c => c.classList.toggle('active', c.id === `tab-${name}`));
+    document.querySelectorAll('.nav').forEach(n => n.toggleAttribute('aria-current', n.dataset.sec === name));
+    document.querySelectorAll('.nav[aria-current]').forEach(n => n.setAttribute('aria-current', 'page'));
+    try { localStorage.setItem('panelSection', name); } catch { }
+    if (name === 'chat') scrollBottom();
+    if (name === 'directo' && typeof loadGestures === 'function') loadGestures();
+  }
+  function memTab(name) {
+    document.querySelectorAll('.tab[data-pane]').forEach(t => t.setAttribute('aria-selected', String(t.dataset.pane === name)));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === `pane-${name}`));
+  }
+  function learnMode(mode) {
+    document.querySelectorAll('[data-learn]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.learn === mode)));
+    document.querySelectorAll('[data-learn-pane]').forEach(p => p.style.display = p.dataset.learnPane === mode ? 'flex' : 'none');
+  }
+  function useShortcut(text) {
+    const input = document.getElementById('chatInput');
+    input.value = text; input.focus();
+  }
+  function copyUrl(path) {
+    navigator.clipboard.writeText(location.origin + path).then(() => toast('✓ Copiado'), () => toast(location.origin + path));
+  }
+  function setChip(id, on, text, color) {
+    document.getElementById(id).textContent = text;
+    document.getElementById(id + 'Dot').style.background = on ? (color || 'var(--lime)') : 'var(--muted)';
   }
 
   // ─ WebSocket ─
@@ -896,7 +956,7 @@
       if (document.getElementById('screenPlayer').value.trim()) sendScreenPlayer(); // el server se reinició: no sabe quién juega
       if (!window._panelLocked) { // sin contraseña, mantener visible el aviso de candado
         document.getElementById('ollamaDot').style.cssText = 'background:#00f5ff;box-shadow:0 0 8px #00f5ff;width:7px;height:7px;border-radius:50%';
-        document.getElementById('ollamaStatus').textContent = 'CONECTADO';
+        document.getElementById('ollamaStatus').textContent = 'Conectado';
         document.getElementById('ollamaStatus').style.color = 'var(--cyan)';
       }
       // Keepalive: ping cada 25s para que Cloudflare/proxies no cierren la conexión idle
@@ -909,7 +969,7 @@
     ws.onclose = () => {
       if (ws._pingInterval) clearInterval(ws._pingInterval);
       document.getElementById('ollamaDot').style.background = '#ff4444';
-      document.getElementById('ollamaStatus').textContent = 'DESCONECTADO - reconectando...';
+      document.getElementById('ollamaStatus').textContent = 'Desconectado · reconectando…';
       setTimeout(connectWS, 3000);
     };
 
@@ -1001,6 +1061,7 @@
         if (discWrap && shareEl) discWrap.style.display = shareEl.checked ? 'none' : 'block';
         const info = document.getElementById('ttsEngineInfo');
         if (info) info.textContent = `Live: ${data.engine}${shareEl && !shareEl.checked ? ` · Discord: ${data.discordEngine}` : ''}`;
+        setChip('chipVoice', true, `Voz · ${data.engine}`);
       }
 
       if (data.type === 'stream_status') {
@@ -1040,8 +1101,8 @@
     m.scrollTop = m.scrollHeight;
   }
 
-  function sendMsg() {
-    const input = document.getElementById('chatInput');
+  function sendMsg(inputId = 'chatInput') {
+    const input = document.getElementById(inputId);
     const text = input.value.trim();
     if (!text || ws.readyState !== 1) return;
     addMsg('user', text);
@@ -1196,6 +1257,7 @@
       if (murfOpt && !data.murfConfigured) murfOpt.textContent = 'Murf.ai (sin API key -> usa Edge)';
       document.getElementById('ttsEngineInfo').textContent =
         `Live: ${data.engine}${shareEl && !shareEl.checked ? ` · Discord: ${data.discordEngine}` : ''}`;
+      setChip('chipVoice', true, `Voz · ${data.engine}`);
     } catch { }
     loadFishConfig();
     loadSttConfig();
@@ -1220,6 +1282,7 @@
       if (!data.ok) throw new Error(data.error || 'Error cambiando TTS');
       document.getElementById('ttsEngineInfo').textContent =
         `Live: ${data.engine}${!data.shareTtsEngine ? ` · Discord: ${data.discordEngine}` : ''}`;
+      setChip('chipVoice', true, `Voz · ${data.engine}`);
       toast(`Voz cambiada a ${sel.options[sel.selectedIndex].text}`);
     } catch (e) {
       toast('Error: ' + e.message);
@@ -1512,8 +1575,8 @@
     const list = document.getElementById('memList');
     if (!data.recent.length) { list.innerHTML = '<div style="font-size:12px;color:var(--dim)">Sin conocimiento aún.</div>'; return; }
     list.innerHTML = data.recent.map(m => `
-      <div class="mem-entry" title="${m.preview}">
-        <span class="mem-source">[${m.source}]</span> ${m.preview}
+      <div class="mem-entry">
+        <span class="mem-source">[${esc(m.source)}]</span> ${esc(m.preview)}
       </div>
     `).join('');
   }
@@ -1528,28 +1591,28 @@
 
     // Personalidad
     const opinions = Object.entries(pers.opinions || {});
-    document.getElementById('statPersonality').textContent = `${opinions.length} opiniones`;
+    document.getElementById('statPersonality').textContent = opinions.length;
     const pl = document.getElementById('personalityList');
     if (!opinions.length) {
       pl.innerHTML = '<div style="font-size:11px;color:var(--dim)">Sin opiniones aún.</div>';
     } else {
       pl.innerHTML = opinions.map(([topic, { opinion }]) =>
-        `<div style="display:flex;gap:6px;align-items:flex-start;padding:5px 8px;background:rgba(124,58,237,.06);border:1px solid rgba(124,58,237,.2);border-radius:6px">
-          <span style="color:var(--purple);font-size:10px;white-space:nowrap;padding-top:1px">${topic}</span>
-          <span style="color:var(--text);font-size:11px;flex:1">${opinion}</span>
-          <span onclick="deleteOpinion('${topic}')" style="cursor:pointer;color:var(--pink);opacity:.6;font-size:13px;line-height:1">×</span>
+        `<div style="display:flex;gap:12px;align-items:center;padding:10px 12px;background:var(--bg2);border-radius:10px">
+          <span class="chip">${esc(topic)}</span>
+          <span style="flex:1">${esc(opinion)}</span>
+          <button type="button" class="btn btn-sm icon-btn" data-topic="${esc(topic)}" onclick="deleteOpinion(this.dataset.topic)" aria-label="Borrar opinión sobre ${esc(topic)}">✕</button>
         </div>`
       ).join('');
     }
 
     // Chat Learning
-    document.getElementById('statChatLearning').textContent = `${chat.total} intercambios`;
+    document.getElementById('statChatLearning').textContent = chat.total || 0;
     const cl = document.getElementById('chatLearningList');
     if (!chat.total) {
       cl.innerHTML = '<div style="font-size:11px;color:var(--dim)">Sin intercambios aún.</div>';
     } else {
       cl.innerHTML = (chat.recent || []).map(c =>
-        `<div style="padding:4px 8px;background:rgba(0,245,255,.03);border-left:2px solid rgba(0,245,255,.3);border-radius:0 4px 4px 0;font-size:10px;color:var(--dim)">${c.preview}</div>`
+        `<div class="mem-entry">${esc(c.preview)}</div>`
       ).join('');
     }
 
@@ -1560,8 +1623,8 @@
       vl.innerHTML = '<div style="font-size:11px;color:var(--dim)">Sin viewers aún.</div>';
     } else {
       vl.innerHTML = (view.top || []).map(v =>
-        `<div style="display:flex;align-items:center;gap:8px;padding:3px 8px;font-size:11px">
-          <span style="color:var(--cyan)">@${v.username}</span>
+        `<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--bg2);font-size:13px">
+          <span style="color:var(--cyan)">@${esc(v.username)}</span>
           <span style="color:var(--dim)">x${v.count}</span>
           <span style="color:var(--dim);font-size:9px;margin-left:auto">${v.lastSeen ? new Date(v.lastSeen).toLocaleDateString('es') : ''}</span>
         </div>`
@@ -1639,14 +1702,17 @@
       if (data.ok) { toast(`✓ Conectado a ${platform}/${channel}`); }
       else         { toast(`Error: ${data.error || 'desconocido'}`); }
     } catch(e) { toast('Error de red'); }
-    finally { if (btn) { btn.disabled = false; btn.textContent = 'CONECTAR'; } }
+    finally { if (btn) { btn.disabled = false; btn.textContent = 'Conectar'; } }
   }
 
   // ─ Live: metas y tribunal ─
   let _goalsLoaded = false;
   function renderLive(s) {
     const next = s.next ? ` · próxima: ${s.next.points} (${s.next.reward})` : (s.goals.length ? ' · ¡todas cumplidas!' : '');
-    document.getElementById('liveProgress').textContent = `${s.progress} puntos · humor ${s.mood}${next}`;
+    document.getElementById('liveProgress').textContent = `${s.progress} puntos · humor ${s.mood}`;
+    document.getElementById('directoGoal').textContent = s.next ? `${s.next.reward} · ${s.progress} / ${s.next.points}`
+      : s.goals.length ? `¡Todas las metas cumplidas! (${s.progress} puntos)` : 'Sin metas cargadas.';
+    document.getElementById('directoGoalBar').style.width = s.next ? `${Math.min(100, s.progress / s.next.points * 100)}%` : s.goals.length ? '100%' : '0';
     if (!_goalsLoaded) { // no pisar lo que estás escribiendo
       document.getElementById('liveGoals').value = s.goals.map(g => `${g.points} | ${g.reward}`).join('\n');
       _goalsLoaded = true;
@@ -1657,7 +1723,7 @@
     document.getElementById('liveFloat').checked = s.float !== false;
     document.getElementById('liveAvatar3d').checked = s.avatar3d === true;
     const t = s.tribunal;
-    document.getElementById('tribStatus').textContent = t
+    document.getElementById('tribStatus').textContent = document.getElementById('directoTrib').textContent = t
       ? `⚖ "${t.topic}" — A (${t.a}): ${t.total.a} [${t.votes.a} votos] · B (${t.b}): ${t.total.b} [${t.votes.b} votos]`
       : 'Sin tribunal abierto. El chat vota con !a / !b.';
   }
@@ -1733,7 +1799,9 @@
     try {
       const r = await fetch('/api/squad');
       if (!r.ok) throw new Error(r.status);
-      document.getElementById('squadText').value = squadLines(await r.json());
+      const squad = await r.json();
+      document.getElementById('squadText').value = squadLines(squad);
+      renderPlayerChips(squad);
       // Recién acá se puede editar: guardar sin haber cargado borraría las fichas
       document.getElementById('squadText').disabled = document.getElementById('squadSave').disabled = false;
     } catch { setTimeout(loadSquad, 5000); }
@@ -1748,6 +1816,7 @@
       const r = await postJSON('/api/squad', { squad: list });
       if (!r.ok) return toast(`Error: ${r.error}`);
       box.value = squadLines(r.squad);
+      renderPlayerChips(r.squad);
       toast(r.squad.length < list.length ? `⚠ Guardé ${r.squad.length} de ${list.length}: máximo 15 y cada línea necesita nombre` : `✓ ${r.squad.length} personas guardadas`);
     } catch { toast('No se pudo guardar: ¿está prendido el server?'); }
   }
@@ -1808,7 +1877,7 @@
     const input = document.getElementById('channel-kick');
     if (!s.configured)      input.placeholder = 'falta configurar .env';
     else if (s.loggedIn)    { input.value = s.username; document.getElementById('login-kick').title = 'Cambiar de cuenta'; }
-    if (new URLSearchParams(location.search).get('kick') === 'ok') { toast(`✓ Kick: sesión iniciada como ${s.username}`); switchTab('stream'); }
+    if (new URLSearchParams(location.search).get('kick') === 'ok') { toast(`✓ Kick: sesión iniciada como ${s.username}`); switchTab('directo'); }
   }
 
   async function disconnectPlatform(platform) {
@@ -1845,7 +1914,7 @@
       _visionStream = null;
       video.srcObject = null;
       preview.style.display = 'none';
-      btn.textContent = '▶ COMPARTIR PANTALLA';
+      btn.textContent = 'Compartir pantalla';
       btn.className = 'btn btn-cyan';
       capBtn.disabled = true;
       stopLiveVision();
@@ -1860,7 +1929,7 @@
         _visionStream = null;
         video.srcObject = null;
         preview.style.display = 'none';
-        btn.textContent = '▶ COMPARTIR PANTALLA';
+        btn.textContent = 'Compartir pantalla';
         btn.className = 'btn btn-cyan';
         capBtn.disabled = true;
         stopLiveVision();
@@ -1868,8 +1937,8 @@
       };
       video.srcObject = _visionStream;
       preview.style.display = 'block';
-      btn.textContent = '■ DEJAR DE COMPARTIR';
-      btn.className = 'btn btn-sm btn-pink';
+      btn.textContent = 'Dejar de compartir';
+      btn.className = 'btn btn-pink';
       capBtn.disabled = false;
       startLiveVision();
       toast('✓ Pantalla compartida — NYRA ahora sabe lo que hay en pantalla.');
@@ -1879,18 +1948,72 @@
   }
 
   // Quién juega: si no, NYRA da por hecho que la pantalla es del streamer
+  // Un solo dato con dos campos (Pantalla y Modo Wild Rift): se mantienen iguales
+  function setScreenPlayer(name) {
+    document.getElementById('screenPlayer').value = document.getElementById('wrPlayer').value = name;
+    sendScreenPlayer();
+  }
   function sendScreenPlayer() {
     const name = document.getElementById('screenPlayer').value.trim();
     try { localStorage.setItem('screenPlayer', name); } catch { }
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'screen_player', name }));
   }
-  try { document.getElementById('screenPlayer').value = localStorage.getItem('screenPlayer') || ''; } catch { }
+  try { document.getElementById('screenPlayer').value = document.getElementById('wrPlayer').value = localStorage.getItem('screenPlayer') || ''; } catch { }
+
+  // Modo caster: 4 capturas por mirada, juntas en una imagen (la grande es ahora), para que relate lo que pasó
+  let _casterFrames = [];
+  function frameCanvas(width) {
+    const video = document.getElementById('visionVideo');
+    if (!_visionStream || !video.videoWidth) return null;
+    const c = document.createElement('canvas');
+    const scale = Math.min(1, width / video.videoWidth);
+    c.width = Math.round(video.videoWidth * scale);
+    c.height = Math.round(video.videoHeight * scale);
+    c.getContext('2d').drawImage(video, 0, 0, c.width, c.height);
+    return c;
+  }
+  function casterComposite(frames) {
+    const now = frames[frames.length - 1], old = frames.slice(0, -1);
+    const W = now.c.width, H = now.c.height, sw = Math.round(W / 3), sh = Math.round(H / 3);
+    const out = document.createElement('canvas');
+    out.width = W + sw; out.height = H;
+    const g = out.getContext('2d');
+    g.fillStyle = '#000'; g.fillRect(0, 0, out.width, out.height);
+    const label = (txt, x, y) => {
+      g.font = 'bold 22px sans-serif';
+      g.fillStyle = 'rgba(0,0,0,.7)'; g.fillRect(x, y, g.measureText(txt).width + 16, 32);
+      g.fillStyle = '#fff'; g.fillText(txt, x + 8, y + 24);
+    };
+    g.drawImage(now.c, 0, 0, W, H); label('AHORA', 8, 8);
+    old.forEach((f, i) => {
+      g.drawImage(f.c, W, i * sh, sw, sh);
+      label(`-${Math.round((now.t - f.t) / 1000)} s`, W + 6, i * sh + 6);
+    });
+    return out.toDataURL('image/jpeg', 0.7).split(',')[1];
+  }
+  function startCaster(secs) {
+    _casterFrames = [];
+    let tick = 0;
+    _visionTimer = setInterval(() => {
+      const c = frameCanvas(1280); // a menos de 1280 no se leen el KDA ni los nombres del HUD
+      if (!c) return;
+      _casterFrames = [..._casterFrames, { c, t: Date.now() }].slice(-4);
+      if (++tick % 4 || _casterFrames.length < 4 || !ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: 'vision_context_frame', image: casterComposite(_casterFrames), caster: true, span: secs / 1000 }));
+    }, secs / 4);
+  }
 
   function startLiveVision() {
     stopLiveVision();
     sendScreenPlayer();
-    const secs = parseInt(document.getElementById('visionInterval').value, 10) * 1000;
+    const secs = parseInt(document.getElementById(_wrOn ? 'wrInterval' : 'visionInterval').value, 10) * 1000;
     _lastFrameSig = 0;
+    if (_wrOn) {
+      startCaster(secs);
+      document.getElementById('liveVisionStatus').style.display = 'inline-flex';
+      setChip('chipScreen', true, `Caster · cada ${secs / 1000} s`);
+      return;
+    }
     // Captura silenciosa: envía frames por WS para que NYRA actualice su contexto visual
     // No genera respuesta — NYRA simplemente "sabe" lo que hay en pantalla
     _visionTimer = setInterval(() => {
@@ -1916,7 +2039,8 @@
         }
       } catch (e) { console.warn('Silent vision capture error:', e); }
     }, secs);
-    document.getElementById('liveVisionStatus').style.display = 'flex';
+    document.getElementById('liveVisionStatus').style.display = 'inline-flex';
+    setChip('chipScreen', true, `Pantalla · cada ${secs / 1000} s`);
   }
 
   function grabFrame() {
@@ -1935,6 +2059,8 @@
     const st = document.getElementById('liveVisionStatus');
     if (st) st.style.display = 'none';
     _lastFrameSig = 0;
+    setChip('chipScreen', false, 'Pantalla apagada');
+    renderWildRift();
   }
 
   async function captureAndSend() {
@@ -1960,18 +2086,20 @@
       addVisionLog(data.text || data.error, !!data.ok);
       if (!data.ok) toast('Error de visión: ' + data.error);
     } catch (e) { addVisionLog('Error de red: ' + e.message, false); }
-    finally { btn.disabled = !_visionStream; btn.textContent = '📷 CAPTURAR'; _captureInProgress = false; }
+    finally { btn.disabled = !_visionStream; btn.textContent = 'Mirar ahora'; _captureInProgress = false; }
   }
 
   function addVisionLog(text, ok = true) {
-    const log = document.getElementById('visionLog');
+    for (const id of ['visionLog', 'wrLog']) addVisionLogTo(document.getElementById(id), text, ok);
+  }
+  function addVisionLogTo(log, text, ok) {
     if (!log) return;
     const empty = log.querySelector('div[style*="aún"]');
     if (empty) log.innerHTML = '';
     const time = new Date().toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
     const el = document.createElement('div');
-    el.style.cssText = `padding:6px 8px;border-left:2px solid ${ok ? 'var(--cyan)' : 'var(--pink)'};background:rgba(0,245,255,.03);border-radius:0 4px 4px 0;font-size:11px`;
-    el.innerHTML = `<span style="color:var(--dim);font-size:9px">${time}</span> <span style="color:var(--text)"></span>`;
+    el.style.cssText = `padding:10px 12px;border-left:2px solid ${ok ? 'var(--cyan)' : 'var(--pink)'};background:var(--bg2);border-radius:0 10px 10px 0;font-size:13px`;
+    el.innerHTML = `<span style="color:var(--dim);font:500 12px 'JetBrains Mono',monospace">${time}</span> <span style="color:var(--text)"></span>`;
     el.lastElementChild.textContent = text; // viene de la voz o de lo que se ve en pantalla: nunca como HTML
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
@@ -1989,7 +2117,9 @@
     _discord = d.state;
     if (d.state === 'on' && _isListening) stopMic(); // si no, escucharía dos veces al streamer
     document.getElementById('micBtn').disabled = d.state === 'on';
-    document.getElementById('discordBtn').textContent = d.state === 'off' ? '🎧 CONECTAR' : '■ SALIR';
+    document.getElementById('discordBtn').textContent = d.state === 'off' ? 'Conectar a Discord' : 'Salir de Discord';
+    document.getElementById('discordBtn').className = d.state === 'off' ? 'btn btn-cyan' : 'btn btn-pink';
+    setChip('chipDiscord', d.state === 'on', d.state === 'on' ? `Discord · ${d.channel}` : d.state === 'starting' ? 'Discord · entrando…' : 'Discord apagado');
     const st = document.getElementById('discordStatus');
     st.textContent = d.state === 'on' ? `En "${d.channel}" · streamer: ${d.streamer} · Whisper ${d.whisper}`
       : d.state === 'starting' ? 'Entrando... (carga Whisper y avisa al canal, unos 20 s)'
@@ -2026,8 +2156,8 @@
     if (!SR) { toast('Reconocimiento de voz no disponible. Usá Chrome o Edge.'); return; }
 
     _isListening = true;
-    document.getElementById('micBtn').textContent = '🔴 PARAR ESCUCHAR';
-    document.getElementById('micBtn').className = 'btn btn-sm btn-pink';
+    document.getElementById('micBtn').textContent = 'Apagar micrófono';
+    document.getElementById('micBtn').className = 'btn btn-pink';
     const micStatus = document.getElementById('micStatus');
     micStatus.textContent = '🎤 Escuchando...';
     micStatus.style.color = 'var(--cyan)';
@@ -2100,8 +2230,8 @@
     if (_speechRec) { try { _speechRec.stop(); } catch(e) {} _speechRec = null; }
     _speechBuffer = '';
     clearTimeout(_speechTimer);
-    document.getElementById('micBtn').textContent = '🎤 ACTIVAR MIC';
-    document.getElementById('micBtn').className = 'btn btn-sm';
+    document.getElementById('micBtn').textContent = 'Activar micrófono';
+    document.getElementById('micBtn').className = 'btn';
     const micStatus = document.getElementById('micStatus');
     micStatus.textContent = 'Inactivo';
     micStatus.style.color = 'var(--dim)';
@@ -2138,6 +2268,8 @@
         if (card) card.style.boxShadow = 'none';
       }
     }
+    const on = Object.entries(platforms).filter(([, i]) => i.connected);
+    setChip('chipStream', on.length > 0, on.length ? on.map(([p, i]) => `${p} · ${i.channel}`).join(' + ') : 'Sin plataformas', 'var(--pink)');
     // respondToAll
     if (s.respondToAll !== undefined) {
       const cb = document.getElementById('respondToAll');
@@ -2153,7 +2285,7 @@
     const color = PLATFORM_COLORS[platform] || 'var(--cyan)';
     const el = document.createElement('div');
     el.style.cssText = `padding:5px 8px;border-left:2px solid ${color};background:rgba(${hexToRgb(color) || '0,245,255'},.03);border-radius:0 4px 4px 0;font-size:11px`;
-    el.innerHTML = `<span style="color:${color};font-size:10px;opacity:.7">[${platform.toUpperCase()}]</span> <strong style="color:${color}">@${username}</strong>: <span style="color:var(--text)">${text}</span>`;
+    el.innerHTML = `<span style="color:${color};font-size:10px;opacity:.7">[${esc(platform).toUpperCase()}]</span> <strong style="color:${color}">@${esc(username)}</strong>: <span style="color:var(--text)">${esc(text)}</span>`;
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
     while (log.children.length > 30) log.removeChild(log.firstChild);
@@ -2170,14 +2302,14 @@
     const icon  = ALERT_ICONS[alertType] || '🔔';
 
     let detail = '';
-    if (alertType === 'gift')    detail = ` — ${extra.count > 1 ? extra.count+'x ' : ''}<strong>${extra.name}</strong>${extra.diamonds ? ` (${extra.diamonds}💎)` : ''}`;
+    if (alertType === 'gift')    detail = ` — ${extra.count > 1 ? esc(extra.count)+'x ' : ''}<strong>${esc(extra.name)}</strong>${extra.diamonds ? ` (${esc(extra.diamonds)}💎)` : ''}`;
     if (alertType === 'resub')   detail = ` — ${extra.months} meses`;
-    if (alertType === 'subgift') detail = ` → @${extra.recipient}`;
+    if (alertType === 'subgift') detail = ` → @${esc(extra.recipient)}`;
     if (alertType === 'cheer')   detail = ` — ${extra.bits} bits`;
 
     const el = document.createElement('div');
     el.style.cssText = `padding:5px 10px;border-left:3px solid ${color};background:rgba(${hexToRgb(color)},.08);border-radius:0 6px 6px 0;font-size:11px;display:flex;align-items:center;gap:6px`;
-    el.innerHTML = `<span style="font-size:14px">${icon}</span><span style="color:${color};font-weight:600">@${username}</span><span style="color:var(--dim);font-size:10px">${alertType.toUpperCase()}${detail}</span>`;
+    el.innerHTML = `<span style="font-size:14px">${icon}</span><span style="color:${color};font-weight:600">@${esc(username)}</span><span style="color:var(--dim);font-size:10px">${esc(alertType).toUpperCase()}${detail}</span>`;
     log.appendChild(el);
     log.scrollTop = log.scrollHeight;
     while (log.children.length > 30) log.removeChild(log.firstChild);
@@ -2195,18 +2327,12 @@
     document.getElementById('respondToAll').checked    = !!data.respondToAll;
 
     const wl = document.getElementById('wordList');
-    wl.innerHTML = (data.words || []).map(w =>
-      `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:rgba(255,45,120,.1);border:1px solid rgba(255,45,120,.3);border-radius:12px;font-size:10px;color:var(--pink)">
-        ${w} <span onclick="removeWord('${w}')" style="cursor:pointer;opacity:.6;font-size:12px">×</span>
-      </span>`
-    ).join('');
+    const tag = (label, value, fn) => `<span class="chip" style="background:#1a1230;border-color:#4a2350;color:#ffc2d6;padding-right:4px">${esc(label)}
+        <button type="button" data-v="${esc(value)}" onclick="${fn}(this.dataset.v)" aria-label="Quitar ${esc(label)}" style="width:26px;height:26px;border:0;border-radius:50%;background:transparent;color:var(--pink-soft);cursor:pointer">✕</button></span>`;
+    wl.innerHTML = (data.words || []).map(w => tag(w, w, 'removeWord')).join('') || '<span class="empty">Ninguna.</span>';
 
     const ul = document.getElementById('userList');
-    ul.innerHTML = (data.blockedUsers || []).map(u =>
-      `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:rgba(124,58,237,.1);border:1px solid rgba(124,58,237,.3);border-radius:12px;font-size:10px;color:var(--purple)">
-        @${u} <span onclick="removeBlockedUser('${u}')" style="cursor:pointer;opacity:.6;font-size:12px">×</span>
-      </span>`
-    ).join('');
+    ul.innerHTML = (data.blockedUsers || []).map(u => tag('@' + u, u, 'removeBlockedUser')).join('') || '<span class="empty">Nadie.</span>';
   }
 
   async function addWord() {
@@ -2268,8 +2394,188 @@
     }
   }
 
+  // ─ Modo Wild Rift: comparte pantalla y mira cada 10 s ─
+  let _wrOn = false, _wrPrevInterval = '30';
+  function renderWildRift() {
+    if (!_visionStream) _wrOn = false;
+    document.getElementById('wrBtn').textContent = _wrOn ? 'Terminar modo caster' : 'Empezar modo caster';
+    document.getElementById('wrBtn').className = _wrOn ? 'btn btn-pink' : 'btn btn-cyan';
+    document.getElementById('wrState').textContent = _wrOn ? `caster · 4 capturas cada ${document.getElementById('wrInterval').value} s`
+      : _visionStream ? 'pantalla compartida' : 'modo partida apagado';
+  }
+  async function toggleWildRift() {
+    const interval = document.getElementById('visionInterval');
+    if (_wrOn) {
+      _wrOn = false;
+      interval.value = _wrPrevInterval;
+      if (_visionStream) startLiveVision();
+      return renderWildRift();
+    }
+    _wrPrevInterval = interval.value;
+    _wrOn = true; // antes de arrancar: startLiveVision mira esto para usar el modo caster
+    if (!_visionStream) await toggleScreenShare(); else startLiveVision();
+    if (!_visionStream) { _wrOn = false; interval.value = _wrPrevInterval; } // canceló el permiso de pantalla
+    renderWildRift();
+  }
+  function setWrInterval() {
+    if (_wrOn && _visionStream) startLiveVision();
+    renderWildRift();
+  }
+  function askScreen(inputId) {
+    if (!_visionStream) return toast('Primero compartí la pantalla');
+    document.getElementById('visionQuestion').value = document.getElementById(inputId).value;
+    document.getElementById(inputId).value = '';
+    captureAndSend();
+  }
+  function renderPlayerChips(squad) {
+    const box = document.getElementById('wrPlayers');
+    box.innerHTML = ['El Yisus', ...(squad || []).map(p => p.names[0])].filter(Boolean)
+      .map(n => `<button class="chip" type="button" data-n="${esc(n)}" onclick="setScreenPlayer(this.dataset.n)">${esc(n)}</button>`).join('');
+  }
+
+  // ─ Animaciones 3D a mano (la lista viene del server: si se suma una, aparece sola) ─
+  const gestureLabel = g => ({ tomar_te: 'Tomar té', six_seven: 'Six seven' })[g] || (g[0].toUpperCase() + g.slice(1)).replace(/_/g, ' ');
+  async function loadGestures() {
+    try {
+      const r = await fetch('/api/gestures').then(r => r.json());
+      if (!r.ok) return;
+      // 3D = interruptor prendido o algún /obs?3d abierto (OBS puede usar esa URL aparte)
+      document.getElementById('gestState').textContent = r.has3d ? 'avatar 3D conectado' : 'sin avatar 3D';
+      document.getElementById('gestHint').textContent = r.has3d
+        ? 'Tocá una y NYRA la hace ahora en pantalla. Las animaciones nuevas aparecen solas.'
+        : 'No hay ningún avatar 3D abierto: se ven en localhost:3000/obs?3d (o con el 3D prendido en Avatar y OBS).';
+      document.getElementById('gestureList').innerHTML = r.gestures.map(g =>
+        `<button class="btn btn-sm" type="button" data-g="${esc(g)}" onclick="playGesture(this.dataset.g)">${esc(gestureLabel(g))}</button>`).join('');
+    } catch { }
+  }
+  async function playGesture(name) {
+    const r = await postJSON('/api/gesture', { name });
+    toast(r.ok ? `NYRA: ${gestureLabel(name)}` : `Error: ${r.error}`);
+  }
+
+  // ─ Alertas: imagen de cada una en el overlay ─
+  const ALERT_KINDS = [['gift', 'Regalo'], ['gift_big', 'Regalo grande'], ['gift_epic', 'Regalo épico'], ['follow', 'Nuevo seguidor'],
+    ['sub', 'Suscripción'], ['goal', 'Meta cumplida'], ['verdict', 'Sentencia del tribunal']];
+  async function loadAlerts() {
+    try {
+      const r = await fetch('/api/alerts').then(r => r.json());
+      if (r.ok) renderAlerts(r.images, r.defaults);
+    } catch { }
+  }
+  function renderAlerts(images, defaults) {
+    document.getElementById('alertCards').innerHTML = ALERT_KINDS.map(([kind, name]) => {
+      const src = images[kind], custom = src && src !== defaults[kind];
+      return `<section class="card" style="gap:10px" aria-label="Alerta ${name}">
+        <div class="card-head"><h2 class="h">${name}</h2><span class="chip">${custom ? 'tuya' : src ? 'de fábrica' : 'sin imagen'}</span></div>
+        <div style="height:220px;border-radius:10px;background:var(--bg2);display:grid;place-items:center;overflow:hidden">
+          ${src ? `<img src="${esc(src)}" alt="" style="width:100%;height:220px;object-fit:contain">` : '<span class="empty">Solo texto</span>'}
+        </div>
+        <label class="btn btn-sm" style="cursor:pointer">Subir imagen o GIF
+          <input type="file" accept="image/gif,image/png,image/webp,image/jpeg" class="sr-only" onchange="uploadAlert('${kind}', this)"></label>
+        <div class="inline">
+          <button class="btn btn-sm" type="button" onclick="testAlertKind('${kind}')" style="flex:1">Probar en el overlay</button>
+          ${custom ? `<button class="btn btn-sm btn-pink" type="button" onclick="resetAlert('${kind}')">Volver a la de fábrica</button>` : ''}
+        </div>
+      </section>`;
+    }).join('');
+  }
+  async function uploadAlert(kind, input) {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 15 * 1024 * 1024) return toast('Muy pesada: máximo 15 MB');
+    toast('Subiendo…');
+    const r = await fetch(`/api/alerts/${kind}`, { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file })
+      .then(r => r.json()).catch(() => ({ ok: false, error: 'no se pudo subir' }));
+    if (!r.ok) return toast(`Error: ${r.error}`);
+    toast('✓ Alerta cambiada');
+    loadAlerts();
+  }
+  async function resetAlert(kind) {
+    if (!confirm('¿Volver a la imagen de fábrica? La tuya se borra.')) return;
+    const r = await postJSON(`/api/alerts/${kind}`, null, 'DELETE');
+    if (r.ok) loadAlerts();
+  }
+  async function testAlertKind(kind) {
+    const r = await postJSON(`/api/alerts/${kind}/test`);
+    toast(r.ok ? 'Mirá el overlay (localhost:3000/overlay)' : `Error: ${r.error}`);
+  }
+
+  // ─ Pronunciación ─
+  const PRON_GROUPS = { wildrift: 'Wild Rift', stream: 'Stream y memes', general: 'General' };
+  let _pron = [], _pronGroup = '', _pronPage = 0;
+  const PRON_PAGE = 12;
+  async function loadPron() {
+    try {
+      const r = await fetch('/api/pronunciation').then(r => r.json());
+      if (r.ok) { _pron = r.words; renderPron(); }
+    } catch { }
+  }
+  function pronFilter(group) {
+    _pronGroup = group;
+    document.querySelectorAll('#pronFilters [data-g]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.g === group)));
+    renderPron(0);
+  }
+  function renderPron(page = _pronPage) {
+    const q = document.getElementById('pronSearch').value.trim().toLowerCase();
+    document.querySelectorAll('#pronFilters [data-g]').forEach(b => {
+      const n = b.dataset.g ? _pron.filter(w => w.group === b.dataset.g).length : _pron.length;
+      b.textContent = `${b.dataset.g ? PRON_GROUPS[b.dataset.g] : 'Todas'} · ${n}`;
+    });
+    const list = _pron.filter(w => (!_pronGroup || w.group === _pronGroup) && (!q || w.word.includes(q) || w.say.toLowerCase().includes(q)))
+      .sort((a, b) => a.word.localeCompare(b.word));
+    const pages = Math.max(1, Math.ceil(list.length / PRON_PAGE));
+    _pronPage = Math.min(Math.max(0, page), pages - 1);
+    document.getElementById('pronPage').textContent = `Página ${_pronPage + 1} de ${pages} · ${list.length} palabras`;
+    document.getElementById('pronPrev').disabled = _pronPage === 0;
+    document.getElementById('pronNext').disabled = _pronPage >= pages - 1;
+    document.getElementById('pronList').innerHTML = list.slice(_pronPage * PRON_PAGE, (_pronPage + 1) * PRON_PAGE).map(w => `
+      <div class="pron-row"><span>${esc(w.word)}</span><span aria-hidden="true" style="color:var(--muted)">→</span><span class="pron-say">${esc(w.say)}</span>
+        <span class="chip" style="justify-self:start">${esc(PRON_GROUPS[w.group] || w.group)}</span>
+        <button class="btn btn-sm icon-btn" type="button" data-say="${esc(w.say)}" onclick="testPron(this.dataset.say)" aria-label="Escuchar ${esc(w.word)}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 5L6 9H2v6h4l5 4z"/></svg></button>
+        <button class="btn btn-sm icon-btn" type="button" data-w="${esc(w.word)}" onclick="deletePron(this.dataset.w)" aria-label="Borrar ${esc(w.word)}">✕</button>
+      </div>`).join('') || '<div class="empty">No hay palabras con ese filtro.</div>';
+    const wr = _pron.filter(w => w.group === 'wildrift').map(w => w.word);
+    document.getElementById('wrPronInfo').textContent = wr.length
+      ? `${wr.length} nombres que NYRA ya pronuncia bien: ${wr.slice(0, 6).join(', ')}…` : 'Todavía no hay nombres del juego.';
+  }
+  async function savePron() {
+    const word = document.getElementById('pronWord'), say = document.getElementById('pronSay');
+    const r = await postJSON('/api/pronunciation', { word: word.value, say: say.value, group: document.getElementById('pronGroup').value });
+    if (!r.ok) return toast(`Error: ${r.error}`);
+    _pron = r.words; renderPron();
+    toast(`✓ "${word.value.trim()}" ahora se dice "${say.value.trim()}"`);
+    word.value = say.value = ''; word.focus();
+  }
+  async function deletePron(word) {
+    if (!confirm(`¿Borrar "${word}"? Va a volver a leerla como venga.`)) return;
+    const r = await postJSON('/api/pronunciation', { word }, 'DELETE');
+    if (r.ok) { _pron = r.words; renderPron(); }
+  }
+  async function testPron(text) {
+    if (!text.trim()) return toast('Escribí algo para escuchar');
+    const r = await postJSON('/api/pronunciation/test', { text });
+    if (!r.ok) return toast(`Error: ${r.error}`);
+    if (!r.url) return toast('La voz de Windows no se puede probar acá: elegí otra voz');
+    new Audio(r.url).play().catch(() => toast('No se pudo reproducir'));
+  }
+
   // ─ Init ─ (primero validar la contraseña con una llamada rápida, así el WS se conecta ya con la clave)
   (async () => {
+    let section = 'directo';
+    try { section = localStorage.getItem('panelSection') || section; } catch { }
+    switchTab(section);
+    // Config que vive solo en el panel: se recuerda entre reinicios (lo demás lo guarda el servidor)
+    for (const id of ['wrInterval', 'visionInterval', 'channel-tiktok', 'channel-twitch']) {
+      const el = document.getElementById(id);
+      try { const v = localStorage.getItem('cfg:' + id); if (v) el.value = v; } catch { }
+      el.addEventListener('change', () => { try { localStorage.setItem('cfg:' + id, el.value.trim()); } catch { } });
+    }
+    memTab('personalidad');
+    loadPron();
+    loadAlerts();
+    loadGestures();
+    setInterval(loadGestures, 15000); // por si abrís o cerrás /obs?3d mientras el panel está abierto
+    loadTtsEngine(); // voz, Fish y Whisper: antes solo se cargaban al agregar una palabra bloqueada
     await fetch('/api/live').then(r => r.json()).then(renderLive).catch(() => {});
     connectWS();
     loadMemories();

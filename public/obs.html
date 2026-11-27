@@ -354,6 +354,7 @@
       idleTimer = setTimeout(() => { if (!_audioPlaying) setState('idle'); }, 8000);
     }
     if (m.type === 'tts_play') playTTS(m.url, m.mute);
+    if (m.type === 'play_gesture' && document.body.classList.contains('mode3d')) nyra3d?.gesture(m.name); // elegida en el panel
     if (m.type === 'error') setState('idle');
   };
 

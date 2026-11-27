@@ -343,3 +343,10 @@ test("OpenCodeClient deduplicates duplicate events, handles cumulative snapshots
   cleanupClient(t, inc);
   assert.equal(await collect(inc.stream("hola")), "Hola chat!");
 });
+
+test("Codex attaches screenshots with -i before reading the prompt from stdin", () => {
+  const client = new CodexClient("vision", "default", { path: "codex", workDir: tmpdir() });
+  const [, args] = client._cmd(null, ["C:\tmp\screen.jpg"]);
+  assert.deepEqual(args.slice(-3), ["-i", "C:\tmp\screen.jpg", "-"]);
+  assert.equal(client._cmd()[1].includes("-i"), false);
+});

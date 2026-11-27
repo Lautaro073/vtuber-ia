@@ -53,6 +53,9 @@
   /* Animación de NYRA arriba del aviso. Los GIF son 192x608 con ella en la franja del medio: se recorta lo vacío */
   #toast .anim { width: 130px; aspect-ratio: 192 / 220; margin: -76px auto 4px; overflow: hidden; }
   #toast .anim img { width: 100%; margin-top: -102.6%; image-rendering: pixelated; display: block; }
+  /* Las subidas desde el panel (custom-*) se muestran enteras: ese recorte es solo para los GIF de fábrica */
+  #toast .anim.full { width: 160px; height: 160px; aspect-ratio: auto; margin-top: -110px; }
+  #toast .anim.full img { height: 100%; margin-top: 0; object-fit: contain; }
 </style>
 </head>
 <body>
@@ -146,7 +149,11 @@
   // Cola de avisos: uno por vez
   const toasts = [];
   let showing = false;
-  const ANIM = { gift: 'Alertas/alerta-donacion.gif', follow: 'Alertas/alerta-nuevo-seguidor-sub.gif' };
+  // Imagen de cada alerta: se cambian desde el panel (sección Alertas)
+  let ANIM = { gift: 'Alertas/alerta-donacion.gif', gift_big: 'Alertas/alerta-donacion.gif', gift_epic: 'Alertas/alerta-donacion.gif',
+    follow: 'Alertas/alerta-nuevo-seguidor-sub.gif', sub: 'Alertas/alerta-nuevo-seguidor-sub.gif', goal: null, verdict: null };
+  const loadAnim = () => fetch('/alerts-config').then(r => r.json()).then(a => { ANIM = a; }).catch(() => {});
+  loadAnim();
   function toast(text, cls = '', ms = 3500, anim = null) {
     toasts.push({ text, cls, ms, anim });
     if (!showing) nextToast();
@@ -160,6 +167,7 @@
     el.querySelector('.txt').textContent = t.text; // el nombre viene de TikTok: nunca como HTML
     const box = el.querySelector('.anim'), img = box.querySelector('img');
     box.classList.toggle('hidden', !t.anim);
+    box.classList.toggle('full', !!t.anim && t.anim.includes('/custom-'));
     if (t.anim) { img.src = ''; img.src = t.anim; } // desde el primer cuadro
     requestAnimationFrame(() => el.classList.add('show'));
     const k = toasts.length > 3 ? 1 : 2; // el doble para que se vea la animación; con muchas en fila, normal para no atrasarse
@@ -169,21 +177,30 @@
   function onEvent(e) {
     if (e.kind === 'gift') {
       const what = `${e.count > 1 ? e.count + 'x ' : ''}${e.gift}`;
-      if (e.tier === 'epic')   toast(`💥 ¡@${e.username} mandó ${what}! 💥`, 'epic', 6000, ANIM.gift);
-      else if (e.tier === 'big') toast(`🎉 @${e.username} mandó ${what}`, 'big', 4500, ANIM.gift);
+      if (e.tier === 'epic')   toast(`💥 ¡@${e.username} mandó ${what}! 💥`, 'epic', 6000, ANIM.gift_epic || ANIM.gift);
+      else if (e.tier === 'big') toast(`🎉 @${e.username} mandó ${what}`, 'big', 4500, ANIM.gift_big || ANIM.gift);
       else toast(`🎁 @${e.username} · ${what}`, '', 2600, ANIM.gift);
     }
-    if (e.kind === 'goal') toast(`✨ META DESBLOQUEADA: ${e.reward} ✨`, 'epic', 7000);
-    if (e.kind === 'verdict') toast(e.winner ? `⚖ Ganó: ${e.winner}` : '⚖ ¡Empate! NYRA decide…', 'big', 6000);
+    if (e.kind === 'goal') toast(`✨ META DESBLOQUEADA: ${e.reward} ✨`, 'epic', 7000, ANIM.goal);
+    if (e.kind === 'verdict') toast(e.winner ? `⚖ Ganó: ${e.winner}` : '⚖ ¡Empate! NYRA decide…', 'big', 6000, ANIM.verdict);
+  }
+
+  // Prueba desde el panel: muestra la alerta con datos de ejemplo
+  function testAlert(kind) {
+    if (kind.startsWith('gift')) onEvent({ kind: 'gift', tier: kind === 'gift_epic' ? 'epic' : kind === 'gift_big' ? 'big' : '', username: 'prueba', gift: 'Rosa', count: 1 });
+    if (kind === 'follow') onAlert({ alertType: 'follow', username: 'prueba' });
+    if (kind === 'sub') onAlert({ alertType: 'subscribe', username: 'prueba' });
+    if (kind === 'goal') onEvent({ kind: 'goal', reward: 'Meta de prueba' });
+    if (kind === 'verdict') onEvent({ kind: 'verdict', winner: 'Lado A' });
   }
 
   // Seguidores y subs (los regalos llegan como live_event, con su nivel)
   function onAlert(a) {
     const u = `@${a.username}`;
     if (a.alertType === 'follow') toast(`💜 ${u} ahora te sigue`, '', 3000, ANIM.follow);
-    if (a.alertType === 'subscribe') toast(`⭐ ${u} se suscribió`, 'big', 4500, ANIM.follow);
-    if (a.alertType === 'resub') toast(`⭐ ${u} sigue suscripto${a.extra?.months ? ` · ${a.extra.months} meses` : ''}`, 'big', 4500, ANIM.follow);
-    if (a.alertType === 'subgift') toast(`🎀 ${u} le regaló una sub a @${a.extra?.recipient || 'alguien'}`, 'big', 4500, ANIM.follow);
+    if (a.alertType === 'subscribe') toast(`⭐ ${u} se suscribió`, 'big', 4500, ANIM.sub || ANIM.follow);
+    if (a.alertType === 'resub') toast(`⭐ ${u} sigue suscripto${a.extra?.months ? ` · ${a.extra.months} meses` : ''}`, 'big', 4500, ANIM.sub || ANIM.follow);
+    if (a.alertType === 'subgift') toast(`🎀 ${u} le regaló una sub a @${a.extra?.recipient || 'alguien'}`, 'big', 4500, ANIM.sub || ANIM.follow);
   }
 
   // Chat: últimos 6 mensajes; cada uno se desvanece a los 40s
@@ -207,6 +224,8 @@
       if (m.type === 'live_event') onEvent(m);
       if (m.type === 'stream_alert') onAlert(m);
       if (m.type === 'chat_line') addChat(m);
+      if (m.type === 'alerts_updated') loadAnim();
+      if (m.type === 'alert_test') testAlert(m.kind);
     };
     ws.onclose = () => setTimeout(connect, 2000); // reconectar si se reinicia el server
   }
