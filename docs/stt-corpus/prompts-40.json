@@ -1,0 +1,49 @@
+[
+  { "id": "nyra_01", "category": "llamada_nyra", "split": "tune", "hasNyra": true, "silence": false, "ref": "Che Nira qué opinás de esta jugada", "hint": "Tono normal, natural" },
+  { "id": "nyra_02", "category": "llamada_nyra", "split": "tune", "hasNyra": true, "silence": false, "ref": "Nyra escuchame una cosa", "hint": "Voz suave" },
+  { "id": "nyra_03", "category": "llamada_nyra", "split": "tune", "hasNyra": true, "silence": false, "ref": "Hola Nira cómo estás hoy", "hint": "Saludo rápido" },
+  { "id": "nyra_04", "category": "llamada_nyra", "split": "tune", "hasNyra": true, "silence": false, "ref": "Pará Nyra no digas eso jaja", "hint": "Con risa natural al final" },
+  { "id": "nyra_05", "category": "llamada_nyra", "split": "tune", "hasNyra": true, "silence": false, "ref": "Nira", "hint": "Solo el nombre, corto" },
+  { "id": "nyra_06", "category": "llamada_nyra", "split": "eval", "hasNyra": true, "silence": false, "ref": "Che Nyra tirá un consejo para la línea de bot", "hint": "Frase larga" },
+  { "id": "nyra_07", "category": "llamada_nyra", "split": "eval", "hasNyra": true, "silence": false, "ref": "Ey Nira vení a ver esto", "hint": "Entonación de llamada" },
+  { "id": "nyra_08", "category": "llamada_nyra", "split": "eval", "hasNyra": true, "silence": false, "ref": "Gracias Nira sos una genia", "hint": "Agradecimiento directo" },
+
+  { "id": "sim_01", "category": "similar_no_nyra", "split": "tune", "hasNyra": false, "silence": false, "ref": "Mirá cómo quedó esa jugada en mid", "hint": "Mirá claro, no es Nira" },
+  { "id": "sim_02", "category": "similar_no_nyra", "split": "tune", "hasNyra": false, "silence": false, "ref": "Mirá vos qué locura lo que pasó", "hint": "Mirá al inicio" },
+  { "id": "sim_03", "category": "similar_no_nyra", "split": "tune", "hasNyra": false, "silence": false, "ref": "La lira se escuchaba re fuerte en el juego", "hint": "Palabra lira" },
+  { "id": "sim_04", "category": "similar_no_nyra", "split": "tune", "hasNyra": false, "silence": false, "ref": "No me mira nadie cuando pusheo solo", "hint": "mira en el medio" },
+  { "id": "sim_05", "category": "similar_no_nyra", "split": "eval", "hasNyra": false, "silence": false, "ref": "Mirá", "hint": "Solo Mirá, corto" },
+  { "id": "sim_06", "category": "similar_no_nyra", "split": "eval", "hasNyra": false, "silence": false, "ref": "Ni en pedo tiro la partida ahora", "hint": "Sonido similar al inicio" },
+
+  { "id": "arg_01", "category": "charla_argentina", "split": "tune", "hasNyra": false, "silence": false, "ref": "Che boludo pará un segundo que ya llego", "hint": "Habla rápida argentina" },
+  { "id": "arg_02", "category": "charla_argentina", "split": "tune", "hasNyra": false, "silence": false, "ref": "Posta me decís que te salió eso de primera", "hint": "Entonación de sorpresa" },
+  { "id": "arg_03", "category": "charla_argentina", "split": "tune", "hasNyra": false, "silence": false, "ref": "Gracias por ver el video pibes", "hint": "Frase legítima similar a alucinación histórica" },
+  { "id": "arg_04", "category": "charla_argentina", "split": "tune", "hasNyra": false, "silence": false, "ref": "Esto es una charla de amigos tranqui", "hint": "Contiene charla de amigos dicha en serio" },
+  { "id": "arg_05", "category": "charla_argentina", "split": "eval", "hasNyra": false, "silence": false, "ref": "Suscribite al canal si te gustó el clip", "hint": "Frase legítima similar a alucinación" },
+  { "id": "arg_06", "category": "charla_argentina", "split": "eval", "hasNyra": false, "silence": false, "ref": "Che dale que nos están esperando en Discord", "hint": "Habla informal" },
+
+  { "id": "game_01", "category": "videojuegos", "split": "tune", "hasNyra": false, "silence": false, "ref": "En Wild Rift el jungla tiene que asegurar el dragón", "hint": "Términos Wild Rift" },
+  { "id": "game_02", "category": "videojuegos", "split": "tune", "hasNyra": false, "silence": false, "ref": "Tirale la ulti antes de que hagan el barón", "hint": "ulti y barón" },
+  { "id": "game_03", "category": "videojuegos", "split": "tune", "hasNyra": false, "silence": false, "ref": "Vamos a hacer un pique rápido por bot", "hint": "Jerga partida" },
+  { "id": "game_04", "category": "videojuegos", "split": "tune", "hasNyra": false, "silence": false, "ref": "Tiramos esta torre y nos vamos a base", "hint": "Frase media" },
+  { "id": "game_05", "category": "videojuegos", "split": "eval", "hasNyra": false, "silence": false, "ref": "El jungla enemigo está campeando nuestro dragón", "hint": "Evaluación" },
+
+  { "id": "tech_01", "category": "programacion_tech", "split": "tune", "hasNyra": false, "silence": false, "ref": "Tengo que refactorizar un componente de React en TypeScript", "hint": "React y TypeScript" },
+  { "id": "tech_02", "category": "programacion_tech", "split": "tune", "hasNyra": false, "silence": false, "ref": "La API devolvió cuatrocientos veintinueve por demasiadas peticiones", "hint": "API y números" },
+  { "id": "tech_03", "category": "programacion_tech", "split": "tune", "hasNyra": false, "silence": false, "ref": "Ya subí los cambios a la rama en GitHub", "hint": "GitHub" },
+  { "id": "tech_04", "category": "programacion_tech", "split": "eval", "hasNyra": false, "silence": false, "ref": "El endpoint de salud responde bien pero falta configurar el entorno", "hint": "Evaluación tech" },
+
+  { "id": "short_01", "category": "intervencion_corta", "split": "tune", "hasNyra": false, "silence": false, "ref": "Sí", "hint": "Muy corto" },
+  { "id": "short_02", "category": "intervencion_corta", "split": "tune", "hasNyra": false, "silence": false, "ref": "No", "hint": "Muy corto" },
+  { "id": "short_03", "category": "intervencion_corta", "split": "tune", "hasNyra": false, "silence": false, "ref": "Chau", "hint": "Despedida corta" },
+  { "id": "short_04", "category": "intervencion_corta", "split": "eval", "hasNyra": false, "silence": false, "ref": "Gracias", "hint": "Agradecimiento corto" },
+
+  { "id": "pause_01", "category": "pausas_naturales", "split": "tune", "hasNyra": false, "silence": false, "ref": "Estaba pensando... capaz conviene esperar un poco más", "hint": "Pausa de ~600ms en el medio" },
+  { "id": "pause_02", "category": "pausas_naturales", "split": "tune", "hasNyra": true, "silence": false, "ref": "Che Nira... qué hacemos con esto", "hint": "Pausa natural después del nombre" },
+  { "id": "pause_03", "category": "pausas_naturales", "split": "eval", "hasNyra": false, "silence": false, "ref": "Bueno... dale... probemos otra vez", "hint": "Dos pausas cortas" },
+
+  { "id": "sil_01", "category": "sin_habla", "split": "tune", "hasNyra": false, "silence": true, "ref": "", "hint": "Silencio puro de micrófono (2-3s)" },
+  { "id": "sil_02", "category": "sin_habla", "split": "tune", "hasNyra": false, "silence": true, "ref": "", "hint": "Solo ruido de teclado mecánico (2-3s)" },
+  { "id": "sil_03", "category": "sin_habla", "split": "tune", "hasNyra": false, "silence": true, "ref": "", "hint": "Ruido ambiental / silla / mouse (2-3s)" },
+  { "id": "sil_04", "category": "sin_habla", "split": "eval", "hasNyra": false, "silence": true, "ref": "", "hint": "Respiración o suspiro suave sin palabras (2-3s)" }
+]

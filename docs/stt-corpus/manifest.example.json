@@ -1,0 +1,22 @@
+[
+  {
+    "id": "nyra_01",
+    "file": "clips/nyra_01.wav",
+    "ref": "Che Nira qué opinás de esta jugada",
+    "split": "tune",
+    "category": "llamada_nyra",
+    "hasNyra": true,
+    "silence": false,
+    "speaker": "A"
+  },
+  {
+    "id": "sil_01",
+    "file": "clips/sil_01.wav",
+    "ref": "",
+    "split": "tune",
+    "category": "sin_habla",
+    "hasNyra": false,
+    "silence": true,
+    "speaker": "A"
+  }
+]

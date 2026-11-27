@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>NYRA — Grabador de Corpus STT (Localhost)</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #11131a; color: #e8ecf4; max-width: 820px; margin: 24px auto; padding: 0 16px; }
+    .card { background: #1a1d28; border: 1px solid #2b3042; border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    button { background: #262b3d; color: #e8ecf4; border: 1px solid #3c435e; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 600; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.rec { background: #9b1c1c; border-color: #ef4444; }
+    button.save { background: #166534; border-color: #22c55e; }
+    input[type="text"], select, textarea { background: #10121a; color: #e8ecf4; border: 1px solid #343a52; border-radius: 6px; padding: 8px; width: 100%; box-sizing: border-box; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 12px; background: #272d42; }
+    .rec-dot { display: none; color: #ff5555; font-weight: 700; }
+    .rec-dot.on { display: inline; }
+    #meterWrap { height: 12px; background: #0d0f16; border-radius: 6px; overflow: hidden; border: 1px solid #2b3042; margin-top: 8px; }
+    #meterBar { height: 100%; width: 0%; background: linear-gradient(90deg, #22c55e, #eab308, #ef4444); transition: width 60ms linear; }
+    .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(95px, 1fr)); gap: 6px; max-height: 170px; overflow-y: auto; }
+    .chip { font-size: 12px; padding: 5px 6px; border-radius: 6px; border: 1px solid #323850; background: #141722; cursor: pointer; text-align: center; }
+    .chip.done { border-color: #22c55e; color: #86efac; }
+    .chip.active { outline: 2px solid #38bdf8; }
+  </style>
+</head>
+<body>
+  <h2>🎙️ Grabador local de corpus STT (16 kHz PCM WAV)</h2>
+  <div class="card">
+    <div class="row">
+      <button id="btnMic">Autorizar micrófono</button>
+      <select id="micSelect" style="flex:1;min-width:200px"></select>
+      <label style="font-size:13px">Hablante anónimo: <input id="speakerInput" type="text" value="A" style="width:60px;display:inline-block"></label>
+    </div>
+    <div id="meterWrap"><div id="meterBar"></div></div>
+    <div style="font-size:12px;color:#9aa4b8;margin-top:6px">
+      Progreso: <b id="progressText">0/40</b> · <span id="recIndicator" class="rec-dot">● GRABANDO</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <div><span class="badge" id="catBadge">-</span> <span class="badge" id="splitBadge">-</span> <span class="badge" id="idBadge">-</span></div>
+      <div class="row">
+        <button id="btnPrev">◀ Anterior</button>
+        <button id="btnNext">Siguiente ▶</button>
+      </div>
+    </div>
+    <div id="promptHint" style="font-size:13px;color:#93c5fd;margin-bottom:6px"></div>
+    <label style="font-size:12px;color:#9aa4b8">Texto de referencia (podés corregirlo si pronunciaste algo distinto):</label>
+    <textarea id="refInput" rows="2" style="font-size:16px;margin:6px 0 10px"></textarea>
+    <div class="row">
+      <button id="btnStart" class="rec" disabled>● Grabar</button>
+      <button id="btnStop" disabled>■ Detener</button>
+      <button id="btnSave" class="save" disabled>✔ Confirmar y guardar</button>
+      <button id="btnDelete">🗑 Borrar guardado</button>
+    </div>
+    <audio id="player" controls style="width:100%;margin-top:10px"></audio>
+    <div id="statusMsg" style="font-size:13px;color:#a5b4fc;margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <div style="font-size:13px;font-weight:600;margin-bottom:6px">Importar audio autorizado de Discord (opcional, para el escenario actual)</div>
+    <div class="row">
+      <input type="file" id="importFile" accept="audio/*">
+      <label style="font-size:12px"><input type="checkbox" id="authCheck"> Confirmo que tengo autorización de los participantes</label>
+      <button id="btnImport">Importar como escenario actual</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px">Escenarios del corpus</div>
+    <div id="promptList" class="list"></div>
+  </div>
+
+  <script>
+    let prompts = [], manifest = [], idx = 0;
+    let stream = null, recorder = null, chunks = [], pendingBlob = null, audioCtx = null, analyser = null;
+
+    const el = id => document.getElementById(id);
+    const savedMap = () => new Map(manifest.map(m => [m.id, m]));
+
+    async function loadCorpus() {
+      const data = await fetch('/api/corpus').then(r => r.json());
+      prompts = data.prompts;
+      manifest = data.manifest;
+      const done = savedMap();
+      const firstPending = prompts.findIndex(p => !done.has(p.id));
+      if (firstPending >= 0) idx = firstPending;
+      render();
+    }
+
+    function render() {
+      const p = prompts[idx];
+      const done = savedMap();
+      el('progressText').textContent = `${done.size}/${prompts.length}`;
+      el('catBadge').textContent = p.category;
+      el('splitBadge').textContent = p.split;
+      el('idBadge').textContent = p.id;
+      el('promptHint').textContent = `Indicaciones: ${p.hint || ''}`;
+      const existing = done.get(p.id);
+      el('refInput').value = existing ? existing.ref : p.ref;
+      if (!pendingBlob) el('player').src = existing ? `/api/clip/${p.id}?t=${Date.now()}` : '';
+      el('btnSave').disabled = !pendingBlob;
+      el('promptList').innerHTML = '';
+      prompts.forEach((item, i) => {
+        const b = document.createElement('div');
+        b.className = 'chip' + (done.has(item.id) ? ' done' : '') + (i === idx ? ' active' : '');
+        b.textContent = item.id;
+        b.onclick = () => { pendingBlob = null; idx = i; render(); };
+        el('promptList').appendChild(b);
+      });
+    }
+
+    async function initMic(deviceId) {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+      const devices = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+      el('micSelect').innerHTML = devices.map(d => `<option value="${d.deviceId}">${d.label || 'Micrófono'}</option>`).join('');
+      if (deviceId) el('micSelect').value = deviceId;
+
+      if (!audioCtx) audioCtx = new AudioContext();
+      const src = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(analyser);
+      const buf = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        if (!analyser) return;
+        analyser.getByteTimeDomainData(buf);
+        let max = 0;
+        for (const v of buf) max = Math.max(max, Math.abs(v - 128));
+        el('meterBar').style.width = Math.min(100, Math.round((max / 64) * 100)) + '%';
+        requestAnimationFrame(tick);
+      };
+      tick();
+      el('btnStart').disabled = false;
+      el('statusMsg').textContent = 'Micrófono listo (sin reducción de ruido ni recorte automático).';
+    }
+
+    el('btnMic').onclick = () => initMic();
+    el('micSelect').onchange = e => initMic(e.target.value);
+
+    el('btnStart').onclick = () => {
+      chunks = []; pendingBlob = null;
+      recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        pendingBlob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        el('player').src = URL.createObjectURL(pendingBlob);
+        el('btnSave').disabled = false;
+        el('recIndicator').classList.remove('on');
+        el('btnStart').disabled = false;
+        el('btnStop').disabled = true;
+        el('statusMsg').textContent = 'Grabación lista para revisar y guardar.';
+      };
+      recorder.start();
+      el('recIndicator').classList.add('on');
+      el('btnStart').disabled = true;
+      el('btnStop').disabled = false;
+      el('statusMsg').textContent = 'Grabando...';
+    };
+
+    el('btnStop').onclick = () => { if (recorder && recorder.state === 'recording') recorder.stop(); };
+
+    async function blobToBase64(blob) {
+      const ab = await blob.arrayBuffer();
+      const bytes = new Uint8Array(ab);
+      let bin = '';
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return btoa(bin);
+    }
+
+    el('btnSave').onclick = async () => {
+      if (!pendingBlob) return;
+      const p = prompts[idx];
+      const audioBase64 = await blobToBase64(pendingBlob);
+      const res = await fetch('/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: p.id, ref: el('refInput').value, split: p.split, category: p.category,
+          hasNyra: p.hasNyra, silence: p.silence, speaker: el('speakerInput').value,
+          audioBase64, ext: 'webm', source: 'mic',
+        }),
+      }).then(r => r.json());
+      if (!res.ok) return (el('statusMsg').textContent = 'Error: ' + res.error);
+      manifest = res.manifest;
+      pendingBlob = null;
+      el('statusMsg').textContent = `Guardado ${p.id}.wav (16kHz PCM) y actualizado manifest.json`;
+      if (idx < prompts.length - 1) idx++;
+      render();
+    };
+
+    el('btnImport').onclick = async () => {
+      const file = el('importFile').files[0];
+      if (!file) return (el('statusMsg').textContent = 'Elegí un archivo de audio primero.');
+      if (!el('authCheck').checked) return (el('statusMsg').textContent = 'Marcá la confirmación de autorización de los participantes.');
+      const p = prompts[idx];
+      const audioBase64 = await blobToBase64(file);
+      const ext = (file.name.split('.').pop() || 'wav').toLowerCase();
+      const res = await fetch('/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: p.id, ref: el('refInput').value, split: p.split, category: p.category,
+          hasNyra: p.hasNyra, silence: p.silence, speaker: el('speakerInput').value,
+          audioBase64, ext, source: 'discord_import', authorizedImport: true,
+        }),
+      }).then(r => r.json());
+      if (!res.ok) return (el('statusMsg').textContent = 'Error: ' + res.error);
+      manifest = res.manifest;
+      el('statusMsg').textContent = `Importado ${p.id}.wav desde archivo autorizado.`;
+      render();
+    };
+
+    el('btnDelete').onclick = async () => {
+      const p = prompts[idx];
+      const res = await fetch(`/api/clip/${p.id}`, { method: 'DELETE' }).then(r => r.json());
+      if (res.ok) { manifest = res.manifest; pendingBlob = null; render(); }
+    };
+
+    el('btnPrev').onclick = () => { pendingBlob = null; if (idx > 0) idx--; render(); };
+    el('btnNext').onclick = () => { pendingBlob = null; if (idx < prompts.length - 1) idx++; render(); };
+
+    loadCorpus();
+  </script>
+</body>
+</html>
