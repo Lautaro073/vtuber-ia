@@ -22,7 +22,7 @@
   .bar { position: relative; height: 16px; margin-top: 7px; border-radius: 9px; background: rgba(255, 255, 255, .08); overflow: hidden; }
   .fill { height: 100%; width: 0; border-radius: 9px; transition: width .8s cubic-bezier(.2, .8, .2, 1); }
   #goalFill { background: linear-gradient(90deg, var(--violet), var(--pink)); box-shadow: 0 0 12px var(--pink); }
-  #moodFill { background: linear-gradient(90deg, #5b7cff, var(--violet), var(--pink)); }
+  #moodFill { background: linear-gradient(90deg, #5b7cff, var(--violet)); transition: width .8s cubic-bezier(.2, .8, .2, 1), background .6s ease; }
   .hidden { display: none !important; }
 
   /* Tribunal: tira y afloja entre A y B */
@@ -96,17 +96,16 @@
 </div>
 <div id="toast"><div class="anim hidden"><img alt=""></div><div class="txt"></div></div>
 
-<script>
+<script type="module">
+  import { getMoodState } from './emotion-config.js';
+
   const $ = id => document.getElementById(id);
   const fmt = n => Number(n || 0).toLocaleString('es-AR');
   const votos = n => `${n} voto${n === 1 ? "" : "s"}`;
 
   function moodLabel(m) {
-    if (m >= 85) return 'Enamorada 💗';
-    if (m >= 65) return 'Contenta';
-    if (m >= 35) return 'Neutral';
-    if (m >= 15) return 'Fría';
-    return 'Helada ❄';
+    const state = getMoodState(m);
+    return `${state.label} · ${state.value}%`;
   }
 
   function render(s) {
@@ -124,10 +123,13 @@
       $('goalNum').textContent = fmt(s.progress);
       $('goalFill').style.width = '100%';
     }
-    $('moodFill').style.width = s.mood + '%';
+    const moodState = getMoodState(s.mood);
+    $('moodFill').style.width = moodState.value + '%';
+    $('moodFill').style.background = moodState.barGradient;
     $('cmdMention').classList.toggle('hidden', !s.commands?.mention);
     $('cmdVision').classList.toggle('hidden', !s.commands?.vision);
-    $('moodText').textContent = moodLabel(s.mood);
+    $('moodText').textContent = moodLabel(moodState.value);
+    $('moodText').style.color = moodState.color;
 
     // Tribunal
     const t = s.tribunal;

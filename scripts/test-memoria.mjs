@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Orders, Evolution, pickGesture, hasSixSeven } from "../memoria.js";
+import { Orders, Evolution, pickGesture, pickCreatorGesture, hasSixSeven } from "../memoria.js";
 
 const dir = mkdtempSync(join(tmpdir(), "nyra-memoria-"));
 const clean = (s, n) => String(s).replace(/[\[\]]/g, "").slice(0, n);
@@ -65,6 +65,28 @@ try {
     "Nyra hace el six seven", "mandate un 6 7 porfa"]) assert.ok(hasSixSeven(ok), ok);
   for (const no of ["tengo 67 de ping", "donó 67 bits", "167", "6700", "voy 6/7/2", "me saqué 6,7",
     "mide 1.67", "son 67.5", "no hagas el six seven", "deja de hacer el 6 7", "hola nyra"]) assert.ok(!hasSixSeven(no), no);
+  for (const [raw, g] of [["andate enojada", "irse_enojada"], ["salir de la pantalla", "irse_enojada"], ["darse vuelta", "irse_enojada"],
+    ["cruzarse de brazos", "cruzar_brazos"], ["cruzar los brazos con fastidio", "cruzar_brazos"], ["sonreír de lado cruzando brazos", "cruzar_brazos"],
+    ["apoyar mentón en mano", "pensativa"], ["apoyar la barbilla", "pensativa"], ["pensativa", "pensativa"]]) assert.equal(pickGesture(raw), g, `pickGesture:${raw}`);
+  for (const [ok, g] of [
+    ["andate enojada", "irse_enojada"],
+    ["andate de la pantalla", "irse_enojada"],
+    ["salí de la pantalla", "irse_enojada"],
+    ["vete de la pantalla", "irse_enojada"],
+    ["hacete la enojada", "irse_enojada"],
+    ["te podés ir enojada", "irse_enojada"],
+    ["cruzate de brazos", "cruzar_brazos"],
+    ["cruzá los brazos", "cruzar_brazos"],
+    ["ponete pensativa", "pensativa"],
+    ["apoyá la mano en el mentón", "pensativa"],
+    ["pensativa", "pensativa"],
+    ["festejá", "festejar"],
+    ["tomate un té", "tomar_te"],
+    ["saludá al chat", "saludar"],
+    ["despedite del stream", "despedir"],
+    ["regala un six seven al live", "six_seven"],
+  ]) assert.equal(pickCreatorGesture(ok), g, `creator:${ok}`);
+  for (const no of ["no te vayas", "no te vayas enojada", "no te podés ir enojada", "no quiero que te vayas", "¿estás enojada?", "¿por qué te enojaste?", "no te cruces de brazos", "por qué estás pensativa?", "no saludes", "me saluda", "estás tomando té?", "hola nyra"]) assert.equal(pickCreatorGesture(no), null, `creator-no:${no}`);
   console.log("memoria: ok");
 } finally {
   rmSync(dir, { recursive: true, force: true });

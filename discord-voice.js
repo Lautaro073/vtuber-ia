@@ -99,6 +99,7 @@ export class Whisper {
   constructor(onExit = () => { }) {
     this.pending = new Map();
     this.id = 0;
+    this.info = { model: null, device: null, computeType: null, cudaError: null, where: null };
     // sin las claves de NYRA: el proceso de Python no las necesita
     const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/TOKEN|SECRET|PASSWORD|API_KEY/i.test(k)));
     this.proc = spawn(join(ROOT, ".whisper", "venv", "Scripts", "python.exe"), [join(ROOT, "scripts", "whisper-worker.py")],
@@ -114,9 +115,21 @@ export class Whisper {
       this.proc.on("exit", code => fail(new Error(`Whisper se cerró (código ${code})`)));
       createInterface({ input: this.proc.stdout }).on("line", line => {
         let m; try { m = JSON.parse(line); } catch { return; }
-        if (m.ready) return resolve(m.where);
+        if (m.ready) {
+          this.info = {
+            where: m.where || null,
+            model: m.model || null,
+            device: m.device || null,
+            computeType: m.compute_type || null,
+            cudaError: m.cuda_error || null,
+          };
+          return resolve(m.where);
+        }
         const p = this.pending.get(m.id);
         this.pending.delete(m.id);
+        if (m.model) this.info.model = m.model;
+        if (m.device) this.info.device = m.device;
+        if (m.compute_type) this.info.computeType = m.compute_type;
         if (m.error) p?.reject(new Error(m.error)); else p?.resolve(m);
       });
     });
@@ -124,11 +137,14 @@ export class Whisper {
     this.proc.stdin.on("error", () => { }); // si murió, lo informa el evento exit
   }
 
-  transcribe(pcm) {
+  transcribe(pcm, opts = {}) {
     if (this.pending.size >= MAX_WAITING) return Promise.resolve({ text: "" });
     return new Promise((resolve, reject) => {
       this.pending.set(++this.id, { resolve, reject });
-      this.proc.stdin.write(JSON.stringify({ id: this.id, pcm: pcm.toString("base64") }) + "\n");
+      const payload = { id: this.id, pcm: pcm.toString("base64") };
+      if (opts.noPrompt) payload.no_prompt = true;
+      if (opts.vadThreshold !== undefined) payload.vad_threshold = opts.vadThreshold;
+      this.proc.stdin.write(JSON.stringify(payload) + "\n");
     });
   }
 
@@ -137,10 +153,18 @@ export class Whisper {
 
 export class DiscordVoice {
   // synth(texto) → archivo o URL de audio · onSpeech({ id, name, streamer, text, raw, ms, secs }) · onState({ state, ... })
-  constructor({ synth, onSpeech, onState = () => { }, listenOnly = false }) {
-    Object.assign(this, { synth, onSpeech, onState, listenOnly }); // listenOnly: entra muda y sin saludar, solo escucha
+  constructor({ synth, onSpeech, onState = () => { }, listenOnly = false, whisperRemote = null }) {
+    Object.assign(this, { synth, onSpeech, onState, listenOnly, whisperRemote }); // listenOnly: entra muda y sin saludar, solo escucha
     this.state = { state: "off" };
     this.run = 0; // invalida un arranque en curso si tocan SALIR
+    this.localMetrics = {
+      lastTranscript: "",
+      lastMs: 0,
+      lastSecs: 0,
+      discardedCount: 0,
+      lastDiscardReason: null,
+      lastError: null,
+    };
   }
 
   get on() { return this.state.state === "on"; }
@@ -211,13 +235,16 @@ export class DiscordVoice {
       // Primero saluda, recién después escucha
       if (!this.listenOnly && !await this._notice(GREETING)) console.warn("🎧 No pude saludar al entrar: sigo escuchando igual");
       check();
+      this.whisperRemote?.resetCancellation();
       const listen = listenTo(conn.receiver, async (uid, pcm) => {
         if (run !== this.run || uid === client.user.id) return;
+        const capturedAt = Date.now();
         const member = await guild.members.fetch(uid);
-        if (member.user.bot) return;
-        const { text, raw, ms } = await this.whisper.transcribe(pcm);
-        // también lo que se descartó (raw): es lo que sirve para pulir los filtros
-        if (run === this.run && (text || raw)) await this.onSpeech({ id: uid, name: member.displayName, streamer: uid === this.streamerId, text, raw, ms, secs: pcm.length / 32000 });
+        if (member.user.bot || run !== this.run) return;
+        const secs = pcm.length / 32000;
+        const { text, raw, ms } = await this._transcribePhrase(pcm, { uid, capturedAt, secs, run });
+        if (run !== this.run) return; // descartar resultado tardío si ya se detuvo o reinició
+        if (text || raw) await this.onSpeech({ id: uid, name: member.displayName, streamer: uid === this.streamerId, text, raw, ms, secs });
       });
       keepTiming(conn.receiver);
       conn.receiver.speaking.on("start", listen);
@@ -270,10 +297,55 @@ export class DiscordVoice {
     });
   }
 
+  async _transcribePhrase(pcm, { uid, capturedAt, secs, run }) {
+    const useRemote = this.whisperRemote && this.whisperRemote.config.engine === "remote";
+    if (useRemote) {
+      try {
+        const res = await this.whisperRemote.transcribePcm(pcm, { speakerId: uid, capturedAt });
+        return { text: res.text, raw: null, ms: res.ms };
+      } catch (err) {
+        if (err.cancelled || run !== this.run) return { text: "", raw: null, ms: 0 };
+        if (err.stale || err.queueFull) return { text: "", raw: null, ms: 0 };
+        const ageMs = Date.now() - capturedAt;
+        if (!this.whisperRemote.config.fallbackLocal || ageMs > this.whisperRemote.config.maxAgeMs) {
+          return { text: "", raw: null, ms: 0 };
+        }
+        this.whisperRemote.recordFallback();
+        console.warn(`🎧 STT remoto falló (${err.message}) → fallback a Whisper local`);
+      }
+    }
+    const localRes = await this.whisper.transcribe(pcm);
+    this.localMetrics.lastTranscript = localRes.text || "";
+    this.localMetrics.lastMs = localRes.ms || 0;
+    this.localMetrics.lastSecs = secs;
+    if (!localRes.text && localRes.raw) {
+      this.localMetrics.discardedCount += 1;
+      this.localMetrics.lastDiscardReason = "local_filter";
+    }
+    return localRes;
+  }
+
+  getSttStatus() {
+    const remoteCfg = this.whisperRemote?.getPublicConfig() || null;
+    const selectedEngine = remoteCfg?.engine || "local";
+    const localInfo = this.whisper?.info || {};
+    return {
+      selectedEngine,
+      effectiveEngine: selectedEngine === "remote" && remoteCfg?.metrics?.status === "offline" && remoteCfg?.fallbackLocal ? "local" : selectedEngine,
+      local: {
+        ready: Boolean(this.whisper),
+        ...localInfo,
+        ...this.localMetrics,
+      },
+      remote: remoteCfg,
+    };
+  }
+
   stopAudio() { this.player?.stop(true); }
 
   stop(error) {
     this.run++;
+    this.whisperRemote?.abortAll();
     this.player?.stop(true);
     try { this.conn?.destroy(); } catch { } // ya destruida
     this.client?.destroy().catch(() => { });

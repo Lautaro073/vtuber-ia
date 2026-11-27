@@ -86,3 +86,9 @@ nyra_wishes.json
 # cuarentena reversible y archivos temporales privados
 quarantine.json
 tmp/
+
+# referencias y perfiles privados de Fish Audio TTS y STT
+fish_voices.json
+tts_settings.json
+stt_settings.json
+voices/

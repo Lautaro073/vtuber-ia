@@ -91,7 +91,9 @@
   </div>
 </div>
 
-<script>
+<script type="module">
+  import { getMoodState, resolveSpeakingEmotion } from './emotion-config.js';
+
   const overlay    = document.getElementById('audio-overlay');
   const avatar     = document.getElementById('avatar');
   const wave       = document.getElementById('wave');
@@ -232,16 +234,9 @@
   }
   function setFace(changes) { Object.assign(face, changes); render(); }
 
-  // ── Emoción según el tono de la respuesta (heurística simple) ──
-  function detectEmotion(text) {
-    const t = text.toLowerCase();
-    // (^|[^a-zñ]) en vez de \b porque \b no entiende acentos ni ñ
-    const has = words => new RegExp(`(^|[^a-záéíóúñ])(${words})`).test(t);
-    if (has('idiot|estúpid|estupid|cállate|callate|kuka|zurd|peronist|asco|odio|ridícul|ridicul')) return 'angry';
-    if (has('¿qué\\?|en serio|no puede ser|wow|increíble|increible') || /!\?|\?!/.test(t)) return 'surprised';
-    if (has('triste|lástima|lastima|qué pena|extraño|aburrid')) return 'sad';
-    if (has('fufu|ara~|ara\\b|jaja|gracias|interesante|me gusta|lindo|bien hecho|genial')) return 'happy';
-    return 'neutral';
+  // ── Emoción según el tono de la respuesta (fuente centralizada en emotion-config.js) ──
+  function detectEmotion(text, explicitEmotion = null, turnMood = mood) {
+    return resolveSpeakingEmotion({ explicitEmotion, text, mood: turnMood });
   }
 
   // ── Parpadeo: open → half → closed → half → open (en todas las emociones; en fallback solo neutral) ──
@@ -308,19 +303,20 @@
   }
   // ── Avatar 3D: el módulo lee la misma cara y estado que el 2D; si no carga, queda el 2D ──
   const FORCE_3D = new URLSearchParams(location.search).has('3d');
-  let loading3d = null, nyra3d = null, pendingGesture = null;
+  let loading3d = null, nyra3d = null, pendingGesture = null, obs3dActive = FORCE_3D, failed3d = false;
+  const notify3d = () => { if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'obs_3d', on: obs3dActive })); };
   function set3d(on) {
     document.body.classList.toggle('mode3d', on);
     if (!on || loading3d) return;
     loading3d = import('./avatar3d/vrm.js')
       .then(m => m.start(document.getElementById('stage3d'), 'avatar3d/NYRA.vrm', face, () => avatar.className))
       .then(ctl => { nyra3d = ctl; })
-      .catch(err => { console.warn('El avatar 3D no cargó, sigo en 2D:', err); document.body.classList.remove('mode3d'); loading3d = null; });
+      .catch(err => { console.warn('El avatar 3D no cargó, sigo en 2D:', err); document.body.classList.remove('mode3d'); loading3d = null; failed3d = true; if (FORCE_3D) { obs3dActive = false; notify3d(); } });
   }
   if (FORCE_3D) set3d(true);
 
   let mood = 50;
-  const idleEmotion = () => mood >= 80 ? 'happy' : mood <= 20 ? 'sad' : 'neutral';
+  const idleEmotion = () => getMoodState(mood).baseEmotion;
 
   // ── WebSocket ──
   const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -350,8 +346,9 @@
       lastText = m.fullText || '';
       pendingGesture = m.gesture || null; // arranca con el audio
       setState('speaking');
-      // El server manda la emoción en regalos/metas; si no, se deduce del texto
-      setFace({ emo: m.emotion || detectEmotion(lastText), mouth: 'closed' });
+      // Prioridad: 1) emoción situacional explícita, 2) emoción contextual del texto, 3) humor base del turno
+      const turnMood = Number.isFinite(Number(m.mood)) ? m.mood : mood;
+      setFace({ emo: detectEmotion(lastText, m.emotion, turnMood), mouth: 'closed' });
       // Si no llega audio (TTS caído), volver a idle solo
       clearTimeout(idleTimer);
       idleTimer = setTimeout(() => { if (!_audioPlaying) setState('idle'); }, 8000);
@@ -362,7 +359,8 @@
 
   // Reconectar si se reinicia el server (si no, la fuente de OBS/TikTok Studio queda "muda" hasta recargarla)
   function connectWS() {
-    ws = new WebSocket(`${wsProto}//${location.host}`);
+    ws = new WebSocket(`${wsProto}//${location.host}${obs3dActive ? '?3d=1' : ''}`);
+    ws.onopen = () => { if (FORCE_3D) notify3d(); };
     ws.onmessage = onWsMessage;
     ws.onclose = () => setTimeout(connectWS, 2000);
   }
@@ -395,7 +393,7 @@
   const _isOBS = typeof window.obsstudio !== 'undefined' || _MUTE || _qs.has('autoplay') || _qs.has('3d');
 
   function _getCtx() {
-    if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!_actx) _actx = window._actx = new (window.AudioContext || window.webkitAudioContext)();
     return _actx;
   }
 
@@ -413,7 +411,7 @@
     // OBS dispara estos eventos al activar/desactivar la fuente o cambiar escena
     window.addEventListener('obsSceneActiveChanged',  (e) => { if (e.detail?.active)  _unlock(); });
     window.addEventListener('obsSourceActiveChanged', (e) => { if (e.detail?.active)  _unlock(); });
-    window.addEventListener('obsSourceVisibleChanged',(e) => { if (e.detail?.visible) _unlock(); });
+    window.addEventListener('obsSourceVisibleChanged',(e) => { if (e.detail?.visible) _unlock(); if (FORCE_3D && typeof e.detail?.visible === 'boolean') { obs3dActive = e.detail.visible && !failed3d; notify3d(); } });
   } else {
     // ── Browser normal: requiere interacción del usuario ──
     document.addEventListener('click',   _unlock, { once: false });

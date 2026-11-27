@@ -587,6 +587,75 @@
 
     <!-- TTS -->
     <div class="panel-section">
+      <div class="panel-title">// MOTOR DE VOZ (TTS)</div>
+      <select class="model-select" id="ttsEngineSelect" onchange="changeTtsEngine()" style="margin-bottom:6px">
+        <option value="edge">Edge TTS (es-AR-ElenaNeural)</option>
+        <option value="piper">Piper Local (es_AR-daniela-high)</option>
+        <option value="murf">Murf.ai (API)</option>
+        <option value="fish">Fish Audio S2 Pro (Experimental)</option>
+        <option value="system">Sistema (Windows)</option>
+      </select>
+      <div id="ttsEngineInfo" style="font-size:10px;color:var(--dim);margin-bottom:8px"></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);margin-bottom:6px;cursor:pointer">
+        <input type="checkbox" id="shareTtsEngineCheck" checked onchange="changeTtsEngine()">
+        Compartir motor TTS con Discord
+      </label>
+      <div id="discordTtsWrap" style="display:none;margin-bottom:8px">
+        <div style="font-size:10px;color:var(--dim);margin-bottom:4px">Motor TTS Discord:</div>
+        <select class="model-select" id="discordTtsSelect" onchange="changeTtsEngine()">
+          <option value="edge">Edge TTS</option>
+          <option value="piper">Piper Local</option>
+          <option value="murf">Murf.ai</option>
+          <option value="fish">Fish Audio S2 Pro</option>
+          <option value="system">Sistema</option>
+        </select>
+      </div>
+      <details id="fishTtsPanel" style="margin-bottom:10px;border:1px solid var(--border);border-radius:8px;padding:8px;background:rgba(10,6,24,.35)">
+        <summary style="cursor:pointer;font-size:11px;color:var(--cyan);font-weight:700">🐟 Fish Audio S2 Pro · <span id="fishStatusBadge" style="color:var(--dim)">Sin verificar</span></summary>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:11px">
+          <div style="display:flex;gap:4px">
+            <input type="url" id="fishUrlInput" placeholder="https://....ngrok-free.dev" style="flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
+            <button class="btn btn-sm" onclick="checkFishHealth()" style="background:var(--panel);color:var(--cyan);border:1px solid var(--border)">Salud</button>
+          </div>
+          <div style="display:flex;gap:4px;align-items:center">
+            <select id="fishProfileSelect" onchange="selectFishProfile()" class="model-select" style="flex:1;margin:0">
+              <option value="">(Sin perfil activo / usar .env)</option>
+            </select>
+            <button class="btn btn-sm btn-pink" onclick="deleteFishProfile()" title="Eliminar perfil">✕</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+            <input type="text" id="fishProfName" placeholder="Nombre perfil" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
+            <select id="fishProfMode" class="model-select" style="margin:0">
+              <option value="reference_id">reference_id (servidor)</option>
+              <option value="local_file">Archivo en voices/fish/</option>
+            </select>
+          </div>
+          <input type="text" id="fishRefId" placeholder="reference_id (ej: nyra-v1)" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
+          <input type="text" id="fishRefPath" placeholder="Archivo local en voices/fish/ (ej: voz-nyra.wav)" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
+          <textarea id="fishRefText" rows="2" placeholder="Transcripción exacta del audio de referencia..." style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px;resize:vertical"></textarea>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">
+            <label style="color:var(--dim)">Temp<input type="number" step="0.05" min="0.1" max="2" id="fishTemp" value="0.7" style="width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px"></label>
+            <label style="color:var(--dim)">Top P<input type="number" step="0.05" min="0.1" max="1" id="fishTopP" value="0.7" style="width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px"></label>
+            <label style="color:var(--dim)">Chunk<input type="number" step="10" min="50" max="500" id="fishChunk" value="200" style="width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px"></label>
+            <label style="color:var(--dim)">Tokens<input type="number" step="64" min="64" max="4096" id="fishMaxTokens" value="1024" style="width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px"></label>
+            <label style="color:var(--dim)">Seed<input type="number" step="1" min="0" id="fishSeed" value="42" style="width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px"></label>
+            <label style="color:var(--dim)">Timeout(ms)<input type="number" step="1000" min="5000" max="180000" id="fishTimeout" value="60000" style="width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px"></label>
+          </div>
+          <div style="display:flex;gap:10px;color:var(--dim)">
+            <label style="cursor:pointer"><input type="checkbox" id="fishExpressive" checked> Expresividad</label>
+            <label style="cursor:pointer"><input type="checkbox" id="fishFallback" checked> Fallback Edge</label>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-sm" onclick="saveFishConfig()" style="flex:1;background:var(--panel);color:var(--lime);border:1px solid var(--border)">Guardar config</button>
+            <button class="btn btn-sm" onclick="saveFishProfile()" style="flex:1;background:var(--panel);color:var(--violet);border:1px solid var(--border)">Guardar perfil</button>
+          </div>
+          <div style="display:flex;gap:4px">
+            <input type="text" id="fishTestText" value="Buenas noches chat, esto es una prueba de Fish Audio." placeholder="Texto de prueba..." style="flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
+            <button class="btn btn-sm" onclick="testFishVoice()" style="background:var(--panel);color:var(--cyan);border:1px solid var(--border)">▶ Probar</button>
+          </div>
+          <div id="fishMetricsInfo" style="font-size:10px;color:var(--dim);line-height:1.35">Latencia: - · Duración: - · RTF: -</div>
+        </div>
+      </details>
       <div class="panel-title">// CONTROLES</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-sm btn-pink" onclick="ttsStop()">■ DETENER VOZ</button>
@@ -600,6 +669,52 @@
         Tamaño recomendado: <strong style="color:var(--cyan)">400×480px</strong><br>
         Fondo ya es transparente — <strong style="color:var(--cyan)">NO activar Chroma Key</strong> en OBS
       </div>
+    </div>
+
+    <!-- STT -->
+    <div class="panel-section">
+      <div class="panel-title">// RECONOCIMIENTO DE VOZ (STT)</div>
+      <select class="model-select" id="sttEngineSelect" onchange="saveSttConfig()" style="margin-bottom:6px">
+        <option value="local">Whisper Local (predeterminado)</option>
+        <option value="remote">Faster Whisper Remoto (Experimental)</option>
+      </select>
+      <div id="sttStatusLine" style="font-size:10px;color:var(--dim);margin-bottom:8px;line-height:1.4">
+        Motor efectivo: - · Modelo: - · Dispositivo: - · Estado: <span id="sttConnBadge">unknown</span>
+      </div>
+      <details id="sttConfigPanel" style="margin-bottom:4px;border:1px solid var(--border);border-radius:8px;padding:8px;background:rgba(10,6,24,.35)">
+        <summary style="cursor:pointer;font-size:11px;color:var(--cyan);font-weight:700">🎙️ Configurar STT Remoto / Diagnóstico</summary>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;font-size:11px">
+          <div style="display:flex;gap:4px">
+            <input type="url" id="sttUrlInput" placeholder="https://....ngrok-free.dev" style="flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
+            <button class="btn btn-sm" onclick="checkSttHealth()" style="background:var(--panel);color:var(--cyan);border:1px solid var(--border)">Salud</button>
+          </div>
+          <select id="sttModelSelect" class="model-select" style="margin:0">
+            <option value="large-v3-turbo">large-v3-turbo</option>
+            <option value="large-v3">large-v3</option>
+            <option value="medium">medium</option>
+            <option value="small">small</option>
+          </select>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px">
+            <label style="color:var(--dim)">Idioma<input type="text" id="sttLang" value="es" style="width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px"></label>
+            <label style="color:var(--dim)">Beam<input type="number" min="1" max="5" id="sttBeam" value="3" style="width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px"></label>
+            <label style="color:var(--dim)">Temp<input type="number" step="0.1" min="0" max="1" id="sttTemp" value="0.0" style="width:100%;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px"></label>
+          </div>
+          <input type="text" id="sttHotwords" placeholder="Hotwords (ej: Nyra, Discord, TikTok, Wild Rift)" style="background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
+          <div style="display:flex;gap:10px;color:var(--dim)">
+            <label style="cursor:pointer"><input type="checkbox" id="sttVad" checked> VAD</label>
+            <label style="cursor:pointer"><input type="checkbox" id="sttFallback" checked> Fallback local</label>
+          </div>
+          <button class="btn btn-sm" onclick="saveSttConfig()" style="background:var(--panel);color:var(--lime);border:1px solid var(--border)">Guardar STT</button>
+          <div style="display:flex;gap:4px">
+            <input type="text" id="sttTestFile" placeholder="Archivo en voices/stt/ (ej: prueba.wav)" style="flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
+            <button class="btn btn-sm" onclick="testSttAudio()" style="background:var(--panel);color:var(--cyan);border:1px solid var(--border)">▶ Probar</button>
+          </div>
+          <div id="sttMetricsInfo" style="font-size:10px;color:var(--dim);line-height:1.4">
+            Latencia: - · Cola: - · Duración: - · RTF: - · Descartes: 0 · Fallbacks: 0
+          </div>
+          <div id="sttLastText" style="font-size:10px;color:var(--text);word-break:break-word"></div>
+        </div>
+      </details>
     </div>
 
     <!-- Filtros -->
@@ -815,6 +930,19 @@
         new Audio(data.url).play().catch(e => console.warn('TTS panel:', e));
       }
 
+      if (data.type === 'tts_engine') {
+        const sel = document.getElementById('ttsEngineSelect');
+        if (sel && data.engine) sel.value = data.engine;
+        const shareEl = document.getElementById('shareTtsEngineCheck');
+        if (shareEl && typeof data.shareTtsEngine === 'boolean') shareEl.checked = data.shareTtsEngine;
+        const discSel = document.getElementById('discordTtsSelect');
+        if (discSel && data.discordEngine) discSel.value = data.discordEngine;
+        const discWrap = document.getElementById('discordTtsWrap');
+        if (discWrap && shareEl) discWrap.style.display = shareEl.checked ? 'none' : 'block';
+        const info = document.getElementById('ttsEngineInfo');
+        if (info) info.textContent = `Live: ${data.engine}${shareEl && !shareEl.checked ? ` · Discord: ${data.discordEngine}` : ''}`;
+      }
+
       if (data.type === 'stream_status') {
         updateStreamStatus(data);
       }
@@ -993,7 +1121,271 @@
   }
 
   // ─ TTS ─
+  async function loadTtsEngine() {
+    try {
+      const data = await fetch('/api/tts/engine').then(r => r.json());
+      const sel = document.getElementById('ttsEngineSelect');
+      const shareEl = document.getElementById('shareTtsEngineCheck');
+      const discSel = document.getElementById('discordTtsSelect');
+      const discWrap = document.getElementById('discordTtsWrap');
+      if (sel && data.engine) sel.value = data.engine;
+      if (shareEl) shareEl.checked = data.shareTtsEngine !== false;
+      if (discSel && data.discordEngine) discSel.value = data.discordEngine;
+      if (discWrap && shareEl) discWrap.style.display = shareEl.checked ? 'none' : 'block';
+      const murfOpt = sel?.querySelector('option[value="murf"]');
+      if (murfOpt && !data.murfConfigured) murfOpt.textContent = 'Murf.ai (sin API key -> usa Edge)';
+      document.getElementById('ttsEngineInfo').textContent =
+        `Live: ${data.engine}${shareEl && !shareEl.checked ? ` · Discord: ${data.discordEngine}` : ''}`;
+    } catch { }
+    loadFishConfig();
+    loadSttConfig();
+  }
+
+  async function changeTtsEngine() {
+    const sel = document.getElementById('ttsEngineSelect');
+    const shareEl = document.getElementById('shareTtsEngineCheck');
+    const discSel = document.getElementById('discordTtsSelect');
+    const discWrap = document.getElementById('discordTtsWrap');
+    const engine = sel.value;
+    const shareTtsEngine = shareEl ? shareEl.checked : true;
+    const discordEngine = discSel ? discSel.value : engine;
+    if (discWrap) discWrap.style.display = shareTtsEngine ? 'none' : 'block';
+    try {
+      const res = await fetch('/api/tts/engine', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engine, shareTtsEngine, discordEngine }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Error cambiando TTS');
+      document.getElementById('ttsEngineInfo').textContent =
+        `Live: ${data.engine}${!data.shareTtsEngine ? ` · Discord: ${data.discordEngine}` : ''}`;
+      toast(`Voz cambiada a ${sel.options[sel.selectedIndex].text}`);
+    } catch (e) {
+      toast('Error: ' + e.message);
+    }
+  }
+
+  let _fishProfiles = [];
+  function renderFishConfig(cfg) {
+    if (!cfg) return;
+    document.getElementById('fishUrlInput').value = cfg.url || '';
+    document.getElementById('fishRefId').value = cfg.referenceId || '';
+    document.getElementById('fishRefPath').value = cfg.referencePath || '';
+    document.getElementById('fishRefText').value = cfg.referenceText || '';
+    document.getElementById('fishTemp').value = cfg.temperature ?? 0.7;
+    document.getElementById('fishTopP').value = cfg.topP ?? 0.7;
+    document.getElementById('fishChunk').value = cfg.chunkLength ?? 200;
+    document.getElementById('fishMaxTokens').value = cfg.maxNewTokens ?? 1024;
+    document.getElementById('fishSeed').value = cfg.seed ?? 42;
+    document.getElementById('fishTimeout').value = cfg.timeoutMs ?? 60000;
+    document.getElementById('fishExpressive').checked = cfg.expressive !== false;
+    document.getElementById('fishFallback').checked = cfg.fallback !== false;
+    _fishProfiles = cfg.profiles || [];
+    const psel = document.getElementById('fishProfileSelect');
+    if (psel) {
+      psel.innerHTML = '<option value="">(Sin perfil activo / usar campos)</option>' +
+        _fishProfiles.map(p => `<option value="${p.id}">${p.name} (${p.mode})</option>`).join('');
+      psel.value = cfg.activeProfile || '';
+    }
+    updateFishMetrics(cfg.metrics);
+  }
+
+  function updateFishMetrics(m) {
+    if (!m) return;
+    const badge = document.getElementById('fishStatusBadge');
+    if (badge) {
+      badge.textContent = m.status || 'unknown';
+      badge.style.color = m.status === 'online' ? 'var(--lime)' : (m.status === 'offline' || m.status === 'unauthorized') ? 'var(--pink)' : 'var(--dim)';
+    }
+    const info = document.getElementById('fishMetricsInfo');
+    if (info) {
+      info.textContent = `Latencia: ${m.httpTotalMs || 0}ms · Duración: ${m.audioDurationSec || 0}s · RTF: ${m.rtf || 0}${m.lastError ? ` · Error: ${m.lastError}` : ''}`;
+    }
+  }
+
+  async function loadFishConfig() {
+    try {
+      const data = await fetch('/api/tts/fish/config').then(r => r.json());
+      if (data.ok) renderFishConfig(data.config);
+    } catch { }
+  }
+
+  async function saveFishConfig() {
+    try {
+      const body = {
+        url: document.getElementById('fishUrlInput').value,
+        referenceId: document.getElementById('fishRefId').value,
+        referencePath: document.getElementById('fishRefPath').value,
+        referenceText: document.getElementById('fishRefText').value,
+        temperature: Number(document.getElementById('fishTemp').value),
+        topP: Number(document.getElementById('fishTopP').value),
+        chunkLength: Number(document.getElementById('fishChunk').value),
+        maxNewTokens: Number(document.getElementById('fishMaxTokens').value),
+        seed: Number(document.getElementById('fishSeed').value),
+        timeoutMs: Number(document.getElementById('fishTimeout').value),
+        expressive: document.getElementById('fishExpressive').checked,
+        fallback: document.getElementById('fishFallback').checked,
+        activeProfile: document.getElementById('fishProfileSelect').value,
+      };
+      const data = await fetch('/api/tts/fish/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      }).then(r => r.json());
+      if (!data.ok) throw new Error(data.error || 'Error guardando Fish Audio');
+      renderFishConfig(data.config);
+      toast('Configuración de Fish Audio guardada');
+    } catch (e) { toast('Error: ' + e.message); }
+  }
+
+  async function checkFishHealth() {
+    if (document.getElementById('fishUrlInput').value.trim()) await saveFishConfig();
+    try {
+      const data = await fetch('/api/tts/fish/health', { method: 'POST' }).then(r => r.json());
+      updateFishMetrics(data.metrics);
+      if (!data.ok) throw new Error(data.error || 'Salud fallida');
+      toast(`Fish Audio Online (${data.health.headersMs}ms)`);
+    } catch (e) { toast('Error: ' + e.message); }
+  }
+
+  function selectFishProfile() {
+    const id = document.getElementById('fishProfileSelect').value;
+    const p = _fishProfiles.find(x => x.id === id);
+    if (p) {
+      document.getElementById('fishProfName').value = p.name || '';
+      document.getElementById('fishProfMode').value = p.mode || 'local_file';
+      document.getElementById('fishRefId').value = p.referenceId || '';
+      document.getElementById('fishRefPath').value = p.filePath || '';
+      document.getElementById('fishRefText').value = p.transcript || '';
+    }
+    saveFishConfig();
+  }
+
+  async function saveFishProfile() {
+    try {
+      const body = {
+        name: document.getElementById('fishProfName').value,
+        mode: document.getElementById('fishProfMode').value,
+        referenceId: document.getElementById('fishRefId').value,
+        filePath: document.getElementById('fishRefPath').value,
+        transcript: document.getElementById('fishRefText').value,
+      };
+      const data = await fetch('/api/tts/fish/voices', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      }).then(r => r.json());
+      if (!data.ok) throw new Error(data.error || 'Error guardando perfil');
+      await fetch('/api/tts/fish/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ activeProfile: data.profile.id }),
+      });
+      await loadFishConfig();
+      toast(`Perfil "${data.profile.name}" guardado`);
+    } catch (e) { toast('Error: ' + e.message); }
+  }
+
+  async function deleteFishProfile() {
+    const id = document.getElementById('fishProfileSelect').value;
+    if (!id) return;
+    await fetch(`/api/tts/fish/voices/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    await loadFishConfig();
+    toast('Perfil eliminado');
+  }
+
+  async function testFishVoice() {
+    const text = document.getElementById('fishTestText').value;
+    try {
+      const data = await fetch('/api/tts/fish/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+      }).then(r => r.json());
+      updateFishMetrics(data.metrics);
+      if (!data.ok) throw new Error(data.error || 'Error en prueba de voz');
+      new Audio(data.url).play().catch(() => {});
+      toast(`Prueba lista (${data.metrics.httpTotalMs}ms, RTF ${data.metrics.rtf})`);
+    } catch (e) { toast('Error: ' + e.message); }
+  }
+
   function ttsStop() { fetch('/api/tts/stop', { method:'POST' }); ws.send(JSON.stringify({ type:'tts_stop' })); }
+
+  // ─ STT ─
+  function renderSttStatus(st) {
+    if (!st) return;
+    const rem = st.remote || {};
+    const loc = st.local || {};
+    const m = rem.metrics || {};
+    document.getElementById('sttEngineSelect').value = st.selectedEngine || 'local';
+    document.getElementById('sttUrlInput').value = rem.url || '';
+    document.getElementById('sttModelSelect').value = rem.model || 'large-v3-turbo';
+    document.getElementById('sttLang').value = rem.language || 'es';
+    document.getElementById('sttBeam').value = rem.beamSize ?? 3;
+    document.getElementById('sttTemp').value = rem.temperature ?? 0.0;
+    document.getElementById('sttHotwords').value = rem.hotwords || '';
+    document.getElementById('sttVad').checked = rem.vadFilter !== false;
+    document.getElementById('sttFallback').checked = rem.fallbackLocal !== false;
+
+    const effModel = st.effectiveEngine === 'remote' ? (m.effectiveModel || rem.model || '-') : (loc.model || 'no iniciado');
+    const effDev = st.effectiveEngine === 'remote' ? (m.effectiveDevice || 'cpu') : (loc.device || '-');
+    const effQuant = st.effectiveEngine === 'remote' ? (m.effectiveQuantization || 'int8') : (loc.computeType || '-');
+    const conn = st.selectedEngine === 'remote' ? (m.status || 'unknown') : (loc.ready ? 'local-ready' : 'idle');
+
+    document.getElementById('sttStatusLine').innerHTML =
+      `Efectivo: <b>${st.effectiveEngine}</b> · Modelo: <b>${effModel}</b> · ${effDev} (${effQuant}) · <span id="sttConnBadge">${conn}</span>`;
+
+    const discards = (rem.metrics?.discardedCount || 0) + (loc.discardedCount || 0);
+    const reason = m.lastDiscardReason || loc.lastDiscardReason || '-';
+    document.getElementById('sttMetricsInfo').textContent =
+      `Latencia: ${m.httpTotalMs || loc.lastMs || 0}ms · Cola: ${m.queueMs || 0}ms · Dur: ${m.audioDurationSec || loc.lastSecs || 0}s · RTF: ${m.rtf || 0} · Descartes: ${discards} (${reason}) · Fallbacks: ${m.fallbacks || 0}${m.lastError ? ` · Error: ${m.lastError}` : ''}`;
+    document.getElementById('sttLastText').textContent = m.lastTranscript || loc.lastTranscript ? `Última: "${m.lastTranscript || loc.lastTranscript}"` : '';
+  }
+
+  async function loadSttConfig() {
+    try {
+      const data = await fetch('/api/stt/config').then(r => r.json());
+      if (data.ok) renderSttStatus(data.status);
+    } catch { }
+  }
+
+  async function saveSttConfig() {
+    try {
+      const urlVal = document.getElementById('sttUrlInput').value.trim();
+      const body = {
+        engine: document.getElementById('sttEngineSelect').value,
+        ...(urlVal ? { url: urlVal } : {}),
+        model: document.getElementById('sttModelSelect').value,
+        language: document.getElementById('sttLang').value,
+        beamSize: Number(document.getElementById('sttBeam').value),
+        temperature: Number(document.getElementById('sttTemp').value),
+        hotwords: document.getElementById('sttHotwords').value,
+        vadFilter: document.getElementById('sttVad').checked,
+        fallbackLocal: document.getElementById('sttFallback').checked,
+      };
+      const data = await fetch('/api/stt/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      }).then(r => r.json());
+      if (!data.ok) throw new Error(data.error || 'Error guardando STT');
+      renderSttStatus(data.status);
+      toast(`STT: ${data.status.selectedEngine}`);
+    } catch (e) { toast('Error STT: ' + e.message); }
+  }
+
+  async function checkSttHealth() {
+    if (document.getElementById('sttUrlInput').value.trim()) await saveSttConfig();
+    try {
+      const data = await fetch('/api/stt/health', { method: 'POST' }).then(r => r.json());
+      renderSttStatus(data.status);
+      if (!data.ok) throw new Error(data.error || 'Salud STT fallida');
+      toast(`STT Remoto Online (${data.health.httpTotalMs}ms)`);
+    } catch (e) { toast('Error STT: ' + e.message); }
+  }
+
+  async function testSttAudio() {
+    const filePath = document.getElementById('sttTestFile').value;
+    try {
+      const data = await fetch('/api/stt/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filePath }),
+      }).then(r => r.json());
+      renderSttStatus(data.status);
+      if (!data.ok) throw new Error(data.error || 'Error probando STT');
+      toast(`Transcripción (${data.result.ms}ms): "${data.result.text}"`);
+    } catch (e) { toast('Error STT: ' + e.message); }
+  }
 
   // ─ UI updates ─
   function updateStats(s) {
@@ -1712,6 +2104,7 @@
     await fetch('/api/filters/word', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ word }) });
     document.getElementById('newWord').value = '';
     loadFilters();
+    loadTtsEngine();
   }
 
   async function removeWord(word) {
