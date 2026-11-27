@@ -159,19 +159,25 @@ export function hasSixSeven(raw) {
 
 export const GESTURES = {
   despedir: /despid|despedi|chau|adios|nos vemos/, // antes que irse_enojada: "despedirse" contiene "irse"
+  cruzar_brazos: /cruz(?:ar(?:se)?|ando|o|a|ate)?\s+(?:de\s+|los\s+)?brazos|brazos\s+cruzados/, // antes que irse_enojada/saludar: "se cruza de brazos enojada"
+  pensativa: /menton|barbilla|pensativ/, // antes que irse_enojada/saludar: "pensativa enojada", "apoyar mentón en mano"
   irse_enojada: /enoj|irse|irte|me voy|se va|andar|andate|vete|darse vuelta|salir(?:se)?\s+(?:de\s+(?:la\s+)?pantalla|del\s+cuadro|de\s+aca)/,
   tomar_te: /\bte\b|taza/,
   festejar: /festej|celebr|brazos arriba/,
-  cruzar_brazos: /cruz(?:ar(?:se)?|ando|o|a|ate)?\s+(?:de\s+|los\s+)?brazos|brazos\s+cruzados/, // antes que saludar: evita choques
-  pensativa: /menton|barbilla|pensativ/, // antes que saludar: "apoyar mentón en mano" contiene "mano"
   six_seven: new RegExp(`${SIX_SEVEN_WORDS_RE.source}|${SIX_SEVEN_DIGITS_RE.source}|balanza|sopes`),
   saludar: /salud|mano/,
   asentir: /asent|\bsi\b/,
   negar: /neg|\bno\b/,
 };
+const GESTURE_NEG_RE = /\bsin\s+(?:tomar(?:\s+(?:un|el|tu))?\s+te\b|(?:la\s+)?taza\b|ir(?:se|te)\b|enoj\w*|cruzar\w*(?:\s+(?:de\s+|los\s+)?brazos)?|festej\w*|salud\w*|pens\w*)/g;
 export function pickGesture(raw) {
   const t = normalizeGesture(raw);
-  return Object.keys(GESTURES).find(g => GESTURES[g].test(t)) || null;
+  if (!t) return null;
+  const keys = Object.keys(GESTURES);
+  const exact = keys.find(g => t === normalizeGesture(g));
+  if (exact) return exact;
+  const cleaned = t.replace(GESTURE_NEG_RE, " ").replace(/\s+/g, " ").trim();
+  return keys.find(g => GESTURES[g].test(cleaned)) || null;
 }
 
 const CREATOR_GESTURE_RULES = [

@@ -60,10 +60,12 @@ Desde PowerShell, `bash` a secas abre el WSL de Windows (que acá no tiene distr
   bash .claude/skills/animar-nyra/herramientas/copia_prueba.sh limpiar   <carpeta_temporal>
   ```
   En Windows, `bash` = `"C:\Program Files\Git\bin\bash.exe"` (ver "Shell en Windows"). `parar` apaga solo el `node` que
-  escucha en el 3010, después de verificarlo.
+  escucha en el 3010, después de verificarlo. `copia_prueba.sh` copia `server.js` junto con sus dependencias locales en la
+  raíz del workspace (como `piper-phonetics.js` cuando existe) y enlaza `node_modules`.
   Si tu herramienta cierra los procesos cuando termina el comando, el server de prueba muere con la terminal: levantalo
   como proceso independiente (o en una terminal que quede abierta) y apagalo igual con `parar`.
-- **Para todos**: Blender, `grilla.py` y los scripts de Blender son comandos comunes y andan igual en cualquier agente.
+- **Para todos**: Blender, `grilla.py`, `cloth_collision.py` y los scripts de Blender son comandos comunes y andan igual en cualquier agente. En helpers de rotación sobre este rig (`rotate_about`/`reset_pose` y resolvers iterativos), guardar cuaterniones iniciales (`capture_arm_quats`/`init_quats`) antes de iterar y fijar `pb.scale = (1, 1, 1)` y `pb.location = (0, 0, 0)` tras escribir `pb.matrix` evita acumulación de escala o doble rotación entre pasadas.
+  - **Opciones clave de `cloth_collision.py`**: usar `evaluate_contact_regions` para verificar por zona (`TORSO`, `R_SLV`, `L_SLV`, `FACE`) si palma, base, falanges y yemas logran contacto real o quedan flotando; `zone_margins` cuando una zona de apoyo requiere holgura fina manteniendo mayor margen en `TORSO`; `allow_uncurl=False` si la mano debe conservar cierre de puño o agarre (`True` para relajar dedos ante colisión); y `hand_rot_sides` solo en brazos donde `fix_interpolated_frames` pueda rotar `Hand` sin alterar un apoyo fijo como el mentón.
 - **Nunca apagues ni reinicies el server del puerto 3000**: es el del directo. Antes de cerrar cualquier proceso,
   verificá cuál es (puerto, nombre, quién lo arrancó). Si el 3000 no responde, avisale al usuario; no lo levantes vos.
 
@@ -90,9 +92,11 @@ Desde PowerShell, `bash` a secas abre el WSL de Windows (que acá no tiene distr
    & "D:\blender-5.3.0-windows-x64\blender.exe" --background --python scripts/blender/<gesto>.py -- public/avatar3d/NYRA.vrm public/avatar3d/<gesto>.vrma <carpeta_renders>
    ```
 3. **Revisar los renders en grilla** (`herramientas/grilla.py`) desde frente, perfil y arriba. Corregir y repetir.
-4. **Visor**: agregar el gesto a `CLIPS` en `public/avatar3d/vrm.js` con la lista de huesos que toma del archivo
-   (solo los que anima; el resto sigue en código). Si el `.vrma` no carga, queda el gesto en código de `GESTURES`.
-   El nombre tiene que existir también en `GESTURES` de `memoria.js` (los que la IA puede pedir con `[GESTO: …]`).
+4. **Visor e integración**: agregar el gesto a `CLIPS` en `public/avatar3d/vrm.js` con la lista de huesos que toma del archivo
+   (solo los que anima; el resto sigue en código). Si el `.vrma` no carga, queda el gesto en código de `GESTURES`:
+   probar también bloqueando la descarga del `.vrma` y verificar los ejes normalizados VRM directo en Three.js de forma independiente a Blender.
+   El nombre tiene que existir también en `GESTURES` de `memoria.js` (los que la IA puede pedir con `[GESTO: …]`),
+   agregando pruebas en `scripts/test-memoria.mjs` para nombre canónico exacto, sinónimos y conflictos o negaciones entre gestos.
 5. **Revisar en el visor** con una copia aislada (`herramientas/copia_prueba.sh`, ver "Herramientas según el agente"):
    números + capturas desde 3 vistas.
 6. **Mostrárselo al usuario** en bucle en el navegador, y recién con su OK, commit.
@@ -108,6 +112,8 @@ En Blender: `three(x, y, z) → Vector((x, -z, y))` (z arriba, el modelo mira a 
 | hombro derecho (UpperArm) | (-0.106, 1.275, -0.03) |
 | brazo colgando: codo / nudillo medio | (-0.18, 1.07, -0.03) / (-0.24, 0.79, -0.01) |
 | antebrazo codo→nudillos | 0.28 |
+| frente del buzo en reposo (`Body`/`Tops`, `x ∈ [-0.10, 0.10]`, `z ∈ [1.05, 1.15]` Blender) | `y = -0.1075..-0.133` m |
+| manga en antebrazo en reposo (`J_Bip_L_LowerArm` dominante, `Tops` Blender) | radio mediano `~5,9 cm`, p90 `~7,3 cm`, máx `~8,0 cm` |
 | asa de la taza (`taza.glb`, sin escalar) | y 0.030–0.067, z -0.056 a -0.080 |
 
 Huesos (Blender, VRoid): `J_Bip_C_{Hips,Spine,Chest,UpperChest,Neck,Head}`, `J_Bip_{L,R}_{Shoulder,UpperArm,LowerArm,Hand}`,
@@ -129,10 +135,17 @@ dedos `J_Bip_R_{Thumb,Index,Middle,Ring,Little}{1,2,3}`. En el visor: nombres hu
 - **Objetos en la mano (taza, etc.): fijos a la mano**, con la misma cuenta en Blender y en el visor. El objeto no se
   orienta solo: lo inclinan el brazo y la muñeca. Para llevarlo a un punto (el borde de la taza al labio) usar un
   buscador que mueva el brazo y mida el objeto, como `solve()` en `scripts/blender/tomar_te.py`.
-- **Límites del cuerpo**: la muñeca se dobla al costado ~20°; el giro (pronación) va en el **antebrazo**, nunca solo en
-  la mano (sin huesos de giro, la muñeca se retuerce como un caramelo). La mano sigue al antebrazo: para cambiar hacia
+- **Límites del cuerpo**: la muñeca admite ~20° de desviación lateral (radial/cubital), mientras la flexión palmar
+  tolera un rango mayor y el giro (pronación/supinación) va en el **antebrazo**, nunca solo en la mano (sin huesos
+  de giro, la muñeca se retuerce como un caramelo). Al auditar ángulos articulares, distinguir el ángulo 3D total
+  antebrazo–mano de la desviación lateral y la torsión axial reales. La mano sigue al antebrazo: para cambiar hacia
   dónde apunta, mover el codo.
-- **Dedos con una bisagra por dedo** (eje sacado del primer tramo): un eje por falange se da vuelta al cerrar ~90°.
+- **Artefactos de deformación y silueta en ropa**: ante pinzamientos, caras invertidas o marcas de contorno (*outline*
+  MToon en hombros o pliegues), diagnosticar aislando malla de piel frente a prenda, comparando con el estado en
+  reposo y revisando clavícula, hombro y codo antes de asumir un error de peso o tocar el modelo base. Aducir el brazo
+  superior sin suficiente avance frontal tiende a comprimir pliegues e invertir caras internas hacia cámara.
+- **Superficie real y colisiones (`cloth_collision.py`)**: Para gestos con contacto corporal, utilizar la superficie deformada del avatar como referencia, no solo las posiciones de los huesos. El volumen del buzo y las mangas modifica significativamente los puntos de contacto. Usar `cloth_collision.py` cuando corresponda, respetando sus límites de detección (regiones cubiertas, mallas abiertas si no se cierran explícitamente, y aproximaciones entre telas).
+- **Dedos con una bisagra por dedo** (eje sacado del primer tramo): comprobar `.dot(n_world) < 0` falange por falange invierte `b2`/`b3` en cuanto `b1` supera ~90° (doblando la punta hacia afuera). Verificar el signo de `hinge` una sola vez en `b1` y aplicar el mismo signo para `b2` y `b3`.
 - **Para manos y agarres, pedile fotos al usuario** si no las pasó: un GIF de cuerpo entero no muestra los dedos.
 
 ## Principios que hacen que se vea natural (aprendidos con el saludo)
@@ -170,6 +183,10 @@ necesitó tres versiones y varias rondas cada una. No es opcional ni depende de 
 
 ## Revisión (obligatoria antes de decir "está bien")
 
+- **Auditoría completa de colisiones**: Auditar la animación final exportada cuadro por cuadro y sin reducir el muestreo de vértices relevantes. Un resultado sin colisiones en las poses clave no garantiza que los cuadros interpolados estén libres de penetraciones. Revisar también ambos brazos después de modificar cualquiera de ellos.
+- **Contacto real frente a cero colisiones**: evaluar por separado si existe penetración geométrica real, contacto superficial aceptado (por ejemplo apoyo parcial con dedos y yemas sin exigir palma completa) o separación flotante vista desde perfil y tres cuartos. Cuando la malla deformada se vea limpia en cámara y los contactos funcionen, no alejar manos o brazos artificialmente solo para perseguir un cero absoluto frente a roces sub-milimétricos.
+- **Auditorías independientes en Blender**: ejecutar la validación final de cada VRMA en una instancia limpia de Blender. Se detectaron lecturas de geometría sin deformar al importar modelos consecutivamente dentro de una misma sesión. Comprobar que la malla evaluada responde realmente a los cambios de pose antes de aceptar las mediciones.
+- **Rostro y boca**: En gestos con contacto facial, comprobar la malla Face, los dedos, la muñeca y la visibilidad de la boca desde la cámara del directo. El corrector de colisiones piel-buzo no cubre automáticamente el rostro.
 - **Grilla**: 5–8 cuadros × frente / perfil / arriba. Mirar cada imagen buscando lo obvio: mano detrás del cuerpo,
   brazo de zombi, ropa que se rompe (axilas del buzo), palma de canto, dedos tiesos, objetos flotando o mal agarrados,
   parpadeo sobre ojos cerrados, cuerpo quieto mientras el brazo se mueve.
@@ -252,3 +269,7 @@ necesitó tres versiones y varias rondas cada una. No es opcional ni depende de 
     `≥ ~0.95` (coordenadas de Blender). Fuera de eso se cortan en pantalla.
   - Para probar una rama o worktree, corré el `copia_prueba.sh` de esa worktree: el script toma como raíz su propia carpeta,
     así que copia esa rama (no hace falta copiar archivos a mano).
+- **Cruzar brazos y pensativa en Blender (nov 2026)** (`cruzar_brazos.vrma`, `pensativa.vrma`):
+  - **Pliegues del buzo en hombros (`Tops_01_CLOTH`)**: adelantar demasiado la clavícula (`clav_fwd > 0`) junto con codos muy cerrados pincha la malla y genera picos en hombros; validar hombros y axilas en grilla.
+  - **`cloth_collision.py` y `pensativa`**: usar `include_face=True` (aislando y cerrando `Face_00_SKIN`, pues `Face` completo tiene bordes abiertos) en gestos faciales. Aun así, contrastar tela-contra-tela, cuello del buzo y paridad radial con renders reales.
+  - **Visor y `memoria.js`**: verificar los ejes normalizados de VRM (`x < 0` adelanta el brazo desde reposo) para respaldos procedurales y ubicar los nuevos gestos compuestos antes que reglas más amplias como `saludar` (`/salud|mano/`).
