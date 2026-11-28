@@ -20,7 +20,7 @@ import { v4 as uuidv4 } from "uuid";
 import { DiscordVoice, GREETING } from "./discord-voice.js";
 import { Research } from "./research.js";
 import { FollowUp, JUDGE_SYSTEM } from "./follow-up.js";
-import { IN_GAME_RE, HUD_GUIDE, GAME_PRIMER } from "./wildrift.js";
+import { IN_GAME_RE, HUD_GUIDE, GAME_PRIMER, matchChamp, MATCH_OVER_RE } from "./wildrift.js";
 import { Orders, Evolution, Wishes, GESTURES, pickGesture, pickCreatorGesture, hasSixSeven, ORDERS_SYSTEM, LEARNER_SYSTEM } from "./memoria.js";
 import { createClientFactory } from "./lib/ai/cli-clients.js";
 import { OpenCodeServerManager } from "./lib/ai/opencode-server.js";
@@ -2484,8 +2484,12 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
       const self = ` Si en la captura aparece el personaje de la referencia (NYRA: ${SELF_LOOK}, dibujada en 2D pixelada o como modelo 3D estilo anime), aunque esté chiquito, recortado o con otra expresión, nombralo como "NYRA (vos)"; otros personajes parecidos no son NYRA. Si no aparece, no lo menciones ni digas que no está.`;
       const player = this._screenPlayer ? ` La pantalla es de ${this._screenPlayer}: es quien juega o maneja la compu.` : "";
       const game = this._inGame() ? ` ${HUD_GUIDE}` : "";
+      // el campeón no cambia en la partida: sin esto cada mirada lo adivinaba de nuevo (Lux, Fiddlesticks, Viego, Kayn...)
+      const champ = this._wrChamp ? ` En esta partida el jugador juega ${this._wrChamp} (ya confirmado): no lo cambies aunque el retrato se vea distinto. A otros campeones nombralos solo si leés su nombre en pantalla.` : "";
       const describe = caster
-        ? `fijate que junta 4 capturas de los últimos ${span} segundos: la grande de la izquierda es AHORA y las chicas de la derecha son de antes (la de arriba es la más vieja). Contá en 1-2 oraciones cortas, en español, qué pasó en ese lapso (jugadas, kills, muertes, objetivos, peleas) y cómo quedó ahora.${game}${player}${self}${ask} Respondé solo eso.`
+        ? `fijate que junta capturas de los últimos ${span} segundos, una por segundo: la grande de la izquierda es AHORA y las chicas de la derecha son de antes, cada una con su etiqueta (-7 s es hace 7 segundos). Respondé exactamente dos líneas:
+QUÉ PASÓ: si se lee qué campeón usa el jugador, arrancá con "Juega <campeón>."; después, en 1-2 oraciones cortas, qué pasó en ese lapso (jugadas, kills, muertes, objetivos, peleas) y cómo quedó ahora.
+RELATO: lo que dice NYRA como caster de esports en el stream, en español rioplatense, con energía y humor seco, en 1-2 oraciones cortas, relatando la jugada (no describas la pantalla), sin emojis.${this._lastCasterLine ? ` Tu último relato fue «${this._lastCasterLine}»: no repitas esa jugada aunque siga en pantalla; si no pasó nada nuevo, poné RELATO: NADA.` : ""}${game}${champ}${player}${self}${ask}`
         : `describí en 1-2 oraciones cortas, en español, qué se ve (juego, app o contenido concreto).${game}${player}${self}${ask} Respondé solo la descripción de la captura.`;
       let response;
       if (this.vision.providerId === "claude-code") {
@@ -2501,12 +2505,17 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
           undefined, CONFIG.agy.timeoutMs * 2.5); // abrir la imagen + describirla: dos pasos del agente
       }
       if (isModelRefusal(response)) { console.log("👁 Contexto visual: bloqueado por filtro, descartado"); return null; }
-      let desc = cleanUntrusted(this._stripCJK(response.trim(), true), 450); // la pantalla puede mostrar texto de cualquiera
+      // caster: la misma respuesta trae el relato listo, así no espera a otro modelo (eso sumaba unos 10 s)
+      const relato = caster ? String(response).match(/RELATO\s*:\s*([\s\S]+)/i) : null;
+      this._casterHasRelato = !!relato;
+      this._casterLine = relato ? cleanUntrusted(this._stripCJK(relato[1].trim(), true), 300).replace(/^nada\b.*$/is, "") : "";
+      let desc = cleanUntrusted(this._stripCJK((relato ? response.slice(0, relato.index) : response).replace(/^\s*QU[EÉ] PAS[OÓ]\s*:\s*/i, "").trim(), true), 450); // la pantalla puede mostrar texto de cualquiera
       const isGarbage = !desc
         || /^(.{1,3})\1{4,}/.test(desc)
         || /^[!?.\-_*#\s]{5,}$/.test(desc)
         || desc.length < 8;
       if (isGarbage) { console.log(`👁 Contexto visual: basura, descartado`); return null; }
+      this._trackChamp(desc);
       this._lastScreenContext = this._screenContext;
       this._screenContext = desc;
       this._screenTimestamp = Date.now();
@@ -2540,7 +2549,18 @@ Si alguien me pregunta si soy una IA o un bot: es una pregunta ridícula. Soy NY
     return this._screenLog.some(e => Date.now() - e.t < 300000 && IN_GAME_RE.test(e.desc));
   }
 
+  // Fija el campeón del jugador cuando la visión lo nombra dos veces; se suelta al terminar la partida
+  _trackChamp(desc) {
+    if (MATCH_OVER_RE.test(desc)) { this._wrChamp = null; this._wrSeen = {}; return; }
+    const c = !this._wrChamp && matchChamp(desc);
+    if (!c) return;
+    this._wrSeen = { ...this._wrSeen, [c]: (this._wrSeen?.[c] || 0) + 1 };
+    if (this._wrSeen[c] >= 2) { this._wrChamp = c; console.log(`🎮 Campeón de la partida: ${c}`); }
+  }
+
   clearScreenContext() {
+    this._wrChamp = null;
+    this._wrSeen = {};
     this._screenLog = [];
     this._screenContext = "";
     this._lastScreenContext = "";
@@ -4384,6 +4404,45 @@ app.post("/api/ingest/url", async (req, res) => {
 // La visión de NYRA se actualiza silenciosamente via vision_context_frame (WS)
 // buildMessages() inyecta _screenContext en cada conversación automáticamente
 
+// Una mirada del panel. De caster la visión tarda más que la mirada (~9 s contra 8): si llega otra mientras mira,
+// queda guardada la última y se mira apenas termina, en vez de tirarla (se salteaba una de cada dos)
+async function onVisionFrame(msg) {
+  const caster = !!msg.caster, span = Math.min(120, Math.max(5, Number(msg.span) || 10));
+  if (caster && ai._visionProcessing) { ai._pendingFrame = msg; return; }
+  const oldCtx = ai._screenContext;
+  try {
+    const desc = await ai.updateScreenContext(msg.image, null, false, { caster, span });
+    if (!desc) return;
+    if (!oldCtx) live.broadcast(); // aparece el comando de pantalla en el overlay
+    const now = Date.now();
+    const cooldown = caster ? 3000 : 60000; // de caster la visión ya evita repetir (RELATO: NADA); si no, como mucho un comentario por minuto
+    // de caster decide la visión (RELATO: NADA si no pasó nada nuevo); solo si no mandó relato se adivina por el texto
+    const worth = caster && ai._casterHasRelato ? !!ai._casterLine
+      : (oldCtx || caster) && ((caster && CASTER_EVENT_RE.test(desc)) || ai._isSignificantChange(oldCtx, desc));
+    if (!worth
+      || (now - ai._lastProactiveTs) <= cooldown
+      || streamChat.queue.some(i => i.rank < PRI.event && i.platform !== "vision") // nadie con más prioridad esperando
+      || streamChat.queue.filter(i => i.rank === PRI.chat).length > 2) return; // y el chat sin saturar
+    ai._lastProactiveTs = now;
+    console.log(`👁💬 Cambio detectado → comentario proactivo`);
+    // un comentario de pantalla que todavía no arrancó ya quedó viejo: lo reemplaza el nuevo (no se apilan atrasados)
+    streamChat.queue = streamChat.queue.filter(i => i.platform !== "vision");
+    if (caster && ai._casterLine) {
+      ai._lastCasterLine = ai._casterLine;
+      return streamChat._enqueue("NYRA", ai._casterLine, "vision", { fixed: true, maxChars: 300 }, PRI.look);
+    }
+    const who = ai._screenPlayer ? ` Juega ${ai._screenPlayer}: decí su nombre.` : "";
+    const proactivePrompt = caster
+      ? `[Sos la caster de la partida que se ve en pantalla. En los últimos ${span} segundos pasó esto: "${desc.slice(0, 300)}". Relatalo como caster de esports, con energía y tu estilo, en una o dos oraciones cortas.${who} No describas la pantalla: relatá la jugada.]`
+      : `[Mirás la pantalla y notás un cambio. Antes veías: "${(oldCtx || "").slice(0, 160)}". Ahora ves: "${desc.slice(0, 160)}". Hacé UN comentario natural como VTuber streamando — reaccioná como persona sin describir técnicamente. Máximo 2 oraciones.]`;
+    streamChat._enqueue("NYRA", proactivePrompt, "vision", { rawPrompt: true }, PRI.look);
+  } finally {
+    const next = ai._pendingFrame;
+    ai._pendingFrame = null;
+    if (next) onVisionFrame(next);
+  }
+}
+
 wss.on("connection", (ws, req) => {
   // El panel se conecta con ?key=; el OBS sin key solo puede avisar fin de audio y hacer ping
   const params = new URL(req.url, "http://localhost").searchParams;
@@ -4457,30 +4516,7 @@ wss.on("connection", (ws, req) => {
     }
 
     else if (msg.type === "vision_context_frame") {
-      // Panel envía frame silencioso → actualizar contexto visual de NYRA
-      (async () => {
-        const oldCtx = ai._screenContext;
-        const caster = !!msg.caster, span = Math.min(120, Math.max(5, Number(msg.span) || 10));
-        const desc = await ai.updateScreenContext(msg.image, null, false, { caster, span });
-        if (!desc) return;
-        if (!oldCtx) live.broadcast(); // aparece el comando de pantalla en el overlay
-        // ¿Cambio significativo? → NYRA comenta espontáneamente
-        const now = Date.now();
-        const cooldown = caster ? 20000 : 60000; // de caster relata más seguido; si no, como mucho un comentario por minuto
-        const happened = caster && CASTER_EVENT_RE.test(desc);
-        if (oldCtx && (happened || ai._isSignificantChange(oldCtx, desc))
-          && (now - ai._lastProactiveTs) > cooldown
-          && !streamChat.queue.some(i => i.rank < PRI.event) // nadie con más prioridad esperando
-          && streamChat.queue.filter(i => i.rank === PRI.chat).length <= 2) { // y el chat sin saturar
-          ai._lastProactiveTs = now;
-          console.log(`👁💬 Cambio detectado → comentario proactivo`);
-          const who = ai._screenPlayer ? ` Juega ${ai._screenPlayer}: decí su nombre.` : "";
-          const proactivePrompt = caster
-            ? `[Sos la caster de la partida que se ve en pantalla. En los últimos ${span} segundos pasó esto: "${desc.slice(0, 300)}". Relatalo como caster de esports, con energía y tu estilo, en una o dos oraciones cortas.${who} No describas la pantalla: relatá la jugada.]`
-            : `[Mirás la pantalla y notás un cambio. Antes veías: "${oldCtx.slice(0, 160)}". Ahora ves: "${desc.slice(0, 160)}". Hacé UN comentario natural como VTuber streamando — reaccioná como persona sin describir técnicamente. Máximo 2 oraciones.]`;
-          streamChat._enqueue("NYRA", proactivePrompt, "vision", { rawPrompt: true }, PRI.look);
-        }
-      })();
+      onVisionFrame(msg); // Panel envía frame silencioso → actualizar contexto visual de NYRA
     }
 
     else if (msg.type === "screen_player") {

@@ -298,11 +298,11 @@
     <!-- ═════════ MODO WILD RIFT ═════════ -->
     <section class="section" id="tab-wildrift" aria-labelledby="h-wr">
       <div class="page-head">
-        <div><h1 id="h-wr">Modo Wild Rift</h1><p class="sub">NYRA relata la partida como caster: en cada mirada junta 4 capturas en una sola imagen y cuenta lo que pasó en ese lapso.</p></div>
+        <div><h1 id="h-wr">Modo Wild Rift</h1><p class="sub">NYRA relata la partida como caster: saca una captura por segundo y en cada mirada junta las últimas 8 en una sola imagen para contar lo que pasó.</p></div>
         <div class="inline">
           <label class="label" for="wrInterval">MIRA CADA</label>
           <select id="wrInterval" onchange="setWrInterval()" style="width:auto">
-            <option value="8">8 s</option><option value="10" selected>10 s</option><option value="15">15 s</option><option value="20">20 s</option><option value="30">30 s</option>
+            <option value="8" selected>8 s</option><option value="10">10 s</option><option value="15">15 s</option><option value="20">20 s</option><option value="30">30 s</option>
           </select>
           <button class="btn btn-cyan" type="button" id="wrBtn" onclick="toggleWildRift()" style="min-height:48px;padding:0 22px">Empezar modo caster</button>
         </div>
@@ -2157,7 +2157,7 @@
   }
   try { document.getElementById('screenPlayer').value = document.getElementById('wrPlayer').value = localStorage.getItem('screenPlayer') || ''; } catch { }
 
-  // Modo caster: 4 capturas por mirada, juntas en una imagen (la grande es ahora), para que relate lo que pasó
+  // Modo caster: 8 capturas por mirada (una por segundo), juntas en una imagen (la grande es ahora), para que relate lo que pasó
   let _casterFrames = [];
   function frameCanvas(width) {
     const video = document.getElementById('visionVideo');
@@ -2171,9 +2171,10 @@
   }
   function casterComposite(frames) {
     const now = frames[frames.length - 1], old = frames.slice(0, -1);
-    const W = now.c.width, H = now.c.height, sw = Math.round(W / 3), sh = Math.round(H / 3);
+    // la grande es ahora; las 7 de antes van chiquitas a la derecha, en 2 columnas de 4
+    const W = now.c.width, H = now.c.height, sw = Math.round(W / 4), sh = Math.round(H / 4);
     const out = document.createElement('canvas');
-    out.width = W + sw; out.height = H;
+    out.width = W + sw * 2; out.height = H;
     const g = out.getContext('2d');
     g.fillStyle = '#000'; g.fillRect(0, 0, out.width, out.height);
     const label = (txt, x, y) => {
@@ -2183,21 +2184,23 @@
     };
     g.drawImage(now.c, 0, 0, W, H); label('AHORA', 8, 8);
     old.forEach((f, i) => {
-      g.drawImage(f.c, W, i * sh, sw, sh);
-      label(`-${Math.round((now.t - f.t) / 1000)} s`, W + 6, i * sh + 6);
+      const x = W + (i >> 2) * sw, y = (i % 4) * sh;
+      g.drawImage(f.c, x, y, sw, sh);
+      label(`-${Math.round((now.t - f.t) / 1000)} s`, x + 6, y + 6);
     });
     return out.toDataURL('image/jpeg', 0.7).split(',')[1];
   }
+  // una captura por segundo; en cada mirada manda las últimas 8 juntas
   function startCaster(secs) {
     _casterFrames = [];
     let tick = 0;
     _visionTimer = setInterval(() => {
       const c = frameCanvas(1280); // a menos de 1280 no se leen el KDA ni los nombres del HUD
       if (!c) return;
-      _casterFrames = [..._casterFrames, { c, t: Date.now() }].slice(-4);
-      if (++tick % 4 || _casterFrames.length < 4 || !ws || ws.readyState !== 1) return;
-      ws.send(JSON.stringify({ type: 'vision_context_frame', image: casterComposite(_casterFrames), caster: true, span: secs / 1000 }));
-    }, secs / 4);
+      _casterFrames = [..._casterFrames, { c, t: Date.now() }].slice(-8);
+      if (++tick % (secs / 1000) || _casterFrames.length < 8 || !ws || ws.readyState !== 1) return;
+      ws.send(JSON.stringify({ type: 'vision_context_frame', image: casterComposite(_casterFrames), caster: true, span: Math.round((Date.now() - _casterFrames[0].t) / 1000) + 1 }));
+    }, 1000);
   }
 
   function startLiveVision() {
@@ -2597,7 +2600,7 @@
     if (!_visionStream) _wrOn = false;
     document.getElementById('wrBtn').textContent = _wrOn ? 'Terminar modo caster' : 'Empezar modo caster';
     document.getElementById('wrBtn').className = _wrOn ? 'btn btn-pink' : 'btn btn-cyan';
-    document.getElementById('wrState').textContent = _wrOn ? `caster · 4 capturas cada ${document.getElementById('wrInterval').value} s`
+    document.getElementById('wrState').textContent = _wrOn ? `caster · 8 capturas cada ${document.getElementById('wrInterval').value} s`
       : _visionStream ? 'pantalla compartida' : 'modo partida apagado';
   }
   async function toggleWildRift() {
