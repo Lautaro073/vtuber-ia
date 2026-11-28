@@ -34,6 +34,7 @@ import { dropLeadingName, searchRankedChunks, formatChatLearningContext, trimAtB
 import { getContextProfile, shouldIncludeBlock, selectHistoryForContext, adaptPersonaForProfile, getContextualSafetyNote, shouldUseTechPriority, TECH_PRIORITY_INSTRUCTION } from "./lib/ai/context-profiles.js";
 import { clampMood, getMoodState, computeChatMoodGain, decayMood, getMoodPromptContext, extractEmotionTag, resolveSpeakingEmotion, evaluateMoodPenalty } from "./lib/ai/emotion-state.js";
 import { FishAudioClient } from "./lib/tts/fish-audio-client.js";
+import { SGLangTTSClient } from "./lib/tts/sglang-tts-client.js";
 import { WhisperRemoteClient } from "./lib/stt/whisper-remote-client.js";
 import { parseVote, TRIBUNAL_ASK_RE } from "./lib/tribunal.js";
 
@@ -87,6 +88,12 @@ const CONFIG = {
     timeoutMs: process.env.FISH_TTS_TIMEOUT_MS ?? 60000,
     expressive: process.env.FISH_TTS_EXPRESSIVE !== "0",
     fallback: process.env.FISH_TTS_FALLBACK !== "0",
+  },
+  // Fish S2 Pro vía gateway SGLang-Omni (JSON + WAV). Desactivado hasta elegirlo a mano en el panel.
+  sglang: {
+    url: process.env.SGLANG_TTS_URL || "",
+    apiKey: process.env.SGLANG_TTS_API_KEY || "",
+    timeoutMs: process.env.SGLANG_TTS_TIMEOUT_MS ?? 60000,
   },
   useSystemTTS: false,  // false = Murf (audio viaja al OBS del amigo por WS) ✅
   // true  = voz del sistema (suena en TU PC, el amigo no escucha nada) ❌
@@ -1859,7 +1866,7 @@ class StreamChatManager {
     const emotion = refused ? getMoodState(moodAtPrep).baseEmotion : resolveSpeakingEmotion({ explicitEmotion: opts.emotion || llmEmotion, text: filtered, mood: moodAtPrep });
     if (rank === PRI.look && Date.now() - at > LOOK_TTL_MS) return null;
     const ttsSource = (rank === PRI.call || rank === PRI.look) && discord.on ? "discord" : "live";
-    const synthRes = await tts.synth(filtered, { emotion, mood: moodAtPrep, source: ttsSource, returnMeta: true });
+    const synthRes = await tts.synth(filtered, { emotion, mood: moodAtPrep, source: ttsSource, returnMeta: true, expiresAt: rank === PRI.look ? at + LOOK_TTL_MS : null });
     if (synthRes?.cancelled) return null;
     const url = synthRes?.url ?? null;
     if (trace) trace.latencyMs = Date.now() - tPrep;
@@ -2636,8 +2643,15 @@ class TTSEngine {
       settingsFile: join(__dirname, "tts_settings.json"),
       allowedHosts: process.env.FISH_TTS_ALLOWED_HOSTS ? process.env.FISH_TTS_ALLOWED_HOSTS.split(",") : null,
     });
+    this._sglangQueue = Promise.resolve(); // un solo pedido a la vez contra el backend SGLang (1 worker)
+    this.sglang = new SGLangTTSClient({
+      config: CONFIG.sglang || {},
+      settingsFile: join(__dirname, "tts_settings.json"),
+      allowedHosts: process.env.SGLANG_TTS_ALLOWED_HOSTS ? process.env.SGLANG_TTS_ALLOWED_HOSTS.split(",") : null,
+      allowLoopbackHttp: process.env.SGLANG_TTS_ALLOW_LOOPBACK_HTTP === "1",
+    });
     const ep = this.fish.enginePrefs;
-    const valid = new Set(["edge", "piper", "murf", "system", "fish"]);
+    const valid = new Set(["edge", "piper", "murf", "system", "fish", "sglang"]);
     if (ep.engine && valid.has(ep.engine)) {
       CONFIG.ttsEngine = ep.engine;
       CONFIG.useSystemTTS = ep.engine === "system";
@@ -2686,7 +2700,7 @@ class TTSEngine {
     return CONFIG.ttsEngine || (CONFIG.useSystemTTS ? "system" : "murf");
   }
 
-  async synth(text, { engine = null, emotion = null, mood = 50, source = "live", returnMeta = false } = {}) {
+  async synth(text, { engine = null, emotion = null, mood = 50, source = "live", returnMeta = false, expiresAt = null } = {}) {
     const clean = applyPhonetics(this.clean(text)); // palabras en inglés escritas como suenan (panel: Pronunciación)
     const wrap = (url, cancelled = false, fallbackUsed = false) => returnMeta ? { url, cancelled, fallbackUsed } : url;
     if (!clean) return wrap(null);
@@ -2723,6 +2737,29 @@ class TTSEngine {
         } catch (edgeErr) { console.error("❌ Edge TTS fallback error:", edgeErr.message); return wrap(null); }
       }
     }
+    if (chosen === "sglang") {
+      try {
+        const { url } = await this.sglangJob(clean, { emotion, mood, source, expiresAt });
+        return wrap(url);
+      } catch (err) {
+        if (err.cancelled || err.expired || isCancelled()) {
+          console.log(`🛑 SGLang TTS ${err.expired ? "vencido" : "cancelado"} [${source}] — sin fallback`);
+          return wrap(null, true);
+        }
+        if (!this.sglang.config.fallback) {
+          console.error("❌ SGLang TTS error (fallback desactivado):", err.message);
+          return wrap(null);
+        }
+        this.sglang.recordFallback();
+        console.error(`❌ SGLang TTS error (fallback a Edge): ${err.message}`);
+        try {
+          const edgeUrl = await this._synthEdge(clean);
+          if (isCancelled()) return wrap(null, true);
+          console.log(`📊 TTS pedido=sglang efectivo=edge [${source}]`);
+          return wrap(edgeUrl, false, true);
+        } catch (edgeErr) { console.error("❌ Edge TTS fallback error:", edgeErr.message); return wrap(null); }
+      }
+    }
     if (chosen === "piper") {
       try { return wrap(await this._synthPiper(clean)); }
       catch (err) { console.error("❌ Piper TTS error (fallback a Edge):", err.message); }
@@ -2745,6 +2782,31 @@ class TTSEngine {
     const filename = res.filePath.split(/[\\/]/).pop();
     console.log(`✅ Fish Audio listo (${res.metrics.httpTotalMs}ms, dur=${res.metrics.audioDurationSec}s, RTF=${res.metrics.rtf})`);
     return `/tts/${filename}`;
+  }
+
+  // Un pedido SGLang en su cola propia (1 a la vez, no bloquea Fish/Piper/Edge). La epoch de la fuente se toma al
+  // encolar: stop(fuente) invalida activos y pendientes. Lanza {cancelled} o {expired}; el fallback lo decide quien llama.
+  sglangJob(text, { emotion = null, mood = 50, source = "live", expiresAt = null } = {}) {
+    const myEpoch = this._cancelEpoch.get(source) || 0;
+    const isCancelled = () => (this._cancelEpoch.get(source) || 0) !== myEpoch;
+    const enqueuedAt = performance.now();
+    const run = async () => {
+      if (isCancelled()) throw Object.assign(new Error("SGLang TTS cancelado"), { cancelled: true });
+      // El TTL se revisa cuando el pedido realmente arranca, no cuando entró a la cola
+      if (expiresAt && Date.now() > expiresAt) throw Object.assign(new Error("SGLang TTS: pedido vencido"), { expired: true });
+      const dir = join(__dirname, "public", "tts");
+      const res = await this.sglang.synthesizeWav(text, { emotion, mood, source, outDir: dir, queueMs: Math.round(performance.now() - enqueuedAt), expiresAt, shouldCancel: isCancelled });
+      if (isCancelled()) { // llegó tarde: no se reproduce y se borra
+        try { unlinkSync(res.filePath); } catch { }
+        throw Object.assign(new Error("SGLang TTS cancelado"), { cancelled: true });
+      }
+      for (const f of readdirSync(dir))
+        if ((f.endsWith(".mp3") || f.endsWith(".wav")) && Date.now() - Number(f.slice(0, 13)) > 1800000) try { unlinkSync(join(dir, f)); } catch { }
+      return { url: `/tts/${res.filePath.split(/[\\/]/).pop()}`, metrics: res.metrics };
+    };
+    const queued = this._sglangQueue.then(run, run);
+    this._sglangQueue = queued.catch(() => {});
+    return queued;
   }
 
   // Reproduce un audio ya generado en OBS; sin URL, usa la voz del sistema
@@ -2898,11 +2960,13 @@ class TTSEngine {
     if (source) {
       this._cancelEpoch.set(source, (this._cancelEpoch.get(source) || 0) + 1);
       this.fish.abortSource(source);
+      this.sglang.abortSource(source);
     } else {
       for (const s of ["live", "discord", "panel_test"]) {
         this._cancelEpoch.set(s, (this._cancelEpoch.get(s) || 0) + 1);
       }
       this.fish.abortAll();
+      this.sglang.abortAll();
     }
     if (this.currentProcess) {
       this.currentProcess.kill();
@@ -3292,7 +3356,7 @@ app.post("/api/tts/stop", (req, res) => {
   res.json({ ok: true });
 });
 
-const VALID_TTS_ENGINES = new Set(["edge", "piper", "murf", "system", "fish"]);
+const VALID_TTS_ENGINES = new Set(["edge", "piper", "murf", "system", "fish", "sglang"]);
 app.get("/api/tts/engine", (req, res) => {
   res.json({
     engine: CONFIG.ttsEngine || "edge",
@@ -3300,6 +3364,7 @@ app.get("/api/tts/engine", (req, res) => {
     discordEngine: CONFIG.discordTtsEngine || CONFIG.ttsEngine || "edge",
     murfConfigured: Boolean(CONFIG.murf.apiKey),
     fishConfigured: Boolean(tts.fish.config.url && tts.fish.config.apiKey),
+    sglangConfigured: tts.sglang.isConfigured(),
   });
 });
 
@@ -3477,6 +3542,41 @@ app.post("/api/tts/fish/test", async (req, res) => {
     res.json({ ok: true, url: `/tts/${filename}`, metrics: result.metrics });
   } catch (err) {
     res.status(err.cancelled ? 499 : 502).json({ ok: false, error: err.message, metrics: tts.fish.metrics });
+  }
+});
+
+// Fish S2 Pro — SGLang (configuración, salud y prueba aislada; la API key solo vive en .env)
+app.get("/api/tts/sglang/config", (req, res) => {
+  res.json({ ok: true, config: tts.sglang.getPublicConfig() });
+});
+
+app.post("/api/tts/sglang/config", (req, res) => {
+  try {
+    const { url, timeoutMs, expressive, fallback } = req.body || {};
+    res.json({ ok: true, config: tts.sglang.updateConfig({ url, timeoutMs, expressive, fallback }) });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
+app.post("/api/tts/sglang/health", async (req, res) => {
+  const health = await tts.sglang.checkHealth();
+  res.status(health.ok ? 200 : 502).json({ ok: health.ok, health, error: health.error || null, config: tts.sglang.getPublicConfig() });
+});
+
+app.post("/api/tts/sglang/test", async (req, res) => {
+  const text = String(req.body?.text || "").trim();
+  if (!text) return res.status(400).json({ ok: false, error: "Falta el texto de prueba" });
+  try {
+    // Prueba aislada: cola SGLang + epoch "panel_test" (Stop la cancela aunque esté pendiente), sin fallback ni tts_play
+    const result = await tts.sglangJob(tts.clean(text), {
+      emotion: req.body?.emotion || null,
+      mood: req.body?.mood ?? live.mood,
+      source: "panel_test",
+    });
+    res.json({ ok: true, url: result.url, metrics: result.metrics });
+  } catch (err) {
+    res.status(err.cancelled ? 499 : 502).json({ ok: false, error: err.message, config: tts.sglang.getPublicConfig() });
   }
 });
 

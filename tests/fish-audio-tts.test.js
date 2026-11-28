@@ -266,12 +266,13 @@ test("TTSEngine integrates Fish Audio with fallback, manual cancellation without
 
     const TTSEngine = new Function(
       "deps",
-      `const { CONFIG, FishAudioClient, join, __dirname, mkdirSync, renameSync, rmSync, readdirSync, unlinkSync, spawn, createInterface, applyPhonetics, exec, discord } = deps;
+      `const { CONFIG, FishAudioClient, SGLangTTSClient, join, __dirname, mkdirSync, renameSync, rmSync, readdirSync, unlinkSync, spawn, createInterface, applyPhonetics, exec, discord } = deps;
        ${classCode}
        return TTSEngine;`
     )({
       CONFIG,
       FishAudioClient: PatchedFishClient,
+      SGLangTTSClient: class { abortSource() {} abortAll() {} }, // motor aparte; se prueba en sglang-tts.test.js
       join,
       __dirname: tmp,
       mkdirSync,

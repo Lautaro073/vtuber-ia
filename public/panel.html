@@ -495,6 +495,7 @@
               <option value="piper">Piper local · Daniela</option>
               <option value="murf">Murf.ai (API)</option>
               <option value="fish">Fish Audio S2 Pro (experimental)</option>
+              <option value="sglang">Fish S2 Pro — SGLang</option>
               <option value="system">Voz de Windows</option>
             </select>
             <span class="sub" id="ttsEngineInfo"></span>
@@ -507,6 +508,7 @@
               <option value="piper">Piper local</option>
               <option value="murf">Murf.ai</option>
               <option value="fish">Fish Audio S2 Pro</option>
+              <option value="sglang">Fish S2 Pro — SGLang</option>
               <option value="system">Voz de Windows</option>
             </select>
           </div>
@@ -554,6 +556,28 @@
             <button class="btn btn-sm" onclick="testFishVoice()" style="background:var(--panel);color:var(--cyan);border:1px solid var(--border)">▶ Probar</button>
           </div>
           <div id="fishMetricsInfo" style="font-size:10px;color:var(--dim);line-height:1.35">Latencia: - · Duración: - · RTF: -</div>
+        </div>
+      </details>
+          <details id="sglangTtsPanel" class="adv">
+        <summary>Avanzado · Fish S2 Pro — SGLang <span id="sglangStatusBadge" class="chip" style="margin-left:auto">Sin verificar</span></summary>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="url" id="sglangUrlInput" aria-label="Endpoint del gateway SGLang" placeholder="https://gateway.ejemplo.com" style="flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
+            <button class="btn btn-sm" onclick="checkSglangHealth()" style="background:var(--panel);color:var(--cyan);border:1px solid var(--border)">Comprobar conexión</button>
+          </div>
+          <div id="sglangKeyInfo" style="font-size:10px;color:var(--dim)">Clave: -</div>
+          <div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--dim)">
+            <label>Timeout(ms)<input type="number" step="1000" min="5000" max="180000" id="sglangTimeout" value="60000" style="width:90px;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;font-size:11px"></label>
+            <label style="cursor:pointer"><input type="checkbox" id="sglangExpressive" checked> Expresividad</label>
+            <label style="cursor:pointer"><input type="checkbox" id="sglangFallback" checked> Fallback Edge</label>
+          </div>
+          <button class="btn btn-sm" onclick="saveSglangConfig()" style="background:var(--panel);color:var(--lime);border:1px solid var(--border)">Guardar config</button>
+          <div style="display:flex;gap:6px">
+            <input type="text" id="sglangTestText" aria-label="Texto de prueba SGLang" value="Buenas noches chat, esto es una prueba de SGLang." style="flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
+            <button class="btn btn-sm" onclick="testSglangVoice()" style="background:var(--panel);color:var(--cyan);border:1px solid var(--border)">▶ Probar</button>
+          </div>
+          <div id="sglangHealthInfo" style="font-size:10px;color:var(--dim);line-height:1.35">Modelo: - · Voz: -</div>
+          <div id="sglangMetricsInfo" style="font-size:10px;color:var(--dim);line-height:1.35">Total: - · Duración: - · RTF: -</div>
         </div>
       </details>
         </section>
@@ -1262,6 +1286,7 @@
       setChip('chipVoice', true, `Voz · ${data.engine}`);
     } catch { }
     loadFishConfig();
+    loadSglangConfig();
     loadSttConfig();
   }
 
@@ -1424,6 +1449,73 @@
       if (!data.ok) throw new Error(data.error || 'Error en prueba de voz');
       new Audio(data.url).play().catch(() => {});
       toast(`Prueba lista (${data.metrics.httpTotalMs}ms, RTF ${data.metrics.rtf})`);
+    } catch (e) { toast('Error: ' + e.message); }
+  }
+
+  // ─ Fish S2 Pro — SGLang ─ (el estado solo dice "disponible" después de una comprobación real)
+  const SGLANG_STATUS = { online: 'Disponible', busy: 'Ocupado', unauthorized: 'Clave incorrecta', unavailable: 'No disponible', timeout: 'Timeout', invalid_response: 'Respuesta inválida', unconfigured: 'Sin configurar', invalid_config: 'Config inválida', offline: 'Desconectado', unknown: 'Sin verificar' };
+  function renderSglangConfig(cfg) {
+    if (!cfg) return;
+    document.getElementById('sglangUrlInput').value = cfg.url || '';
+    document.getElementById('sglangTimeout').value = cfg.timeoutMs ?? 60000;
+    document.getElementById('sglangExpressive').checked = cfg.expressive !== false;
+    document.getElementById('sglangFallback').checked = cfg.fallback !== false;
+    document.getElementById('sglangKeyInfo').textContent = `Clave: ${cfg.apiKeyConfigured ? 'configurada en .env' : 'falta SGLANG_TTS_API_KEY en .env'}`;
+    renderSglangHealth(cfg.health, cfg.metrics);
+  }
+  function renderSglangHealth(h, m) {
+    // Una síntesis fallida posterior al último health manda (el health exitoso limpia lastError)
+    const status = (m?.last?.result === 'error' && m.lastError) ? 'synth_error' : (h?.status || m?.status || 'unknown');
+    const badge = document.getElementById('sglangStatusBadge');
+    badge.textContent = status === 'synth_error' ? 'Falló la síntesis' : (SGLANG_STATUS[status] || status);
+    badge.style.color = status === 'online' ? 'var(--lime)' : status === 'busy' ? 'var(--cyan)' : status === 'unknown' ? 'var(--dim)' : 'var(--pink)';
+    if (h && h.model) document.getElementById('sglangHealthInfo').textContent = `Modelo: ${h.model} · Voz: ${h.voice || '-'} · ${h.sampleRate || '-'} Hz · ${h.encoding || '-'}`;
+    const last = m?.last;
+    if (last) document.getElementById('sglangMetricsInfo').textContent =
+      `Total: ${last.totalMs ?? '-'}ms · Cola: ${last.queueMs ?? 0}ms · Duración: ${last.audioDurationSec ?? '-'}s · RTF: ${last.rtf ?? '-'} · Reintentos: ${last.retries ?? 0}${m.lastError ? ` · Error: ${m.lastError}` : ''}`;
+  }
+  async function loadSglangConfig() {
+    try {
+      const data = await fetch('/api/tts/sglang/config').then(r => r.json());
+      if (data.ok) renderSglangConfig(data.config);
+    } catch { }
+  }
+  async function saveSglangConfig() {
+    try {
+      const body = {
+        url: document.getElementById('sglangUrlInput').value,
+        timeoutMs: Number(document.getElementById('sglangTimeout').value),
+        expressive: document.getElementById('sglangExpressive').checked,
+        fallback: document.getElementById('sglangFallback').checked,
+      };
+      const data = await fetch('/api/tts/sglang/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      }).then(r => r.json());
+      if (!data.ok) throw new Error(data.error || 'Error guardando SGLang');
+      renderSglangConfig(data.config);
+      toast('Configuración de SGLang guardada');
+      return true;
+    } catch (e) { toast('Error: ' + e.message); return false; }
+  }
+  async function checkSglangHealth() {
+    if (!(await saveSglangConfig())) return;
+    try {
+      const data = await fetch('/api/tts/sglang/health', { method: 'POST' }).then(r => r.json());
+      renderSglangConfig(data.config);
+      const st = data.health?.status;
+      toast(`SGLang: ${SGLANG_STATUS[st] || st}${data.error ? ` (${data.error})` : ''}`);
+    } catch (e) { toast('Error: ' + e.message); }
+  }
+  async function testSglangVoice() {
+    const text = document.getElementById('sglangTestText').value;
+    try {
+      const data = await fetch('/api/tts/sglang/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+      }).then(r => r.json());
+      if (!data.ok) { renderSglangConfig(data.config); throw new Error(data.error || 'Error en prueba de voz'); }
+      new Audio(data.url).play().catch(() => {});
+      toast(`Prueba lista (${data.metrics.totalMs}ms, RTF ${data.metrics.rtf})`);
+      loadSglangConfig();
     } catch (e) { toast('Error: ' + e.message); }
   }
 
