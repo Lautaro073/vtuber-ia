@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { SGLangTTSClient, validateSglangUrl, validateSglangWav, SGLANG_MAX_INPUT_CHARS } from "../lib/tts/sglang-tts-client.js";
 import { FishAudioClient, validateWavBuffer, pinnedRequest } from "../lib/tts/fish-audio-client.js";
 import { SglangStreamManager } from "../lib/tts/sglang-stream.js";
+import { SglangScheduler } from "../lib/tts/sglang-scheduler.js";
 
 const KEY = "sk-sglang-super-secret-123";
 
@@ -284,10 +285,10 @@ function loadTTSEngine(CONFIG, dir, logs) {
     constructor(opts) { super({ ...opts, settingsFile: join(dir, "tts_settings.json"), allowLoopbackHttp: true, logger: { log: s => logs.push(String(s)) } }); }
   };
   const FishStub = class { constructor() { this.enginePrefs = {}; this.config = {}; } abortSource() {} abortAll() {} };
-  return new Function("deps", `const { CONFIG, FishAudioClient, SGLangTTSClient, SglangStreamManager, join, __dirname, mkdirSync, renameSync, rmSync, readdirSync, unlinkSync, spawn, createInterface, applyPhonetics, exec, discord } = deps;
+  return new Function("deps", `const { CONFIG, FishAudioClient, SGLangTTSClient, SglangStreamManager, SglangScheduler, join, __dirname, mkdirSync, renameSync, rmSync, readdirSync, unlinkSync, spawn, createInterface, applyPhonetics, exec, discord } = deps;
     ${lines.slice(start, end + 1).join("\n")}
     return TTSEngine;`)({
-    CONFIG, FishAudioClient: FishStub, SGLangTTSClient: PatchedSglang, SglangStreamManager, join, __dirname: dir, mkdirSync, renameSync, rmSync,
+    CONFIG, FishAudioClient: FishStub, SGLangTTSClient: PatchedSglang, SglangStreamManager, SglangScheduler, join, __dirname: dir, mkdirSync, renameSync, rmSync,
     readdirSync, unlinkSync, spawn: () => {}, createInterface: () => ({ on: () => {} }), applyPhonetics: s => s,
     exec: (_c, cb) => cb?.(), discord: { stopAudio: () => {} },
   });

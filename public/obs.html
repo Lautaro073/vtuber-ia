@@ -373,6 +373,7 @@
     if (m.type === 'tts_play') playTTS(m.url, m.mute);
     if (m.type === 'tts_stream_start') onStreamStart(m);
     if (m.type === 'tts_stream_end') _sp?.sessions.get(m.id)?.end(m.totalSamples, m.partial);
+    if (m.type === 'tts_stream_segment') _sp?.sessions.get(m.id)?.setSegment(m.boundarySamples, m.gapSec, m.ageMs || 0);
     if (m.type === 'tts_stream_cancel') onStreamCancel(m.id);
     if (m.type === 'play_gesture' && document.body.classList.contains('mode3d')) nyra3d?.gesture(m.name); // elegida en el panel
     if (m.type === 'error') setState('idle');

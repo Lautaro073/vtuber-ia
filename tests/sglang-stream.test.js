@@ -9,6 +9,7 @@ import { join } from "node:path";
 
 import { SGLangTTSClient } from "../lib/tts/sglang-tts-client.js";
 import { SglangStreamManager, encodeFrame, decodeFrame, pcmToWav, FRAME_HEADER_BYTES } from "../lib/tts/sglang-stream.js";
+import { SglangScheduler } from "../lib/tts/sglang-scheduler.js";
 import { validateWavBuffer } from "../lib/tts/fish-audio-client.js";
 import { PcmPlaybackCore } from "../public/tts-stream/pcm-core.js";
 import { AdaptiveStartPolicy, FixedStartPolicy, WholeFilePolicy, simulatePlayback, oracleStartSec } from "../public/tts-stream/buffer-policy.js";
@@ -232,10 +233,10 @@ function loadTTSEngine(CONFIG, dir, logs) {
     constructor(opts) { super({ ...opts, logger: { log: s => logs.push(String(s)), warn: s => logs.push(String(s)) } }); }
   };
   const FishStub = class { constructor() { this.enginePrefs = {}; this.config = {}; } abortSource() {} abortAll() {} };
-  return new Function("deps", `const { CONFIG, FishAudioClient, SGLangTTSClient, SglangStreamManager, join, __dirname, mkdirSync, renameSync, rmSync, readdirSync, unlinkSync, spawn, createInterface, applyPhonetics, exec, discord } = deps;
+  return new Function("deps", `const { CONFIG, FishAudioClient, SGLangTTSClient, SglangStreamManager, SglangScheduler, join, __dirname, mkdirSync, renameSync, rmSync, readdirSync, unlinkSync, spawn, createInterface, applyPhonetics, exec, discord } = deps;
     ${lines.slice(start, end + 1).join("\n")}
     return TTSEngine;`)({
-    CONFIG, FishAudioClient: FishStub, SGLangTTSClient: PatchedSglang, SglangStreamManager: PatchedStreams, join, __dirname: dir, mkdirSync, renameSync, rmSync,
+    CONFIG, FishAudioClient: FishStub, SGLangTTSClient: PatchedSglang, SglangStreamManager: PatchedStreams, SglangScheduler, join, __dirname: dir, mkdirSync, renameSync, rmSync,
     readdirSync, unlinkSync, spawn: () => {}, createInterface: () => ({ on: () => {} }), applyPhonetics: s => s,
     exec: (_c, cb) => cb?.(), discord: { stopAudio: () => {} },
   });

@@ -59,7 +59,15 @@ class StreamSession {
     this.gain = ctx.createGain();
     this.gain.gain.value = meta.mute ? 0 : 1; // ?mute o ya suena por Discord: no se oye, pero el lip-sync sigue
     this.node.connect(this.gain).connect(ctx.destination);
-    this.policy = new AdaptiveStartPolicy({ estDurationSec: meta.estDurationSec || null, priorRate: meta.priorRate || 0.63 });
+    this.policy = new AdaptiveStartPolicy({
+      estDurationSec: meta.estDurationSec || null, priorRate: meta.priorRate || 0.63,
+      // Fase 3: respuesta en dos pedidos (1.ª oración anticipada + resto)
+      ...(meta.segmentBoundarySamples ? {
+        segmentBoundarySec: meta.segmentBoundarySamples / (meta.sampleRate || 44100),
+        segmentGapSec: meta.segmentGapSec || 3.8,
+        segmentStartedAt: (performance.now() - (meta.segmentAgeMs || 0)) / 1000,
+      } : {}),
+    });
     this.node.port.onmessage = ({ data }) => this._onWorklet(data);
     this.t0 = performance.now();
     this.lastSeq = -1;
@@ -99,6 +107,15 @@ class StreamSession {
     this.node.port.postMessage({ type: "push", pcm }, [pcm.buffer]); // se transfiere el frame entero (sin copiar)
     this._tick();
     return true;
+  }
+
+  // El servidor avisa dónde empieza el segundo pedido (si el primero terminó después de tts_stream_start)
+  setSegment(boundarySamples, gapSec = 3.8, ageMs = 0) {
+    if (this.closed || !(boundarySamples > 0)) return;
+    this.policy.segmentBoundarySec = boundarySamples / this.rate;
+    this.policy.segmentGapSec = gapSec;
+    this.policy.segmentStartedAt = (performance.now() - (ageMs || 0)) / 1000;
+    this._tick();
   }
 
   end(_totalSamples, partial = false) {

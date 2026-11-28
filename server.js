@@ -36,6 +36,9 @@ import { clampMood, getMoodState, computeChatMoodGain, decayMood, getMoodPromptC
 import { FishAudioClient } from "./lib/tts/fish-audio-client.js";
 import { SGLangTTSClient } from "./lib/tts/sglang-tts-client.js";
 import { SglangStreamManager } from "./lib/tts/sglang-stream.js";
+import { SglangScheduler } from "./lib/tts/sglang-scheduler.js";
+import { installSpeculation } from "./lib/tts/sglang-speculation.js";
+import { OverlapController, UNSAFE_SPEECH, findFirstSentence } from "./lib/tts/llm-tts-overlap.js";
 import { WhisperRemoteClient } from "./lib/stt/whisper-remote-client.js";
 import { parseVote, TRIBUNAL_ASK_RE } from "./lib/tribunal.js";
 
@@ -1760,7 +1763,7 @@ class StreamChatManager {
         fullText = !opts.streamer && username ? `${nickSafe || "@" + username}, ${safety.reply[0].toLowerCase() + safety.reply.slice(1)}` : safety.reply;
         const filtered = filters.filterOutput(fullText, opts.maxChars);
         const ttsSource = (rank === PRI.call || rank === PRI.look) && discord.on ? "discord" : "live";
-        const synthSafe = await tts.synth(filtered, { emotion: "sad", mood: moodAtPrep, source: ttsSource, returnMeta: true });
+        const synthSafe = await tts.synth(filtered, { emotion: "sad", mood: moodAtPrep, source: ttsSource, returnMeta: true, rank });
         if (synthSafe?.cancelled) return null;
         const url = synthSafe?.url ?? null;
         if (trace) { trace.profile = "safety-guard"; trace.latencyMs = Date.now() - tPrep; }
@@ -1817,97 +1820,155 @@ class StreamChatManager {
       const gestureNote = activeGesture
         ? `\n[GESTO EN PANTALLA: Ya estás haciendo la animación "${activeGesture}"${GESTURE_HINT[activeGesture] ? ` (${GESTURE_HINT[activeGesture]})` : ""} en pantalla cumpliendo el pedido.${activeGesture === "six_seven" ? ' Cuando lo nombres al hablar decí SIEMPRE "six seven" en inglés, nunca "seis siete" ni con números.' : ""} Seguí tu estilo sin decir que no podés moverte ni narrar la acción entre asteriscos.]`
         : "";
+      const ttsSourceEarly = (rank === PRI.call || rank === PRI.look) && discord.on ? "discord" : "live";
+      const expiresAtEarly = rank === PRI.look ? at + LOOK_TTL_MS : null;
+      const specBuild = segment => {
+        const extractedSeg = extractEmotionTag(segment);
+        const segClean = extractedSeg.cleanedText;
+        if (!segClean || UNSAFE_SPEECH.test(segClean) || isModelRefusal(segClean)) return null;
+        // No ejecutar _limitTics (muta _ticAgo): si contiene un tic y el cooldown lo sacaría, no especular
+        if (/(?<!\p{L})(fufu|ara)(?!\p{L})/iu.test(segClean) && ((this._ticAgo ?? 99) + 1) <= 5) return null;
+        let s = sanitizeModelResponse(segClean);
+        if (!/\p{L}/u.test(s)) return null;
+        if (!opts.rawPrompt && !GREETING_RE.test(text)) s = s.replace(LEADING_GREETING_RE, "").replace(/^\p{Ll}/u, c => c.toUpperCase());
+        let candidate = prefixed ? `${nick || "@" + username}, ${this._dropName(s, nick || username).replace(/^\p{Lu}(?=\p{Ll})/u, c => c.toLowerCase())}` : s;
+        if (activeGesture === "six_seven") candidate = normalizeSixSevenSpeech(candidate);
+        const segFiltered = filters.filterOutput(ai._stripContextLeaks(candidate), opts.maxChars);
+        if (!segFiltered) return null;
+        const segEmotion = resolveSpeakingEmotion({ explicitEmotion: opts.emotion || extractedSeg.emotion, text: segFiltered, mood: moodAtPrep });
+        return { ttsText: tts.ttsTextOf(segFiltered), emotion: segEmotion };
+      };
+      let spec = overlap?.begin?.({
+        providerId: client?.providerId,
+        source: ttsSourceEarly,
+        eligibleText: !opts.fixed,
+        mood: moodAtPrep,
+        expiresAt: expiresAtEarly,
+        rank,
+        build: specBuild,
+      }) || null;
       let modelBlocked = false;
+      const tLlmStart = performance.now();
+      let firstDeltaMs = null, firstSentenceMs = null;
       try {
-        const auth = { isDonor: !!opts.donor, isStreamer: fromCreator, isEvent: !!opts.rawPrompt, mood: moodAtPrep };
-        for await (const chunk of ai.chatStream(prompt + gestureNote + askGoalNote + limits, fromCreator ? "streamer" : username, client, await opts.image, opts.query ?? opts.said ?? text, trace, auth)) body += chunk;
-      } catch (err) {
-        if (err.modelBlocked || isModelFilterError(err?.message)) modelBlocked = true;
-        else throw err;
-      }
-      if (modelBlocked || isModelRefusal(body)) {
-        if (client?.proc) { client.turns = Infinity; client._refresh(); } // sesión limpia para que el bloqueo no contamine turnos siguientes
-        const direct = opts.rawPrompt || opts.streamer || opts.donor || rank === PRI.call || rank === PRI.look;
-        if (!direct) {
-          console.log(`🛑 Respuesta bloqueada por filtro del modelo [@${username}] — ignorada`);
-          return null;
+        try {
+          const auth = { isDonor: !!opts.donor, isStreamer: fromCreator, isEvent: !!opts.rawPrompt, mood: moodAtPrep };
+          for await (const chunk of ai.chatStream(prompt + gestureNote + askGoalNote + limits, fromCreator ? "streamer" : username, client, await opts.image, opts.query ?? opts.said ?? text, trace, auth)) {
+            if (chunk && firstDeltaMs === null) firstDeltaMs = Math.round(performance.now() - tLlmStart);
+            body += chunk;
+            if (firstSentenceMs === null && findFirstSentence(body)) firstSentenceMs = Math.round(performance.now() - tLlmStart);
+            overlap?.feed?.(spec, body);
+          }
+        } catch (err) {
+          if (err.modelBlocked || isModelFilterError(err?.message)) modelBlocked = true;
+          else throw err;
         }
-        console.warn(`⚠️  Respuesta bloqueada por filtro del modelo [@${username}] — respondiendo negativa`);
-        refused = true;
-        gesture = null;
-        body = REFUSAL_LINES[Math.floor(Math.random() * REFUSAL_LINES.length)];
-        fullText = prefixed ? `${nick || "@" + username}, ${body.replace(/^\p{Lu}(?=\p{Ll})/u, c => c.toLowerCase())}` : body;
-      } else {
-        const extractedEmo = extractEmotionTag(body);
-        llmEmotion = extractedEmo.emotion;
-        body = sanitizeModelResponse(extractedEmo.cleanedText);
-        const marked = /\[\s*(ANIMACI|GESTO)/i.test(body);
-        for (const [, what] of body.matchAll(ANIM_RE)) { // si el modelo escribió el gesto como [ANIMACIÓN: ...] igual lo ejecutamos si existe
-          const g = pickGesture(what);
-          if (g) gesture ??= g; else if (!activeGesture) wishes.add(what, opts.said ?? text);
+        const llmDoneMs = Math.round(performance.now() - tLlmStart);
+        if (trace) {
+          trace.firstDeltaMs = firstDeltaMs;
+          trace.firstSentenceMs = firstSentenceMs;
+          trace.llmDoneMs = llmDoneMs;
+          trace.overlapWindowMs = firstSentenceMs !== null ? Math.max(0, llmDoneMs - firstSentenceMs) : 0;
         }
-        body = body.replace(ANIM_RE, "").replace(/\s{2,}/g, " ").trim();
-        for (const [, what] of body.matchAll(GESTURE_RE)) { // uno que no existe cuenta como animación que le faltó
-          const g = pickGesture(what);
-          if (g) gesture ??= g; else if (!activeGesture) wishes.add(what, opts.said ?? text);
+        if (modelBlocked || isModelRefusal(body)) {
+          overlap?.abort?.(spec, "respuesta bloqueada o rechazada");
+          spec = null;
+          if (client?.proc) { client.turns = Infinity; client._refresh(); } // sesión limpia para que el bloqueo no contamine turnos siguientes
+          const direct = opts.rawPrompt || opts.streamer || opts.donor || rank === PRI.call || rank === PRI.look;
+          if (!direct) {
+            console.log(`🛑 Respuesta bloqueada por filtro del modelo [@${username}] — ignorada`);
+            return null;
+          }
+          console.warn(`⚠️  Respuesta bloqueada por filtro del modelo [@${username}] — respondiendo negativa`);
+          refused = true;
+          gesture = null;
+          body = REFUSAL_LINES[Math.floor(Math.random() * REFUSAL_LINES.length)];
+          fullText = prefixed ? `${nick || "@" + username}, ${body.replace(/^\p{Lu}(?=\p{Ll})/u, c => c.toLowerCase())}` : body;
+        } else {
+          const extractedEmo = extractEmotionTag(body);
+          llmEmotion = extractedEmo.emotion;
+          body = sanitizeModelResponse(extractedEmo.cleanedText);
+          const marked = /\[\s*(ANIMACI|GESTO)/i.test(body);
+          for (const [, what] of body.matchAll(ANIM_RE)) { // si el modelo escribió el gesto como [ANIMACIÓN: ...] igual lo ejecutamos si existe
+            const g = pickGesture(what);
+            if (g) gesture ??= g; else if (!activeGesture) wishes.add(what, opts.said ?? text);
+          }
+          body = body.replace(ANIM_RE, "").replace(/\s{2,}/g, " ").trim();
+          for (const [, what] of body.matchAll(GESTURE_RE)) { // uno que no existe cuenta como animación que le faltó
+            const g = pickGesture(what);
+            if (g) gesture ??= g; else if (!activeGesture) wishes.add(what, opts.said ?? text);
+          }
+          if (requestedGesture) gesture = requestedGesture;
+          // las acciones narradas (*se da vuelta*) se leían en voz alta
+          body = body.replace(GESTURE_RE, "").replace(/\*[^*]{1,100}\*/g, "").replace(/\s{2,}/g, " ").trim();
+          // A veces contesta solo con la marca: sin esto dice "..."
+          if (marked && !/\p{L}/u.test(body)) body = gesture ? "Mirá." : "Eso todavía no me sale, pero ya lo anoté para aprenderlo.";
+          if (!/\p{L}/u.test(body)) {
+            console.log(`🛑 Respuesta vacía del modelo [@${username}] — ignorada`);
+            return null;
+          }
+          const sug = body.match(SUG_RE);
+          if (sug) body = body.replace(SUG_RE, "").replace(/\s{2,}/g, " ").trim();
+          if (!opts.rawPrompt && (sug || looksSuggestion)) suggestions.add(username, text, sug ? sug[1] : text);
+          const ignEval = evaluateIgnoreAction({
+            viewerText: text,
+            modelText: body,
+            isCreator: fromCreator,
+            isRawPrompt: !!opts.rawPrompt,
+            recentStrikes: strikes,
+          });
+          body = ignEval.cleanedText;
+          if (ignEval.allow) {
+            ignoreMins = ignEval.minutes;
+            this._viewerStrikes?.delete(viewerKey);
+          } else if (ignEval.reason !== "sin marca" && ignEval.reason !== "protegido") {
+            console.log(`🛑 Marca [IGNORAR] rechazada [@${username}]: ${ignEval.reason}`);
+          }
+          if (!/\p{L}/u.test(body)) {
+            console.log(`🛑 Respuesta sin texto tras limpiar marcas [@${username}] — ignorada`);
+            return null;
+          }
+          // La IA arranca con "Buenas tardes" aunque no la saluden (pese a la regla): se saca si el viewer no saludó
+          if (!opts.rawPrompt && !GREETING_RE.test(text)) body = body.replace(LEADING_GREETING_RE, "").replace(/^\p{Ll}/u, c => c.toUpperCase());
+          fullText = prefixed ? `${nick || "@" + username}, ${this._dropName(body, nick || username).replace(/^\p{Lu}(?=\p{Ll})/u, c => c.toLowerCase())}` : body;
+          if (gesture === "six_seven") fullText = normalizeSixSevenSpeech(fullText);
         }
-        if (requestedGesture) gesture = requestedGesture;
-        // las acciones narradas (*se da vuelta*) se leían en voz alta
-        body = body.replace(GESTURE_RE, "").replace(/\*[^*]{1,100}\*/g, "").replace(/\s{2,}/g, " ").trim();
-        // A veces contesta solo con la marca: sin esto dice "..."
-        if (marked && !/\p{L}/u.test(body)) body = gesture ? "Mirá." : "Eso todavía no me sale, pero ya lo anoté para aprenderlo.";
-        if (!/\p{L}/u.test(body)) {
-          console.log(`🛑 Respuesta vacía del modelo [@${username}] — ignorada`);
-          return null;
-        }
-        const sug = body.match(SUG_RE);
-        if (sug) body = body.replace(SUG_RE, "").replace(/\s{2,}/g, " ").trim();
-        if (!opts.rawPrompt && (sug || looksSuggestion)) suggestions.add(username, text, sug ? sug[1] : text);
-        const ignEval = evaluateIgnoreAction({
-          viewerText: text,
-          modelText: body,
-          isCreator: fromCreator,
+        const filtered = this._limitTics(filters.filterOutput(ai._stripContextLeaks(fullText), opts.maxChars));
+        const usedRAG = !opts.fixed && !refused && ((trace?.ragCount || 0) > 0 || ai.kb.search(opts.query ?? opts.said ?? text).length > 0);
+        const emotion = refused ? getMoodState(moodAtPrep).baseEmotion : resolveSpeakingEmotion({ explicitEmotion: opts.emotion || llmEmotion, text: filtered, mood: moodAtPrep });
+        if (rank === PRI.look && Date.now() - at > LOOK_TTL_MS) return null;
+        const ttsSource = (rank === PRI.call || rank === PRI.look) && discord.on ? "discord" : "live";
+        const synthRes = (await overlap?.finish?.(spec, { filtered, emotion }))
+          || await tts.synth(filtered, { emotion, mood: moodAtPrep, source: ttsSource, returnMeta: true, expiresAt: rank === PRI.look ? at + LOOK_TTL_MS : null, rank });
+        if (synthRes?.cancelled) return null;
+        const url = synthRes?.url ?? null;
+        if (trace) trace.latencyMs = Date.now() - tPrep;
+        const viewerKeyOut = `${platform}:${String(username || "").toLowerCase()}`;
+        const strikesOut = this._viewerStrikes?.get(viewerKeyOut) || 0;
+        const hostileOut = !opts.fixed && !opts.rawPrompt && !opts.streamer && hasHostileEvidence(text, { isCreator: false, recentStrikes: strikesOut });
+        const moodPenalty = opts.fixed ? 0 : evaluateMoodPenalty({
+          hasHostility: hostileOut,
+          ignoreMins,
+          recentStrikes: strikesOut,
+          isCreator: !!opts.streamer,
           isRawPrompt: !!opts.rawPrompt,
-          recentStrikes: strikes,
         });
-        body = ignEval.cleanedText;
-        if (ignEval.allow) {
-          ignoreMins = ignEval.minutes;
-          this._viewerStrikes?.delete(viewerKey);
-        } else if (ignEval.reason !== "sin marca" && ignEval.reason !== "protegido") {
-          console.log(`🛑 Marca [IGNORAR] rechazada [@${username}]: ${ignEval.reason}`);
-        }
-        if (!/\p{L}/u.test(body)) {
-          console.log(`🛑 Respuesta sin texto tras limpiar marcas [@${username}] — ignorada`);
-          return null;
-        }
-        // La IA arranca con "Buenas tardes" aunque no la saluden (pese a la regla): se saca si el viewer no saludó
-        if (!opts.rawPrompt && !GREETING_RE.test(text)) body = body.replace(LEADING_GREETING_RE, "").replace(/^\p{Ll}/u, c => c.toUpperCase());
-        fullText = prefixed ? `${nick || "@" + username}, ${this._dropName(body, nick || username).replace(/^\p{Lu}(?=\p{Ll})/u, c => c.toLowerCase())}` : body;
-        if (gesture === "six_seven") fullText = normalizeSixSevenSpeech(fullText);
+        const moodPenaltyKey = moodPenalty < 0 ? `neg:${viewerKeyOut}:${text}` : null;
+        return { fullText, filtered, usedRAG, url, gesture, refused, ignoreMins, trace, emotion, mood: moodAtPrep, moodPenalty, moodPenaltyKey };
+      } finally {
+        overlap?.abort?.(spec, "respuesta descartada antes de reproducirse");
       }
     }
     const filtered = this._limitTics(filters.filterOutput(ai._stripContextLeaks(fullText), opts.maxChars));
-    const usedRAG = !opts.fixed && !refused && ((trace?.ragCount || 0) > 0 || ai.kb.search(opts.query ?? opts.said ?? text).length > 0);
-    const emotion = refused ? getMoodState(moodAtPrep).baseEmotion : resolveSpeakingEmotion({ explicitEmotion: opts.emotion || llmEmotion, text: filtered, mood: moodAtPrep });
+    const usedRAG = false;
+    const emotion = resolveSpeakingEmotion({ explicitEmotion: opts.emotion || llmEmotion, text: filtered, mood: moodAtPrep });
     if (rank === PRI.look && Date.now() - at > LOOK_TTL_MS) return null;
     const ttsSource = (rank === PRI.call || rank === PRI.look) && discord.on ? "discord" : "live";
-    const synthRes = await tts.synth(filtered, { emotion, mood: moodAtPrep, source: ttsSource, returnMeta: true, expiresAt: rank === PRI.look ? at + LOOK_TTL_MS : null });
+    const synthRes = await tts.synth(filtered, { emotion, mood: moodAtPrep, source: ttsSource, returnMeta: true, expiresAt: rank === PRI.look ? at + LOOK_TTL_MS : null, rank });
     if (synthRes?.cancelled) return null;
     const url = synthRes?.url ?? null;
     if (trace) trace.latencyMs = Date.now() - tPrep;
-    const viewerKeyOut = `${platform}:${String(username || "").toLowerCase()}`;
-    const strikesOut = this._viewerStrikes?.get(viewerKeyOut) || 0;
-    const hostileOut = !opts.fixed && !opts.rawPrompt && !opts.streamer && hasHostileEvidence(text, { isCreator: false, recentStrikes: strikesOut });
-    const moodPenalty = opts.fixed ? 0 : evaluateMoodPenalty({
-      hasHostility: hostileOut,
-      ignoreMins,
-      recentStrikes: strikesOut,
-      isCreator: !!opts.streamer,
-      isRawPrompt: !!opts.rawPrompt,
-    });
-    const moodPenaltyKey = moodPenalty < 0 ? `neg:${viewerKeyOut}:${text}` : null;
-    return { fullText, filtered, usedRAG, url, gesture, refused, ignoreMins, trace, emotion, mood: moodAtPrep, moodPenalty, moodPenaltyKey };
+    return { fullText, filtered, usedRAG, url, gesture, refused, ignoreMins, trace, emotion, mood: moodAtPrep, moodPenalty: 0, moodPenaltyKey: null };
   }
 
   ignoreUser(platform, username, mins) {
@@ -2669,7 +2730,7 @@ class TTSEngine {
       settingsFile: join(__dirname, "tts_settings.json"),
       allowedHosts: process.env.FISH_TTS_ALLOWED_HOSTS ? process.env.FISH_TTS_ALLOWED_HOSTS.split(",") : null,
     });
-    this._sglangQueue = Promise.resolve(); // un solo pedido a la vez contra el backend SGLang (1 worker)
+    this._sglang = new SglangScheduler(); // un solo pedido a la vez contra el backend SGLang (1 worker)
     this.sglang = new SGLangTTSClient({
       config: CONFIG.sglang || {},
       settingsFile: join(__dirname, "tts_settings.json"),
@@ -2745,7 +2806,7 @@ class TTSEngine {
     return CONFIG.ttsEngine || (CONFIG.useSystemTTS ? "system" : "murf");
   }
 
-  async synth(text, { engine = null, emotion = null, mood = 50, source = "live", returnMeta = false, expiresAt = null } = {}) {
+  async synth(text, { engine = null, emotion = null, mood = 50, source = "live", returnMeta = false, expiresAt = null, rank = 4 } = {}) {
     const clean = applyPhonetics(this.clean(text)); // palabras en inglés escritas como suenan (panel: Pronunciación)
     const wrap = (url, cancelled = false, fallbackUsed = false) => returnMeta ? { url, cancelled, fallbackUsed } : url;
     if (!clean) return wrap(null);
@@ -2788,7 +2849,7 @@ class TTSEngine {
       const useStream = wantStream && this.streams.capableClients().length > 0;
       if (wantStream && !useStream) console.log("🎧 SGLang stream: ninguna vista compatible conectada — se usa WAV");
       try {
-        const { url } = await (useStream ? this.sglangStreamJob(clean, { emotion, mood, source, expiresAt }) : this.sglangJob(clean, { emotion, mood, source, expiresAt }));
+        const { url } = await (useStream ? this.sglangStreamJob(clean, { emotion, mood, source, expiresAt, rank }) : this.sglangJob(clean, { emotion, mood, source, expiresAt, rank }));
         return wrap(url);
       } catch (err) {
         if (err.cancelled || err.expired || isCancelled()) {
@@ -2835,7 +2896,7 @@ class TTSEngine {
 
   // Un pedido SGLang en su cola propia (1 a la vez, no bloquea Fish/Piper/Edge). La epoch de la fuente se toma al
   // encolar: stop(fuente) invalida activos y pendientes. Lanza {cancelled} o {expired}; el fallback lo decide quien llama.
-  sglangJob(text, { emotion = null, mood = 50, source = "live", expiresAt = null } = {}) {
+  sglangJob(text, { emotion = null, mood = 50, source = "live", expiresAt = null, rank = 4 } = {}) {
     const myEpoch = this._cancelEpoch.get(source) || 0;
     const isCancelled = () => (this._cancelEpoch.get(source) || 0) !== myEpoch;
     const enqueuedAt = performance.now();
@@ -2853,15 +2914,13 @@ class TTSEngine {
         if ((f.endsWith(".mp3") || f.endsWith(".wav")) && Date.now() - Number(f.slice(0, 13)) > 1800000) try { unlinkSync(join(dir, f)); } catch { }
       return { url: `/tts/${res.filePath.split(/[\\/]/).pop()}`, metrics: res.metrics };
     };
-    const queued = this._sglangQueue.then(run, run);
-    this._sglangQueue = queued.catch(() => {});
-    return queued;
+    return this._sglang.enqueue(run, { rank, kind: "normal" });
   }
 
   // Fase 2: misma cola y epoch que sglangJob, pero resuelve apenas el gateway valida las cabeceras (url "stream:<id>").
   // La generación sigue en segundo plano ocupando la cola hasta terminar; el PCM espera en la sesión hasta play().
   // Errores ANTES de las cabeceras rechazan (el fallback de synth() actúa como en WAV); después, los maneja la sesión.
-  sglangStreamJob(text, { emotion = null, mood = 50, source = "live", expiresAt = null } = {}) {
+  sglangStreamJob(text, { emotion = null, mood = 50, source = "live", expiresAt = null, rank = 4 } = {}) {
     const myEpoch = this._cancelEpoch.get(source) || 0;
     const isCancelled = () => (this._cancelEpoch.get(source) || 0) !== myEpoch;
     const enqueuedAt = performance.now();
@@ -2886,8 +2945,7 @@ class TTSEngine {
         else this.streams.onFail(st, err);
       }
     };
-    const queued = this._sglangQueue.then(run, run);
-    this._sglangQueue = queued.catch(() => {});
+    this._sglang.enqueue(run, { rank, kind: "normal" }).catch(() => {});
     return ready;
   }
 
@@ -3151,6 +3209,7 @@ class TTSEngine {
       this.sglang.abortAll();
     }
     // Sesiones PCM: corta en las vistas (aunque la generación ya haya terminado) y libera memoria
+    this.stopSpeculation?.(source);
     this.streams.cancelSource(source);
     if (this._streamUrl && !this.streams.get(this._streamUrl)) { this._streamUrl = null; this.currentUrl = null; }
     if (!source) this.currentUrl = null; // un fallback de stream en curso ya no debe sonar después del Stop
@@ -3225,7 +3284,13 @@ const kb = new KnowledgeBase();
 const ai = new NyraAI(kb, providerRegistry);
 await ai.syncProviders();
 const providerController = createProviderController({ registry: providerRegistry, ai });
-const tts = new TTSEngine();
+const tts = installSpeculation(new TTSEngine(), { applyPhonetics });
+const overlap = new OverlapController({
+  tts,
+  enabled: () => tts.sglang.config.overlap === true,
+  log: s => console.log(s),
+});
+tts.sglang.getOverlapStats = () => ({ ...overlap.publicStats(), activeProvider: ai.llm?.providerId || null });
 const filters = new FilterEngine();
 const streamChat = new StreamChatManager();
 streamChat.settings.respondToAll = !!filters.data.respondToAll; // respetar lo guardado (el panel lo muestra desde filters.json)
@@ -3740,8 +3805,8 @@ app.get("/api/tts/sglang/config", (req, res) => {
 
 app.post("/api/tts/sglang/config", (req, res) => {
   try {
-    const { url, timeoutMs, expressive, fallback, playbackMode } = req.body || {};
-    res.json({ ok: true, config: tts.sglang.updateConfig({ url, timeoutMs, expressive, fallback, playbackMode }) });
+    const { url, timeoutMs, expressive, fallback, playbackMode, overlap: overlapFlag } = req.body || {};
+    res.json({ ok: true, config: tts.sglang.updateConfig({ url, timeoutMs, expressive, fallback, playbackMode, overlap: overlapFlag }) });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
   }

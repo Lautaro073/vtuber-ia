@@ -578,6 +578,8 @@
             </select>
           </label>
           <div id="sglangStreamInfo" style="font-size:10px;color:var(--dim);line-height:1.35;display:none"></div>
+          <label style="cursor:pointer;font-size:11px;color:var(--dim)" title="Mientras la IA termina de escribir, sintetiza la primera oración sin reproducirla. Solo se usa si la respuesta final (ya validada) empieza exactamente igual y con la misma emoción; si no, se descarta. Solo Claude Code y Antigravity, con Streaming PCM."><input type="checkbox" id="sglangOverlap"> Adelantar la 1.ª oración (LLM → TTS, experimental)</label>
+          <div id="sglangOverlapInfo" style="font-size:10px;color:var(--dim);line-height:1.35;display:none"></div>
           <button class="btn btn-sm" onclick="saveSglangConfig()" style="background:var(--panel);color:var(--lime);border:1px solid var(--border)">Guardar config</button>
           <div style="display:flex;gap:6px">
             <input type="text" id="sglangTestText" aria-label="Texto de prueba SGLang" value="Buenas noches chat, esto es una prueba de SGLang." style="flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
@@ -1471,6 +1473,32 @@
     document.getElementById('sglangKeyInfo').textContent = `Clave: ${cfg.apiKeyConfigured ? 'configurada en .env' : 'falta SGLANG_TTS_API_KEY en .env'}`;
     renderSglangHealth(cfg.health, cfg.metrics);
     renderSglangStream(cfg.playbackMode, cfg.stream);
+    renderSglangOverlap(cfg);
+  }
+  // Fase 3: solo contadores reales del servidor; "ventaja" = cuánto llevaba hecho la síntesis al validar (estimación)
+  function renderSglangOverlap(cfg) {
+    document.getElementById('sglangOverlap').checked = cfg.overlap === true;
+    const el = document.getElementById('sglangOverlapInfo');
+    el.style.display = cfg.overlap ? 'block' : 'none';
+    if (!cfg.overlap) return;
+    const s = cfg.overlapStats;
+    const prov = s?.activeProvider || null;
+    const provLine = prov === 'claude-code'
+      ? 'Proveedor activo: Claude Code (compatible).'
+      : prov === 'agy'
+        ? 'Proveedor activo: Antigravity (compatible según eventos; progresividad real pendiente de comprobación).'
+        : prov
+          ? `Proveedor activo: ${prov} (no disponible: usa el camino tradicional).`
+          : 'Solo se aplica con Claude Code o Antigravity (Codex y OpenCode usan el camino tradicional).';
+    const lines = [cfg.playbackMode === 'stream' ? provLine : 'Inactiva: requiere Reproducción → Streaming PCM.'];
+    if (s) {
+      lines.push(`Anticipadas: ${s.started} · usadas: ${s.used} · descartadas: ${s.discarded}${s.used ? ` · ventaja acumulada estimada: ${(s.savedMsTotal / 1000).toFixed(1)} s` : ''}${s.discarded ? ` · GPU descartada: ${(s.wastedGpuMsTotal / 1000).toFixed(1)} s` : ''}`);
+      const why = Object.entries(s.skipped || {}).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} (${v})`);
+      if (why.length) lines.push('Camino tradicional por: ' + why.join(' · '));
+      const disc = Object.entries(s.discardReasons || {}).slice(0, 3).map(([k, v]) => `${k} (${v})`);
+      if (disc.length) lines.push('Descartadas por: ' + disc.join(' · '));
+    }
+    el.innerText = lines.join('\n');
   }
   // Métricas de la última reproducción progresiva. Solo se muestra lo medido; el inicio audible lo mide el navegador
   // (estimación del renderizado, no el sonido físico) y nunca se presenta el primer PCM como latencia audible.
@@ -1528,6 +1556,7 @@
         expressive: document.getElementById('sglangExpressive').checked,
         fallback: document.getElementById('sglangFallback').checked,
         playbackMode: document.getElementById('sglangPlaybackMode').value,
+        overlap: document.getElementById('sglangOverlap').checked,
       };
       const data = await fetch('/api/tts/sglang/config', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),

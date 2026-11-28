@@ -281,11 +281,15 @@ test("StreamChatManager._prepare and _respond handle all emotional paths without
       hasPendingSixSevenGoal, hasSixSeven, pickCreatorGesture, pickGesture, normalizeSixSevenSpeech,
       has3dAvatar, goalDistance, isModelFilterError, isModelRefusal, dropLeadingName,
       getMoodState, resolveSpeakingEmotion, extractEmotionTag, evaluateMoodPenalty,
-      ai, tts, filters, wishes, suggestions, broadcast, logTranscript, followUp
+      ai, tts, filters, wishes, suggestions, broadcast, logTranscript, followUp,
+      overlap, UNSAFE_SPEECH, findFirstSentence
     } = deps;
     ${classCode}
     return StreamChatManager;`
   )({
+    overlap: null,
+    UNSAFE_SPEECH: /$^/,
+    findFirstSentence: () => null,
     uuidv4: () => "12345678-0000-0000-0000-000000000000",
     live,
     evaluateContextualSafety,

@@ -20,8 +20,13 @@ export class AdaptiveStartPolicy {
     safetySec = 0.35,
     estUncertainty = 0.2,    // la duración real puede ser +20 % de lo estimado
     mergeWindowSec = 0.15,   // lecturas TCP muy juntas = un mismo evento de generación
+    // Fase 3 (opcional): la respuesta llega en DOS pedidos; el segundo arranca con su propio TTFA. Sin esto la política
+    // trata ese hueco como un bloque normal y corta en el límite. null = una sola síntesis (comportamiento de Fase 2).
+    segmentBoundarySec = null,
+    segmentGapSec = 3.8,
+    segmentStartedAt = null, // instante (en el mismo reloj que t) en que arrancó el 2.º pedido
   } = {}) {
-    Object.assign(this, { estDurationSec, priorRate, priorBlockSec, safetySec, estUncertainty, mergeWindowSec });
+    Object.assign(this, { estDurationSec, priorRate, priorBlockSec, safetySec, estUncertainty, mergeWindowSec, segmentBoundarySec, segmentGapSec, segmentStartedAt });
     this.events = [];        // [{t, a}] a = audio acumulado (s)
     this.ended = false;
     this.underruns = 0;
@@ -71,7 +76,10 @@ export class AdaptiveStartPolicy {
   requiredBufferSec(t, playedSec = 0) {
     if (this.ended || !this.events.length) return 0;
     const A = this.received;
-    const r = this.rate();
+    // Con dos pedidos, el primero termina con un bloque corto que llega rápido y la velocidad observada sale optimista:
+    // hasta cruzar el límite no se confía en una velocidad mayor que la previa.
+    const beforeBoundary = this.segmentBoundarySec !== null && A < this.segmentBoundarySec + 0.02;
+    const r = beforeBoundary ? Math.min(this.rate(), this.priorRate) : this.rate();
     const b = this.blockSec();
     const p = b / r;
     const est = this.estDurationSec ? this.estDurationSec * (1 + this.estUncertainty) : A + 2 * b;
@@ -79,9 +87,18 @@ export class AdaptiveStartPolicy {
     const R = est - A > 0.05 ? est - A : b;
     const next = Math.min(b, R); // el último bloque suele ser más corto
     const sinceLast = t - this.events[this.events.length - 1].t;
-    const tNext = Math.max(0, Math.min(p, next / r) - sinceLast);
+    let tNext = Math.max(0, Math.min(p, next / r) - sinceLast);
     const deficit = r < 1 ? Math.max(0, R - next) * (1 - r) / r : 0;
-    return tNext + deficit + this.safetySec;
+    let gap = 0;
+    if (this.segmentBoundarySec !== null) {
+      if (A >= this.segmentBoundarySec - 0.02 && A < this.segmentBoundarySec + 0.02) {
+        const sinceSegStart = this.segmentStartedAt !== null ? Math.max(0, t - this.segmentStartedAt) : sinceLast;
+        tNext = Math.max(tNext, Math.max(0, this.segmentGapSec - sinceSegStart)); // primer segmento completo: TTFA desde que arrancó el 2.º pedido
+      } else if (A < this.segmentBoundarySec) {
+        gap = Math.max(0, this.segmentGapSec - p); // todavía falta cruzar el límite: ese hueco extra hay que cubrirlo
+      }
+    }
+    return tNext + deficit + gap + this.safetySec;
   }
 
   shouldPlay(t, playedSec = 0) {
