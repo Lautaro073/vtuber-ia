@@ -719,8 +719,27 @@ const GOAL_NUM_WORD_RE = /\b(?:cu[aá]nt[oa]s?|n[uú]meros?|cantidad(?:es)?|cifr
 const GOAL_ASK_RE = /\b(?:cu[aá]nt[oa]s?|qu[eé]\s+(?:cantidad|n[uú]mero|cifra)|c[oó]mo\s+va(?:n)?)\b.*\b(?:metas?|regalos?|rosas?|puntos?|diamantes?|kicks?|bits?|desbloque|barra)\b|\b(?:metas?|regalos?|rosas?|puntos?|diamantes?|kicks?|bits?)\b.*\b(?:cu[aá]nt[oa]s?|falta|faltan|llevamos|quedan?|va(?:n)?)\b/iu;
 // Lo pagado tiene que estar a la altura de la promesa: una "opinión polémica" salía tipo "el té con limón es mejor"
 const POLEMIC_RE = /pol[eé]mic|controvers|hot ?take|opini[oó]n (fuerte|picante|prohibida)/i;
-const goalStrength = g => ` Tiene que estar a la altura de lo que promete el texto, palabra por palabra: si dice "más", "nunca", "completa" o "prohibida", es lo máximo, no algo tibio.` +
-  (POLEMIC_RE.test(g.reward) ? ` Es una opinión POLÉMICA de verdad: algo fuerte que a buena parte del chat le moleste o lo haga discutir (sobre costumbres, relaciones, plata, trabajo, religión, internet, streamers, fama, gaming, música, fútbol, moral de todos los días), dicho en primera persona, sin suavizarlo y sin "igual cada uno con lo suyo". Defendela con un argumento y cerrá provocando ("cambienme de opinión"). Prohibido lo inofensivo tipo gustos de comida o bebida, el clima o "la gente debería ser más amable". Lo único que no hacés es atacar a un grupo por identidad, origen, orientación, cuerpo o salud: criticá ideas y conductas, no a quién es la gente.` : "");
+// Las opiniones polémicas que sacamos del modelo de NYRA (docs/opiniones-polemicas-nyra.md): al pagar una meta usa una, sin repetir hasta agotarlas
+const POLEMICS_FILE = join(__dirname, "docs", "opiniones-polemicas-nyra.md");
+const _usedPolemics = new Set();
+function pickPolemic() {
+  let list;
+  try { list = readFileSync(POLEMICS_FILE, "utf8").split(/\r?\n/).map(l => l.match(/^(?:\d+\.|-)\s+\*\*(.+?):\*\*\s+(.+)$/)).filter(Boolean).map(m => `${m[1]}: ${m[2]}`); }
+  catch { return null; } // sin archivo, la inventa como antes
+  if (list.every(x => _usedPolemics.has(x))) _usedPolemics.clear();
+  const fresh = list.filter(x => !_usedPolemics.has(x));
+  const pick = fresh[Math.floor(Math.random() * fresh.length)] || null;
+  if (pick) _usedPolemics.add(pick);
+  return pick;
+}
+function goalStrength(g) {
+  const base = ` Tiene que estar a la altura de lo que promete el texto, palabra por palabra: si dice "más", "nunca", "completa" o "prohibida", es lo máximo, no algo tibio.`;
+  if (!POLEMIC_RE.test(g.reward)) return base;
+  const pick = pickPolemic();
+  if (!pick) return base + ` Es una opinión POLÉMICA de verdad: algo fuerte que a buena parte del chat le moleste o lo haga discutir (sobre costumbres, relaciones, plata, trabajo, religión, internet, streamers, fama, gaming, música, fútbol, moral de todos los días), dicho en primera persona, sin suavizarlo y sin "igual cada uno con lo suyo". Defendela con un argumento y cerrá provocando ("cambienme de opinión"). Prohibido lo inofensivo tipo gustos de comida o bebida, el clima o "la gente debería ser más amable". Lo único que no hacés es atacar a un grupo por identidad, origen, orientación, cuerpo o salud: criticá ideas y conductas, no a quién es la gente.`;
+  const [topic, ...rest] = pick.split(":");
+  return base + ` La opinión polémica que vas a dar es esta, que ya es tuya (sobre ${topic}): «${rest.join(":").trim()}». Decila con tus palabras sin suavizarla, defendela con un argumento y cerrá provocando ("cambienme de opinión"). No te burles de nadie por identidad, origen, orientación, cuerpo o salud.`;
+}
 const goalPrompt = g => `[META CUMPLIDA] Con sus regalos de TikTok el chat desbloqueó: "${g.reward}". YA ESTÁ PAGADO: cumplilo de verdad AHORA, en esta misma respuesta, sin postergarlo, sin dejar intriga y sin pedir más regalos. Una oración corta de festejo y después cumplilo completo y concreto (si es contar algo tuyo, inventalo con detalles específicos y coherentes con tu personaje, nada de vaguedades).${goalStrength(g)} Entre 3 y 5 oraciones.`;
 const goalGesture = reward => hasSixSeven(reward) ? "six_seven" : undefined;
 const hasWordsOrGesture = text => (String(text || "").match(/\p{L}/gu) || []).length >= 2 || hasSixSeven(text);
