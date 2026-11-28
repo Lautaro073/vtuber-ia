@@ -571,10 +571,17 @@
             <label style="cursor:pointer"><input type="checkbox" id="sglangExpressive" checked> Expresividad</label>
             <label style="cursor:pointer"><input type="checkbox" id="sglangFallback" checked> Fallback Edge</label>
           </div>
+          <label style="font-size:11px;color:var(--dim);display:flex;gap:6px;align-items:center">Reproducción
+            <select id="sglangPlaybackMode" class="model-select" style="margin:0;flex:1" aria-label="Modo de reproducción SGLang">
+              <option value="wav">WAV completo (estable)</option>
+              <option value="stream">Streaming PCM (experimental)</option>
+            </select>
+          </label>
+          <div id="sglangStreamInfo" style="font-size:10px;color:var(--dim);line-height:1.35;display:none"></div>
           <button class="btn btn-sm" onclick="saveSglangConfig()" style="background:var(--panel);color:var(--lime);border:1px solid var(--border)">Guardar config</button>
           <div style="display:flex;gap:6px">
             <input type="text" id="sglangTestText" aria-label="Texto de prueba SGLang" value="Buenas noches chat, esto es una prueba de SGLang." style="flex:1;min-width:0;background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px;font-size:11px">
-            <button class="btn btn-sm" onclick="testSglangVoice()" style="background:var(--panel);color:var(--cyan);border:1px solid var(--border)">▶ Probar</button>
+            <button class="btn btn-sm" id="sglangTestBtn" onclick="testSglangVoice()" style="background:var(--panel);color:var(--cyan);border:1px solid var(--border)">▶ Probar</button>
           </div>
           <div id="sglangHealthInfo" style="font-size:10px;color:var(--dim);line-height:1.35">Modelo: - · Voz: -</div>
           <div id="sglangMetricsInfo" style="font-size:10px;color:var(--dim);line-height:1.35">Total: - · Duración: - · RTF: -</div>
@@ -1460,8 +1467,41 @@
     document.getElementById('sglangTimeout').value = cfg.timeoutMs ?? 60000;
     document.getElementById('sglangExpressive').checked = cfg.expressive !== false;
     document.getElementById('sglangFallback').checked = cfg.fallback !== false;
+    document.getElementById('sglangPlaybackMode').value = cfg.playbackMode === 'stream' ? 'stream' : 'wav';
     document.getElementById('sglangKeyInfo').textContent = `Clave: ${cfg.apiKeyConfigured ? 'configurada en .env' : 'falta SGLANG_TTS_API_KEY en .env'}`;
     renderSglangHealth(cfg.health, cfg.metrics);
+    renderSglangStream(cfg.playbackMode, cfg.stream);
+  }
+  // Métricas de la última reproducción progresiva. Solo se muestra lo medido; el inicio audible lo mide el navegador
+  // (estimación del renderizado, no el sonido físico) y nunca se presenta el primer PCM como latencia audible.
+  function renderSglangStream(mode, st) {
+    const el = document.getElementById('sglangStreamInfo');
+    el.style.display = mode === 'stream' ? 'block' : 'none';
+    document.getElementById('sglangTestBtn').textContent = mode === 'stream' ? '▶ Probar transporte PCM' : '▶ Probar';
+    document.getElementById('sglangTestBtn').title = mode === 'stream'
+      ? 'Valida el streaming PCM con el gateway (cabeceras, 1er PCM, bloques). En el panel el resultado suena como WAV; la reproducción progresiva real ocurre en la vista /obs.'
+      : 'Genera un WAV completo y lo reproduce en el panel';
+    if (mode !== 'stream') return;
+    const lines = ['Reproducción progresiva real: solo en la vista /obs del directo (Discord sigue en WAV). «Probar transporte PCM» valida el streaming pero en este panel suena como WAV.'];
+    if (!st?.server) { lines.push('Todavía no hay reproducciones progresivas registradas.'); el.innerText = lines.join('\n'); return; }
+    const s = st.server, c = st.client;
+    const ms = v => (v === null || v === undefined ? null : `${v} ms`);
+    const tipo = s.source === 'panel_test' ? 'prueba de transporte (panel)' : 'directo';
+    lines.push('Síntesis (servidor) · ' + [
+      `#${s.id} ${tipo} · ${s.result}${s.partialFailure ? ' (falla parcial)' : ''}${s.cancelReason ? ` · cancelado: ${s.cancelReason}` : ''}`,
+      ms(s.firstPcmMs) && `1er PCM: ${ms(s.firstPcmMs)}`,
+      s.audioSec ? `audio: ${s.audioSec} s` : null,
+      ms(s.genEndMs) && `fin de generación: ${ms(s.genEndMs)}`,
+      s.participants ? `vistas: ${s.participants} (${s.audibleParticipants} audibles)` : null,
+    ].filter(Boolean).join(' · '));
+    lines.push(c ? 'Navegador (avatar) · ' + [
+      ms(c.audibleStartMs) && `inicio audible estimado: ${ms(c.audibleStartMs)} desde que empezó su turno`,
+      c.bufferAtStartSec !== null && `búfer inicial: ${c.bufferAtStartSec} s`,
+      `cortes: ${c.underruns ?? 0}${c.underrunMs ? ` (${c.underrunMs} ms)` : ''}`,
+      c.contextRate && `audio a ${c.contextRate} Hz${c.contextRate !== 44100 ? ' (remuestreado)' : ''}`,
+      c.result && `resultado: ${c.result}`,
+    ].filter(Boolean).join(' · ') : 'Navegador (avatar) · sin datos: esta reproducción no sonó en una vista /obs o la vista no envió métricas.');
+    el.innerText = lines.join('\n');
   }
   function renderSglangHealth(h, m) {
     // Una síntesis fallida posterior al último health manda (el health exitoso limpia lastError)
@@ -1487,6 +1527,7 @@
         timeoutMs: Number(document.getElementById('sglangTimeout').value),
         expressive: document.getElementById('sglangExpressive').checked,
         fallback: document.getElementById('sglangFallback').checked,
+        playbackMode: document.getElementById('sglangPlaybackMode').value,
       };
       const data = await fetch('/api/tts/sglang/config', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -1514,7 +1555,9 @@
       }).then(r => r.json());
       if (!data.ok) { renderSglangConfig(data.config); throw new Error(data.error || 'Error en prueba de voz'); }
       new Audio(data.url).play().catch(() => {});
-      toast(`Prueba lista (${data.metrics.totalMs}ms, RTF ${data.metrics.rtf})`);
+      toast(data.mode === 'stream'
+        ? `Prueba stream lista: 1er PCM ${data.metrics.firstPcmMs ?? '-'}ms, ${data.metrics.chunks ?? 0} bloques, total ${data.metrics.totalMs}ms (en el panel suena como WAV)`
+        : `Prueba lista (${data.metrics.totalMs}ms, RTF ${data.metrics.rtf})`);
       loadSglangConfig();
     } catch (e) { toast('Error: ' + e.message); }
   }

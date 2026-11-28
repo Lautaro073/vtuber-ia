@@ -283,6 +283,22 @@
     }, 60);
   }
   function stopLipsync() { clearInterval(lipTimer); lipTimer = null; setFace({ mouth: 'closed' }); }
+  // Streaming PCM: la boca sigue al audio que REALMENTE suena (nivel del worklet); el texto solo elige la forma.
+  // En un corte el nivel es 0 → boca cerrada. La duración total recién se conoce al final: hasta ahí, estimada.
+  function startLipsyncStream(text, sess) {
+    stopLipsync();
+    const chars = [...text];
+    if (!chars.length) return;
+    let prev = 'closed';
+    lipTimer = setInterval(() => {
+      if (sess.closed) return stopLipsync();
+      if (sess.level < 0.015) { prev = 'closed'; return setFace({ mouth: 'closed' }); }
+      const dur = sess.totalSec || Math.max(sess.meta.estDurationSec || 0, sess.playedSec + 0.5);
+      const idx = Math.min(chars.length - 1, Math.floor(sess.playedSec / dur * chars.length));
+      prev = charToViseme(chars[idx], prev);
+      setFace({ mouth: prev === 'closed' ? 'ei' : prev });
+    }, 60);
+  }
 
   // ── Estado general ──
   function setState(s) {
@@ -325,6 +341,7 @@
   let idleTimer = null;
 
   function onWsMessage({ data }) {
+    if (data instanceof ArrayBuffer) { _sp?.onBinary(data); return; } // PCM progresivo (solo si anunciamos soporte)
     const m = JSON.parse(data);
 
     if (m.type === 'welcome') {
@@ -354,6 +371,9 @@
       idleTimer = setTimeout(() => { if (!_audioPlaying) setState('idle'); }, 8000);
     }
     if (m.type === 'tts_play') playTTS(m.url, m.mute);
+    if (m.type === 'tts_stream_start') onStreamStart(m);
+    if (m.type === 'tts_stream_end') _sp?.sessions.get(m.id)?.end(m.totalSamples, m.partial);
+    if (m.type === 'tts_stream_cancel') onStreamCancel(m.id);
     if (m.type === 'play_gesture' && document.body.classList.contains('mode3d')) nyra3d?.gesture(m.name); // elegida en el panel
     if (m.type === 'error') setState('idle');
   };
@@ -361,7 +381,8 @@
   // Reconectar si se reinicia el server (si no, la fuente de OBS/TikTok Studio queda "muda" hasta recargarla)
   function connectWS() {
     ws = new WebSocket(`${wsProto}//${location.host}${obs3dActive ? '?3d=1' : ''}`);
-    ws.onopen = () => { if (FORCE_3D) notify3d(); };
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => { if (FORCE_3D) notify3d(); sendCaps(); };
     ws.onmessage = onWsMessage;
     ws.onclose = () => setTimeout(connectWS, 2000);
   }
@@ -402,7 +423,78 @@
     const ctx = _getCtx();
     ctx.resume().catch(() => {});
     overlay.style.display = 'none';
+    _sp?.resume()?.then(sendCaps);
   }
+
+  // ── PCM progresivo (SGLang, Fase 2): AudioWorklet propio. Sin soporte → el servidor sigue mandando WAV ──
+  let _sp = null, _currentStream = null;
+  async function _initStreamPlayer() {
+    try {
+      const { StreamPlayer } = await import('./tts-stream/stream-player.js');
+      if (!StreamPlayer.supported()) return;
+      _sp = await new StreamPlayer().init();
+      _sp.ctx.onstatechange = sendCaps;
+      if (_isOBS) _sp.resume();
+      sendCaps();
+    } catch (e) { console.warn('PCM progresivo no disponible, sigo con WAV:', e); _sp = null; }
+  }
+  // Solo se anuncia soporte si el audio puede sonar YA (OBS, o navegador ya desbloqueado con un clic)
+  function sendCaps() {
+    if (ws?.readyState === 1) ws.send(JSON.stringify({ type: 'tts_caps', v: 1, stream: !!_sp && _sp.running, mute: _MUTE }));
+  }
+
+  const _seenStreamIds = new Set(); // cada vista reproduce cada stream a lo sumo una vez
+  function onStreamStart(m) {
+    if (!_sp || _seenStreamIds.has(m.id)) return; // sin soporte (no debería llegar) o inicio repetido
+    _seenStreamIds.add(m.id);
+    if (_seenStreamIds.size > 64) _seenStreamIds.delete(_seenStreamIds.values().next().value);
+    const sess = _sp.createSession({ ...m, mute: m.mute || _MUTE }, {
+      onAudible: s => {
+        clearTimeout(idleTimer);
+        setState('speaking');
+        if (s.turnEmo) setFace({ emo: s.turnEmo }); // la emoción del turno, por si un live_state la pisó mientras cargaba
+        startLipsyncStream(lastText, s);
+        if (pendingGesture && document.body.classList.contains('mode3d')) nyra3d?.gesture(pendingGesture);
+        pendingGesture = null;
+      },
+      onFinish: (s, result) => {
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ type: 'tts_stream_stats', id: s.id, stats: s.stats }));
+          // tts_done = terminó de SONAR. Si la cancelaron (Stop), el servidor ya liberó el turno: no se avisa nada.
+          if (result !== 'cancelled') ws.send(JSON.stringify({ type: 'tts_done', url: s.url }));
+        }
+        const idx = _audioQueue.findIndex(it => it.stream === s);
+        if (idx >= 0) _audioQueue.splice(idx, 1);
+        if (_currentStream === s) {
+          _currentStream = null;
+          _audioPlaying = false;
+          onAudioEnd();
+          _playQueued();
+        }
+      },
+    });
+    if (_audioPlaying) _audioQueue.push({ stream: sess });
+    else _beginStream(sess);
+  }
+  function _beginStream(sess) {
+    clearTimeout(idleTimer); // el audio está llegando: el "sin audio en 8 s → idle" no aplica mientras se llena el búfer
+    // Mientras se llena el búfer no hay voz: sin "speaking" (ni balanceo ni gesto de habla en 3D) y boca cerrada.
+    // Se conserva la cara/emoción que puso stream_end; "speaking" vuelve cuando el audio suena de verdad (onAudible).
+    sess.turnEmo = face.emo;
+    avatar.className = 'avatar idle';
+    wave.classList.remove('show');
+    _audioPlaying = true;
+    _currentStream = sess;
+    _currentUrl = sess.url;
+    sess.begin();
+  }
+  function onStreamCancel(id) { _sp?.sessions.get(id)?.cancel('server'); }
+  function _playQueued() {
+    const next = _audioQueue.shift();
+    if (!next) return;
+    if (next.stream) _beginStream(next.stream); else _playNext(...next);
+  }
+  _initStreamPlayer();
 
   if (_isOBS) {
     // ── Dentro de OBS: audio sin restricciones ──
@@ -427,7 +519,7 @@
     if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tts_done', url: _currentUrl }));
     _audioPlaying = false;
     onAudioEnd();
-    if (_audioQueue.length > 0) _playNext(..._audioQueue.shift());
+    _playQueued();
   }
 
   function playTTS(url, mute) {

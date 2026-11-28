@@ -35,6 +35,7 @@ import { getContextProfile, shouldIncludeBlock, selectHistoryForContext, adaptPe
 import { clampMood, getMoodState, computeChatMoodGain, decayMood, getMoodPromptContext, extractEmotionTag, resolveSpeakingEmotion, evaluateMoodPenalty } from "./lib/ai/emotion-state.js";
 import { FishAudioClient } from "./lib/tts/fish-audio-client.js";
 import { SGLangTTSClient } from "./lib/tts/sglang-tts-client.js";
+import { SglangStreamManager } from "./lib/tts/sglang-stream.js";
 import { WhisperRemoteClient } from "./lib/stt/whisper-remote-client.js";
 import { parseVote, TRIBUNAL_ASK_RE } from "./lib/tribunal.js";
 
@@ -94,6 +95,7 @@ const CONFIG = {
     url: process.env.SGLANG_TTS_URL || "",
     apiKey: process.env.SGLANG_TTS_API_KEY || "",
     timeoutMs: process.env.SGLANG_TTS_TIMEOUT_MS ?? 60000,
+    playbackMode: process.env.SGLANG_TTS_PLAYBACK_MODE || "wav", // "stream" = PCM progresivo (experimental)
   },
   useSystemTTS: false,  // false = Murf (audio viaja al OBS del amigo por WS) ✅
   // true  = voz del sistema (suena en TU PC, el amigo no escucha nada) ❌
@@ -2655,6 +2657,9 @@ class TTSEngine {
       allowedHosts: process.env.SGLANG_TTS_ALLOWED_HOSTS ? process.env.SGLANG_TTS_ALLOWED_HOSTS.split(",") : null,
       allowLoopbackHttp: process.env.SGLANG_TTS_ALLOW_LOOPBACK_HTTP === "1",
     });
+    this.streams = new SglangStreamManager({ outDir: join(__dirname, "public", "tts") }); // hub: lo conecta el WS
+    this.sglang.getStreamStats = () => this.streams.lastStats; // panel: última reproducción progresiva
+    this._streamUrl = null; // sesión PCM progresiva que está sonando (Fase 2)
     const ep = this.fish.enginePrefs;
     const valid = new Set(["edge", "piper", "murf", "system", "fish", "sglang"]);
     if (ep.engine && valid.has(ep.engine)) {
@@ -2668,6 +2673,12 @@ class TTSEngine {
   // Llamado cuando OBS manda tts_done (audio terminó de reproducirse en browser)
   audioEnded() {
     if (this._playbackTimeout) { clearTimeout(this._playbackTimeout); this._playbackTimeout = null; }
+    if (this._streamUrl) {
+      // La vista terminó de sonar (o venció el tope): liberar la sesión; si seguía generando, nadie la va a escuchar
+      const r = this.streams.release(this._streamUrl);
+      if (r?.stillGenerating) this.sglang.abortSource(r.st.source);
+      this._streamUrl = null;
+    }
     this.speaking = false;
     this._onDone?.();
   }
@@ -2679,6 +2690,16 @@ class TTSEngine {
     this._playbackTimeout = setTimeout(() => {
       if (this.speaking) {
         console.warn('⚠️ TTS: timeout de audio — liberando lock');
+        this.audioEnded();
+      }
+    }, ms);
+  }
+
+  _startPlaybackTimeoutMs(ms) {
+    if (this._playbackTimeout) clearTimeout(this._playbackTimeout);
+    this._playbackTimeout = setTimeout(() => {
+      if (this.speaking) {
+        console.warn('⚠️ TTS: timeout de audio (stream) — liberando lock');
         this.audioEnded();
       }
     }, ms);
@@ -2743,8 +2764,12 @@ class TTSEngine {
       }
     }
     if (chosen === "sglang") {
+      // PCM progresivo solo para el directo (Discord sigue con WAV) y solo si hay una vista que lo soporte
+      const wantStream = this.sglang.config.playbackMode === "stream" && source === "live";
+      const useStream = wantStream && this.streams.capableClients().length > 0;
+      if (wantStream && !useStream) console.log("🎧 SGLang stream: ninguna vista compatible conectada — se usa WAV");
       try {
-        const { url } = await this.sglangJob(clean, { emotion, mood, source, expiresAt });
+        const { url } = await (useStream ? this.sglangStreamJob(clean, { emotion, mood, source, expiresAt }) : this.sglangJob(clean, { emotion, mood, source, expiresAt }));
         return wrap(url);
       } catch (err) {
         if (err.cancelled || err.expired || isCancelled()) {
@@ -2814,11 +2839,144 @@ class TTSEngine {
     return queued;
   }
 
+  // Fase 2: misma cola y epoch que sglangJob, pero resuelve apenas el gateway valida las cabeceras (url "stream:<id>").
+  // La generación sigue en segundo plano ocupando la cola hasta terminar; el PCM espera en la sesión hasta play().
+  // Errores ANTES de las cabeceras rechazan (el fallback de synth() actúa como en WAV); después, los maneja la sesión.
+  sglangStreamJob(text, { emotion = null, mood = 50, source = "live", expiresAt = null } = {}) {
+    const myEpoch = this._cancelEpoch.get(source) || 0;
+    const isCancelled = () => (this._cancelEpoch.get(source) || 0) !== myEpoch;
+    const enqueuedAt = performance.now();
+    const st = this.streams.create({ source, text });
+    let gotHeaders = false, headersOk, headersFail;
+    const ready = new Promise((res, rej) => { headersOk = res; headersFail = rej; });
+    const run = async () => {
+      try {
+        if (isCancelled()) throw Object.assign(new Error("SGLang TTS cancelado"), { cancelled: true });
+        if (expiresAt && Date.now() > expiresAt) throw Object.assign(new Error("SGLang TTS: pedido vencido"), { expired: true });
+        st.m.queueMs = Math.round(performance.now() - enqueuedAt);
+        const m = await this.sglang.synthesizeStream(text, {
+          emotion, mood, source, queueMs: st.m.queueMs, expiresAt, shouldCancel: isCancelled, streamId: st.id,
+          onHeaders: () => { gotHeaders = true; this.streams.onHeaders(st); headersOk({ url: st.url, stream: st }); },
+          onPcm: (buf, info) => this.streams.onPcm(st, buf, info),
+        });
+        if (isCancelled()) throw Object.assign(new Error("SGLang TTS cancelado"), { cancelled: true });
+        this.streams.onEnd(st, m);
+      } catch (err) {
+        if (!gotHeaders) { this.streams.discard(st, err.cancelled ? "cancelled" : err.expired ? "expired" : "error"); headersFail(err); }
+        else if (err.cancelled || isCancelled()) this.streams.cancel(st, "stop");
+        else this.streams.onFail(st, err);
+      }
+    };
+    const queued = this._sglangQueue.then(run, run);
+    this._sglangQueue = queued.catch(() => {});
+    return ready;
+  }
+
+  async _playStream(url, clean, mute) {
+    const st = this.streams.get(url);
+    if (!st) return this.audioEnded(); // cancelada o descartada mientras esperaba turno
+    this._streamUrl = url;
+    this.currentUrl = url;
+    const r = await this.streams.play(st, {
+      mute,
+      cb: {
+        setTimeoutMs: ms => { if (this._streamUrl === url) this._startPlaybackTimeoutMs(ms); },
+        fallback: () => { if (this._streamUrl === url) this._streamFallback(url, clean, mute); },
+        complete: () => this._streamFinished(url),            // la última vista audible que faltaba se fue (lenta/cerrada)
+        empty: () => this._streamNoConsumers(url),            // ya no queda ninguna vista participando
+      },
+    });
+    if (this._streamUrl !== url) return; // Stop o fallback en el medio
+    if (r.mode === "stream") return this._startPlaybackTimeoutMs(r.timeoutMs);
+    if (r.mode === "fallback") return this._streamFallback(url, clean, mute);
+    this._streamUrl = null;
+    if (r.mode === "wav") {
+      this.currentUrl = r.url;
+      this._broadcast?.({ type: "tts_play", url: r.url, mute });
+      return this._startPlaybackTimeout(clean);
+    }
+    this.currentUrl = null;
+    return this.audioEnded();
+  }
+
+  // La sesión falló sin haber enviado audio a ninguna vista: el fallback existente no puede duplicar nada
+  async _streamFallback(url, clean, mute) {
+    this.streams.release(url);
+    this._streamUrl = null;
+    if (!this.sglang.config.fallback) {
+      console.error("❌ SGLang stream falló antes de sonar (fallback desactivado)");
+      this.currentUrl = null;
+      return this.audioEnded();
+    }
+    this.sglang.recordFallback();
+    console.error("❌ SGLang stream falló antes de sonar (fallback a Edge)");
+    try {
+      const edgeUrl = await this._synthEdge(clean);
+      if (this.currentUrl !== url) return; // Stop mientras se generaba el fallback
+      console.log("📊 TTS pedido=sglang(stream) efectivo=edge");
+      this.currentUrl = edgeUrl;
+      this._broadcast?.({ type: "tts_play", url: edgeUrl, mute });
+      this._startPlaybackTimeout(clean);
+    } catch (err) {
+      console.error("❌ Edge TTS fallback error:", err.message);
+      if (this.currentUrl === url) { this.currentUrl = null; this.audioEnded(); }
+    }
+  }
+
+  // tts_done de cualquier vista (handler WS). WAV: vale el primero cuya url coincide con la actual (como antes).
+  // Sesiones PCM: solo participantes y esperando a todas las audibles. Sin url (páginas viejas): como antes, salvo
+  // durante una sesión PCM, que esa página no recibió y no puede cortar.
+  onTtsDone(ws, url) {
+    if (typeof url === "string" && url.startsWith("stream:")) return this.streamDone(ws, url);
+    if (!url && this._streamUrl) return "ignored";
+    if (url) {
+      if (url !== this.currentUrl) return "ignored";
+      this.currentUrl = null;
+    }
+    this.audioEnded();
+    return "complete";
+  }
+
+  // tts_done de una vista para una sesión PCM. Solo cuenta si es la sesión en curso y la vista participó; el turno se
+  // libera cuando terminaron todas las vistas audibles (una silenciada o secundaria no lo libera antes). Idempotente.
+  streamDone(ws, url) {
+    if (!url || url !== this._streamUrl) return "ignored"; // tardío (otra sesión) o ya liberado
+    const r = this.streams.ack(this.streams.get(url), ws);
+    if (r === "complete") this._streamFinished(url);
+    return r;
+  }
+
+  _streamFinished(url) {
+    if (this._streamUrl !== url) return;
+    this.currentUrl = null;
+    this.audioEnded();
+  }
+
+  _streamNoConsumers(url) {
+    const st = this.streams.get(url);
+    if (!st || this._streamUrl !== url) return;
+    console.warn(`⚠️ SGLang stream #${st.id}: sin vistas conectadas — se libera el turno`);
+    if (this.streams.cancel(st, "no_consumers")) this.sglang.abortSource(st.source);
+    this._streamUrl = null;
+    this.currentUrl = null;
+    this.audioEnded();
+  }
+
+  // Una vista se desconectó o dejó de poder reproducir (AudioContext suspendido). Si era la última → se libera el turno
+  // y se aborta la generación; si quedan otras, sigue y puede completarse si las que faltaban ya habían terminado.
+  streamClientGone(ws) {
+    const r = this.streams.clientGone(ws);
+    if (!r || this._streamUrl !== r.st.url) return;
+    if (r.empty) this._streamNoConsumers(r.st.url);
+    else if (r.complete) this._streamFinished(r.st.url);
+  }
+
   // Reproduce un audio ya generado en OBS; sin URL, usa la voz del sistema
   async play(url, text, mute = false) {
     const clean = this.clean(text);
     if (!clean) return this.audioEnded(); // nada que decir: liberar la cola
     this.speaking = true;
+    if (typeof url === "string" && url.startsWith("stream:")) return this._playStream(url, clean, mute);
     if (!url) {
       console.log("🗣️  Voz del sistema...");
       await this._speakFallback(applyPhonetics(clean));
@@ -2973,6 +3131,10 @@ class TTSEngine {
       this.fish.abortAll();
       this.sglang.abortAll();
     }
+    // Sesiones PCM: corta en las vistas (aunque la generación ya haya terminado) y libera memoria
+    this.streams.cancelSource(source);
+    if (this._streamUrl && !this.streams.get(this._streamUrl)) { this._streamUrl = null; this.currentUrl = null; }
+    if (!source) this.currentUrl = null; // un fallback de stream en curso ya no debe sonar después del Stop
     if (this.currentProcess) {
       this.currentProcess.kill();
       this.currentProcess = null;
@@ -3084,6 +3246,8 @@ function broadcast(data) {
 tts._broadcast = broadcast;
 // Cuando useSystemTTS=true, liberar la cola de stream cuando termina el audio del sistema
 tts._onDone = () => streamChat.onAudioDone();
+// PCM progresivo de SGLang: solo a las vistas que anunciaron soporte (tts_caps); el resto sigue recibiendo JSON como siempre
+tts.streams.hub = { clients: () => [...wss.clients], send: (ws, data) => ws.send(data) };
 
 // ─── Discord: escucha al grupo siempre y contesta solo si la nombran ───────────
 const audioSource = url => url?.startsWith("/") ? join(__dirname, "public", url) : url; // Edge: archivo · Murf: URL
@@ -3557,8 +3721,8 @@ app.get("/api/tts/sglang/config", (req, res) => {
 
 app.post("/api/tts/sglang/config", (req, res) => {
   try {
-    const { url, timeoutMs, expressive, fallback } = req.body || {};
-    res.json({ ok: true, config: tts.sglang.updateConfig({ url, timeoutMs, expressive, fallback }) });
+    const { url, timeoutMs, expressive, fallback, playbackMode } = req.body || {};
+    res.json({ ok: true, config: tts.sglang.updateConfig({ url, timeoutMs, expressive, fallback, playbackMode }) });
   } catch (err) {
     res.status(400).json({ ok: false, error: err.message });
   }
@@ -3574,12 +3738,18 @@ app.post("/api/tts/sglang/test", async (req, res) => {
   if (!text) return res.status(400).json({ ok: false, error: "Falta el texto de prueba" });
   try {
     // Prueba aislada: cola SGLang + epoch "panel_test" (Stop la cancela aunque esté pendiente), sin fallback ni tts_play
-    const result = await tts.sglangJob(tts.clean(text), {
-      emotion: req.body?.emotion || null,
-      mood: req.body?.mood ?? live.mood,
-      source: "panel_test",
-    });
-    res.json({ ok: true, url: result.url, metrics: result.metrics });
+    const opts = { emotion: req.body?.emotion || null, mood: req.body?.mood ?? live.mood, source: "panel_test" };
+    if (tts.sglang.config.playbackMode === "stream") {
+      // Modo progresivo: prueba el transporte PCM real (cabeceras, primer PCM, bloques) y devuelve el audio como WAV
+      const { stream } = await tts.sglangStreamJob(tts.clean(text), opts);
+      await stream.settled;
+      if (stream.state === "cancelled") return res.status(499).json({ ok: false, error: "SGLang TTS cancelado", config: tts.sglang.getPublicConfig() });
+      if (stream.state !== "done") throw stream.error || new Error("SGLang stream sin audio");
+      const url = tts.streams.toWav(stream);
+      return res.json({ ok: true, url, mode: "stream", metrics: { ...tts.sglang.metrics.last }, stream: tts.streams.lastStats?.server || null });
+    }
+    const result = await tts.sglangJob(tts.clean(text), opts);
+    res.json({ ok: true, url: result.url, mode: "wav", metrics: result.metrics });
   } catch (err) {
     res.status(err.cancelled ? 499 : 502).json({ ok: false, error: err.message, config: tts.sglang.getPublicConfig() });
   }
@@ -3788,12 +3958,21 @@ wss.on("connection", (ws, req) => {
   ws.on("message", async (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
-    if (!ws.authed && msg.type !== "tts_done" && msg.type !== "ping" && msg.type !== "obs_3d") {
+    // tts_caps / tts_stream_stats: las vistas de OBS (sin contraseña) anuncian soporte de PCM progresivo y mandan métricas
+    if (!ws.authed && msg.type !== "tts_done" && msg.type !== "ping" && msg.type !== "obs_3d" && msg.type !== "tts_caps" && msg.type !== "tts_stream_stats") {
       ws.send(JSON.stringify({ type: "error", text: "Contraseña del panel requerida" }));
       return;
     }
 
     if (msg.type === "obs_3d") { ws.is3d = !!msg.on; return; }
+    if (msg.type === "tts_caps") {
+      const was = ws.ttsStream;
+      ws.ttsStream = msg.stream === true && msg.v === 1;
+      ws.ttsMute = msg.mute === true; // vista ?mute: participa (lip-sync) pero no es audible
+      if (was && !ws.ttsStream) tts.streamClientGone(ws); // se le suspendió el audio: deja de participar
+      return;
+    }
+    if (msg.type === "tts_stream_stats") { tts.streams.recordClientStats(msg); return; }
 
     if (msg.type === "chat") {
       // Enrutar por la cola de streamChat para respetar el orden y esperar el audio
@@ -3870,11 +4049,7 @@ wss.on("connection", (ws, req) => {
       // OBS avisa que el audio terminó de reproducirse → liberar lock de TTS y cola de stream.
       // Con varias páginas de OBS abiertas llegan varios avisos: solo vale el primero del audio actual
       // (uno atrasado cortaba la respuesta siguiente). Páginas viejas sin url se aceptan como antes.
-      if (msg.url) {
-        if (msg.url !== tts.currentUrl) return;
-        tts.currentUrl = null;
-      }
-      tts.audioEnded();
+      tts.onTtsDone(ws, msg.url);
     }
 
     else if (msg.type === "streamer_speech") {
@@ -3903,7 +4078,7 @@ wss.on("connection", (ws, req) => {
     }
   });
 
-  ws.on("close", () => console.log("🔌 Cliente desconectado"));
+  ws.on("close", () => { console.log("🔌 Cliente desconectado"); if (ws.ttsStream) tts.streamClientGone(ws); });
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────

@@ -1,0 +1,4929 @@
+{
+ "note": "Tiempos reales de llegada PCM (NVIDIA L4, HTTP loopback). engine: sglang-omni (0.2.0) o fish-speech-original (servidor original, solo referencia). kind: measure | warmup | split. Solo [t_s, audio_acumulado_s] y el largo del texto de cada caso; sin audio, sin texto, sin claves ni rutas.",
+ "dedup": "Una entrada por síntesis (nombre de archivo con hash propio). Filas crudas: 359 → únicas: 177.",
+ "case_chars": {
+  "engine-results": {
+   "short": 39,
+   "medium": 81,
+   "emotion": 61,
+   "long": 301
+  },
+  "latency-bench": {
+   "short": 39,
+   "medium": 81,
+   "emotion": 61,
+   "long": 301
+  },
+  "results": {
+   "short": 39,
+   "medium": 81,
+   "emotion": 61,
+   "long": 301
+  }
+ },
+ "traces": [
+  {
+   "id": "chunk-warmup-compile-auto-short-pcm-r0-504b12.wav",
+   "origins": [
+    "chunk-results"
+   ],
+   "phase": "chunk-warmup",
+   "kind": "warmup",
+   "profile": "compile-auto",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 5.263145726999937,
+   "total_s": 5.315611391999937,
+   "audio_s": 2.9257142857142857,
+   "trace": [
+    [
+     5.2633,
+     1.846
+    ],
+    [
+     5.3154,
+     2.9257
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "chunk-warmup-compile-auto-medium-pcm-r1-5fe95f.wav",
+   "origins": [
+    "chunk-results"
+   ],
+   "phase": "chunk-warmup",
+   "kind": "warmup",
+   "profile": "compile-auto",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.5964123039998412,
+   "total_s": 7.420218091000152,
+   "audio_s": 4.829750566893424,
+   "trace": [
+    [
+     3.5965,
+     1.846
+    ],
+    [
+     6.8203,
+     3.9358
+    ],
+    [
+     7.42,
+     4.8298
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "chunk-probe-compile-auto-medium-pcm-r0-60041b.wav",
+   "origins": [
+    "chunk-results"
+   ],
+   "phase": "chunk-probe",
+   "kind": "measure",
+   "profile": "compile-auto",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.5638972319998174,
+   "total_s": 7.11906171299961,
+   "audio_s": 4.6439909297052155,
+   "trace": [
+    [
+     3.564,
+     1.846
+    ],
+    [
+     6.7272,
+     3.9358
+    ],
+    [
+     7.1189,
+     4.644
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "chunk-probe-compile-f20-medium-pcm-r0-8bc80f.wav",
+   "origins": [
+    "chunk-results"
+   ],
+   "phase": "chunk-probe",
+   "kind": "measure",
+   "profile": "compile-f20",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.5751486560002377,
+   "total_s": 10.093344851999973,
+   "audio_s": 6.594467120181406,
+   "trace": [
+    [
+     3.5753,
+     1.846
+    ],
+    [
+     6.7485,
+     3.9358
+    ],
+    [
+     9.9105,
+     6.0256
+    ],
+    [
+     10.0932,
+     6.5945
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "chunk-probe-compile-f10-medium-pcm-r0-f4bd74.wav",
+   "origins": [
+    "chunk-results"
+   ],
+   "phase": "chunk-probe",
+   "kind": "measure",
+   "profile": "compile-f10",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.661264213999857,
+   "total_s": 6.002376722999998,
+   "audio_s": 3.900952380952381,
+   "trace": [
+    [
+     3.6614,
+     1.846
+    ],
+    [
+     6.0021,
+     3.901
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "engine-warmup-default-short-pcm-r0-2718f0.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-warmup",
+   "kind": "warmup",
+   "profile": "default",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 5.31468437500007,
+   "total_s": 5.362707086000228,
+   "audio_s": 2.786394557823129,
+   "trace": [
+    [
+     5.3149,
+     1.846
+    ],
+    [
+     5.3626,
+     2.7864
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "engine-warmup-default-medium-pcm-r1-78cb73.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-warmup",
+   "kind": "warmup",
+   "profile": "default",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.782050347999757,
+   "total_s": 7.446818542000074,
+   "audio_s": 4.597551020408163,
+   "trace": [
+    [
+     3.7822,
+     1.846
+    ],
+    [
+     7.2523,
+     3.9358
+    ],
+    [
+     7.4467,
+     4.5976
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "engine-matrix-default-emotion-pcm-r0-32f3b2.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.8729489119996288,
+   "total_s": 6.601165279999805,
+   "audio_s": 4.040272108843538,
+   "trace": [
+    [
+     3.8731,
+     1.846
+    ],
+    [
+     6.5644,
+     3.9358
+    ],
+    [
+     6.601,
+     4.0403
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "engine-matrix-default-short-pcm-r0-1e9511.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.77941394499976,
+   "total_s": 4.114518366000084,
+   "audio_s": 2.507755102040816,
+   "trace": [
+    [
+     3.7795,
+     1.846
+    ],
+    [
+     4.1144,
+     2.5078
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "engine-matrix-default-long-pcm-r0-049058.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "long",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.9378605830002016,
+   "total_s": 25.72163730400007,
+   "audio_s": 15.975328798185942,
+   "trace": [
+    [
+     3.938,
+     1.846
+    ],
+    [
+     7.1364,
+     3.9358
+    ],
+    [
+     10.5549,
+     6.0256
+    ],
+    [
+     13.8264,
+     8.1154
+    ],
+    [
+     17.1781,
+     10.2052
+    ],
+    [
+     20.5403,
+     12.295
+    ],
+    [
+     23.8979,
+     14.3848
+    ],
+    [
+     25.7214,
+     15.9753
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "engine-matrix-default-medium-pcm-r0-6176d7.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.8035135300001457,
+   "total_s": 7.142192701000113,
+   "audio_s": 4.365351473922902,
+   "trace": [
+    [
+     3.8037,
+     1.846
+    ],
+    [
+     7.1001,
+     3.9358
+    ],
+    [
+     7.1421,
+     4.3654
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "engine-matrix-default-short-pcm-r1-1bc814.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.8845442369997727,
+   "total_s": 4.4460805989997425,
+   "audio_s": 2.693514739229025,
+   "trace": [
+    [
+     3.8847,
+     1.846
+    ],
+    [
+     4.446,
+     2.6935
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "engine-matrix-default-medium-pcm-r1-b0a4ff.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.802249700000175,
+   "total_s": 8.44775106499992,
+   "audio_s": 5.201269841269841,
+   "trace": [
+    [
+     3.8024,
+     1.846
+    ],
+    [
+     7.1531,
+     3.9358
+    ],
+    [
+     8.4476,
+     5.2013
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "engine-matrix-default-emotion-pcm-r1-a8092a.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.7792235799997798,
+   "total_s": 7.076150306999807,
+   "audio_s": 4.365351473922902,
+   "trace": [
+    [
+     3.7794,
+     1.846
+    ],
+    [
+     7.0367,
+     3.9358
+    ],
+    [
+     7.076,
+     4.3654
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "engine-matrix-default-long-pcm-r1-ef973d.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "long",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.867442741999639,
+   "total_s": 26.89426924600002,
+   "audio_s": 16.718367346938777,
+   "trace": [
+    [
+     3.8676,
+     1.846
+    ],
+    [
+     7.129,
+     3.9358
+    ],
+    [
+     10.54,
+     6.0256
+    ],
+    [
+     13.8085,
+     8.1154
+    ],
+    [
+     17.1557,
+     10.2052
+    ],
+    [
+     20.5829,
+     12.295
+    ],
+    [
+     23.9462,
+     14.3848
+    ],
+    [
+     26.8563,
+     16.4746
+    ],
+    [
+     26.894,
+     16.7184
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "engine-warmup-compile-short-pcm-r0-b4e26b.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-warmup",
+   "kind": "warmup",
+   "profile": "compile",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 5.034391563000099,
+   "total_s": 5.081884118000289,
+   "audio_s": 2.693514739229025,
+   "trace": [
+    [
+     5.0346,
+     1.846
+    ],
+    [
+     5.0818,
+     2.6935
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "engine-warmup-compile-medium-pcm-r1-7d5ef9.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-warmup",
+   "kind": "warmup",
+   "profile": "compile",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.5767661909999333,
+   "total_s": 8.172215311999935,
+   "audio_s": 5.340589569160998,
+   "trace": [
+    [
+     3.5769,
+     1.846
+    ],
+    [
+     6.94,
+     3.9358
+    ],
+    [
+     8.172,
+     5.3406
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "engine-matrix-compile-emotion-pcm-r0-b4f59e.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "compile",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.584048536999944,
+   "total_s": 6.453641826999956,
+   "audio_s": 4.179591836734694,
+   "trace": [
+    [
+     3.5842,
+     1.846
+    ],
+    [
+     6.4158,
+     3.9358
+    ],
+    [
+     6.4535,
+     4.1796
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "engine-matrix-compile-short-pcm-r0-ed55a3.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "compile",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.6483847149997928,
+   "total_s": 4.177562151000075,
+   "audio_s": 2.693514739229025,
+   "trace": [
+    [
+     3.6485,
+     1.846
+    ],
+    [
+     4.1775,
+     2.6935
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "engine-matrix-compile-long-pcm-r0-0a6fba.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "compile",
+   "case": "long",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.600080417999834,
+   "total_s": 25.378636873999767,
+   "audio_s": 16.62548752834467,
+   "trace": [
+    [
+     3.6002,
+     1.846
+    ],
+    [
+     6.7646,
+     3.9358
+    ],
+    [
+     9.939,
+     6.0256
+    ],
+    [
+     13.1796,
+     8.1154
+    ],
+    [
+     16.2909,
+     10.2052
+    ],
+    [
+     19.4669,
+     12.295
+    ],
+    [
+     22.6414,
+     14.3848
+    ],
+    [
+     25.3383,
+     16.4746
+    ],
+    [
+     25.3783,
+     16.6255
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "engine-matrix-compile-medium-pcm-r0-277745.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "compile",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.592544647000068,
+   "total_s": 7.285020216999783,
+   "audio_s": 4.73687074829932,
+   "trace": [
+    [
+     3.5927,
+     1.846
+    ],
+    [
+     6.7524,
+     3.9358
+    ],
+    [
+     7.2849,
+     4.7369
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "engine-matrix-compile-short-pcm-r1-7ff70a.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "compile",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.5805181579999044,
+   "total_s": 4.252168282999719,
+   "audio_s": 2.7399546485260773,
+   "trace": [
+    [
+     3.5807,
+     1.846
+    ],
+    [
+     4.2521,
+     2.74
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "engine-matrix-compile-medium-pcm-r1-8d019c.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "compile",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.58591965100004,
+   "total_s": 6.7303773109997564,
+   "audio_s": 4.365351473922902,
+   "trace": [
+    [
+     3.5861,
+     1.846
+    ],
+    [
+     6.6896,
+     3.9358
+    ],
+    [
+     6.7302,
+     4.3654
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "engine-matrix-compile-emotion-pcm-r1-43d1b6.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "compile",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.578338559999793,
+   "total_s": 5.711801794999701,
+   "audio_s": 3.7151927437641725,
+   "trace": [
+    [
+     3.5785,
+     1.846
+    ],
+    [
+     5.7116,
+     3.7152
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "engine-matrix-compile-long-pcm-r1-c2a7b2.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "compile",
+   "case": "long",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.5855077880000863,
+   "total_s": 26.95595946399999,
+   "audio_s": 17.69360544217687,
+   "trace": [
+    [
+     3.5856,
+     1.846
+    ],
+    [
+     6.7581,
+     3.9358
+    ],
+    [
+     9.9293,
+     6.0256
+    ],
+    [
+     13.0991,
+     8.1154
+    ],
+    [
+     16.3319,
+     10.2052
+    ],
+    [
+     19.4287,
+     12.295
+    ],
+    [
+     22.607,
+     14.3848
+    ],
+    [
+     25.7912,
+     16.4746
+    ],
+    [
+     26.9557,
+     17.6936
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "engine-warmup-cache_off-short-pcm-r0-02b5cd.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-warmup",
+   "kind": "warmup",
+   "profile": "cache_off",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 4.485972649999894,
+   "total_s": 4.521947004999674,
+   "audio_s": 2.136235827664399,
+   "trace": [
+    [
+     4.4862,
+     1.846
+    ],
+    [
+     4.5217,
+     2.1362
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "engine-warmup-cache_off-medium-pcm-r1-27adc7.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-warmup",
+   "kind": "warmup",
+   "profile": "cache_off",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.8300476809999964,
+   "total_s": 8.899820575999911,
+   "audio_s": 5.479909297052155,
+   "trace": [
+    [
+     3.8302,
+     1.846
+    ],
+    [
+     7.2329,
+     3.9358
+    ],
+    [
+     8.8995,
+     5.4799
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "engine-matrix-cache_off-emotion-pcm-r0-726212.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "cache_off",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.8270448019998184,
+   "total_s": 10.252054455999769,
+   "audio_s": 6.315827664399093,
+   "trace": [
+    [
+     3.8272,
+     1.846
+    ],
+    [
+     7.2345,
+     3.9358
+    ],
+    [
+     10.213,
+     6.0256
+    ],
+    [
+     10.2519,
+     6.3158
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "engine-matrix-cache_off-short-pcm-r0-14e5a3.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "cache_off",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.8419179580000673,
+   "total_s": 4.0317975049997585,
+   "audio_s": 2.414875283446712,
+   "trace": [
+    [
+     3.8421,
+     1.846
+    ],
+    [
+     4.0317,
+     2.4149
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "engine-matrix-cache_off-long-pcm-r0-ea3891.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "cache_off",
+   "case": "long",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.8584219310000663,
+   "total_s": 29.10571971499985,
+   "audio_s": 18.06512471655329,
+   "trace": [
+    [
+     3.8585,
+     1.846
+    ],
+    [
+     7.1999,
+     3.9358
+    ],
+    [
+     10.5448,
+     6.0256
+    ],
+    [
+     13.8954,
+     8.1154
+    ],
+    [
+     17.2469,
+     10.2052
+    ],
+    [
+     20.5945,
+     12.295
+    ],
+    [
+     24.0811,
+     14.3848
+    ],
+    [
+     27.2824,
+     16.4746
+    ],
+    [
+     29.1056,
+     18.0651
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "engine-matrix-cache_off-medium-pcm-r0-9ed3cc.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "cache_off",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.8401289819998965,
+   "total_s": 11.350091634999899,
+   "audio_s": 7.012426303854875,
+   "trace": [
+    [
+     3.8403,
+     1.846
+    ],
+    [
+     7.1714,
+     3.9358
+    ],
+    [
+     10.643,
+     6.0256
+    ],
+    [
+     11.3498,
+     7.0124
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "engine-matrix-cache_off-short-pcm-r1-4fdf98.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "cache_off",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.7703851480000594,
+   "total_s": 3.8095735689998946,
+   "audio_s": 2.2755555555555556,
+   "trace": [
+    [
+     3.7705,
+     1.846
+    ],
+    [
+     3.8094,
+     2.2756
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "engine-matrix-cache_off-medium-pcm-r1-7fbf03.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "cache_off",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.8240907519998473,
+   "total_s": 8.960125593000157,
+   "audio_s": 5.526349206349207,
+   "trace": [
+    [
+     3.8242,
+     1.846
+    ],
+    [
+     7.154,
+     3.9358
+    ],
+    [
+     8.96,
+     5.5263
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "engine-matrix-cache_off-emotion-pcm-r1-b406d3.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "cache_off",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.9139586430001145,
+   "total_s": 8.752197411999987,
+   "audio_s": 5.38702947845805,
+   "trace": [
+    [
+     3.9141,
+     1.846
+    ],
+    [
+     7.1677,
+     3.9358
+    ],
+    [
+     8.7521,
+     5.387
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "engine-matrix-cache_off-long-pcm-r1-7e15a1.wav",
+   "origins": [
+    "engine-results"
+   ],
+   "phase": "engine-matrix",
+   "kind": "measure",
+   "profile": "cache_off",
+   "case": "long",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.8456134180000845,
+   "total_s": 27.416441571000178,
+   "audio_s": 17.04344671201814,
+   "trace": [
+    [
+     3.8458,
+     1.846
+    ],
+    [
+     7.2695,
+     3.9358
+    ],
+    [
+     10.5382,
+     6.0256
+    ],
+    [
+     13.8788,
+     8.1154
+    ],
+    [
+     17.2146,
+     10.2052
+    ],
+    [
+     20.6277,
+     12.295
+    ],
+    [
+     23.892,
+     14.3848
+    ],
+    [
+     27.227,
+     16.4746
+    ],
+    [
+     27.4163,
+     17.0434
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "warmup-warm0-short-r0-a62b95.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "warm0",
+   "case": "short",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 6.133506106000027,
+   "total_s": 6.133848200999978,
+   "audio_s": 2.6006349206349206,
+   "trace": [
+    [
+     6.1338,
+     2.6006
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "warmup-warm1-short-r1-1ee38d.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "warm1",
+   "case": "short",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 5.393489268000053,
+   "total_s": 5.393732152000098,
+   "audio_s": 2.6006349206349206,
+   "trace": [
+    [
+     5.3937,
+     2.6006
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "warmup-warm2-medium-r2-6547f3.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "warm2",
+   "case": "medium",
+   "streaming": false,
+   "rep": 2,
+   "header_s": 9.764676742000006,
+   "total_s": 9.765051285000027,
+   "audio_s": 5.433469387755102,
+   "trace": [
+    [
+     9.765,
+     5.4335
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "warmup-warm3-emotion-r3-36f6da.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "warm3",
+   "case": "emotion",
+   "streaming": false,
+   "rep": 3,
+   "header_s": 9.488498432000029,
+   "total_s": 9.489156029000014,
+   "audio_s": 5.2477097505668935,
+   "trace": [
+    [
+     9.4891,
+     5.2477
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 61
+  },
+  {
+   "id": "warmup-warm4-long-r4-37c22f.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "warm4",
+   "case": "long",
+   "streaming": true,
+   "rep": 4,
+   "header_s": 0.0020764570000437743,
+   "total_s": 26.383638911000048,
+   "audio_s": 16.021768707482995,
+   "trace": [
+    [
+     25.181,
+     16.0218
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 301
+  },
+  {
+   "id": "profile_warmup-base200-medium-r0-720572.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "profile_warmup",
+   "kind": "warmup",
+   "profile": "base200",
+   "case": "medium",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 9.83722292699997,
+   "total_s": 9.837910185999931,
+   "audio_s": 5.433469387755102,
+   "trace": [
+    [
+     9.8378,
+     5.4335
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "profile_warmup-stream200-medium-r0-f27978.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "profile_warmup",
+   "kind": "warmup",
+   "profile": "stream200",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.002151823999952285,
+   "total_s": 9.859999508999977,
+   "audio_s": 5.433469387755102,
+   "trace": [
+    [
+     8.6756,
+     5.4335
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "profile_warmup-stream150-medium-r0-ad5ed6.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "profile_warmup",
+   "kind": "warmup",
+   "profile": "stream150",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.002245105999918451,
+   "total_s": 9.892781914000011,
+   "audio_s": 5.433469387755102,
+   "trace": [
+    [
+     8.7002,
+     5.4335
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "profile_warmup-stream100-medium-r0-7bc225.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "profile_warmup",
+   "kind": "warmup",
+   "profile": "stream100",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.0023438800000121773,
+   "total_s": 9.912185717999932,
+   "audio_s": 5.433469387755102,
+   "trace": [
+    [
+     8.7224,
+     5.4335
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "profile_warmup-full100-medium-r0-6f6f3c.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "profile_warmup",
+   "kind": "warmup",
+   "profile": "full100",
+   "case": "medium",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 9.930228258999932,
+   "total_s": 9.930569455999944,
+   "audio_s": 5.433469387755102,
+   "trace": [
+    [
+     9.9305,
+     5.4335
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "profile_warmup-fresh_http-medium-r0-23d30e.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "profile_warmup",
+   "kind": "warmup",
+   "profile": "fresh_http",
+   "case": "medium",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 9.948721367000076,
+   "total_s": 9.949126367000076,
+   "audio_s": 5.433469387755102,
+   "trace": [
+    [
+     9.9491,
+     5.4335
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "matrix-stream100-long-r0-b39693.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream100",
+   "case": "long",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.002635608999980832,
+   "total_s": 26.683868034000056,
+   "audio_s": 16.021768707482995,
+   "trace": [
+    [
+     25.4854,
+     16.0218
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 301
+  },
+  {
+   "id": "matrix-stream200-medium-r0-a2a9e2.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream200",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.0025441679999858025,
+   "total_s": 9.888771528999996,
+   "audio_s": 5.433469387755102,
+   "trace": [
+    [
+     8.6961,
+     5.4335
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "matrix-full100-emotion-r0-17a70f.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "full100",
+   "case": "emotion",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 9.580824474999986,
+   "total_s": 9.581142166999939,
+   "audio_s": 5.2477097505668935,
+   "trace": [
+    [
+     9.5811,
+     5.2477
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 61
+  },
+  {
+   "id": "matrix-fresh_http-long-r0-a58462.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "fresh_http",
+   "case": "long",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 26.582057208000037,
+   "total_s": 26.58309223399999,
+   "audio_s": 16.021768707482995,
+   "trace": [
+    [
+     26.583,
+     16.0218
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 301
+  },
+  {
+   "id": "matrix-stream100-medium-r0-087a93.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream100",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.002483187000052567,
+   "total_s": 9.875303704000089,
+   "audio_s": 5.433469387755102,
+   "trace": [
+    [
+     8.6954,
+     5.4335
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "matrix-stream150-emotion-r0-b7e201.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream150",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.002190521999864359,
+   "total_s": 9.585081647999914,
+   "audio_s": 5.2477097505668935,
+   "trace": [
+    [
+     8.4041,
+     5.2477
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 61
+  },
+  {
+   "id": "matrix-full100-medium-r0-b6290d.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "full100",
+   "case": "medium",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 9.887233359999982,
+   "total_s": 9.887558055999989,
+   "audio_s": 5.433469387755102,
+   "trace": [
+    [
+     9.8875,
+     5.4335
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "matrix-stream150-long-r0-4005d6.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream150",
+   "case": "long",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.0023865579998982867,
+   "total_s": 26.641472708000038,
+   "audio_s": 16.021768707482995,
+   "trace": [
+    [
+     25.4392,
+     16.0218
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 301
+  },
+  {
+   "id": "matrix-stream100-emotion-r0-b35671.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream100",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.0022498549999454553,
+   "total_s": 9.58119348199989,
+   "audio_s": 5.2477097505668935,
+   "trace": [
+    [
+     8.407,
+     5.2477
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 61
+  },
+  {
+   "id": "matrix-full100-short-r0-e16b63.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "full100",
+   "case": "short",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 5.465546783999798,
+   "total_s": 5.465810263999856,
+   "audio_s": 2.6006349206349206,
+   "trace": [
+    [
+     5.4657,
+     2.6006
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "matrix-base200-medium-r0-97e21e.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "base200",
+   "case": "medium",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 9.901955881999811,
+   "total_s": 9.902310829999806,
+   "audio_s": 5.433469387755102,
+   "trace": [
+    [
+     9.9022,
+     5.4335
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "matrix-stream100-short-r0-5a3b00.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream100",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.002318041999842535,
+   "total_s": 5.448180675999993,
+   "audio_s": 2.6006349206349206,
+   "trace": [
+    [
+     4.272,
+     2.6006
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "matrix-fresh_http-medium-r0-812f8d.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "fresh_http",
+   "case": "medium",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 9.871416403000012,
+   "total_s": 9.871812115000012,
+   "audio_s": 5.433469387755102,
+   "trace": [
+    [
+     9.8717,
+     5.4335
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "matrix-stream200-emotion-r0-c00703.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream200",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.002391602999978204,
+   "total_s": 9.5837681349999,
+   "audio_s": 5.2477097505668935,
+   "trace": [
+    [
+     8.4047,
+     5.2477
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 61
+  },
+  {
+   "id": "matrix-stream150-medium-r0-031f89.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream150",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.0024645690000397735,
+   "total_s": 9.873843488000148,
+   "audio_s": 5.433469387755102,
+   "trace": [
+    [
+     8.7008,
+     5.4335
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "matrix-base200-emotion-r0-00f387.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "base200",
+   "case": "emotion",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 9.586669749000066,
+   "total_s": 9.58699573900003,
+   "audio_s": 5.2477097505668935,
+   "trace": [
+    [
+     9.5869,
+     5.2477
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 61
+  },
+  {
+   "id": "matrix-fresh_http-emotion-r0-c3ff79.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "fresh_http",
+   "case": "emotion",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 9.59901888200011,
+   "total_s": 9.59943244100009,
+   "audio_s": 5.2477097505668935,
+   "trace": [
+    [
+     9.5994,
+     5.2477
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 61
+  },
+  {
+   "id": "matrix-stream200-short-r0-71310c.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream200",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.0024153829999704612,
+   "total_s": 5.439797023999972,
+   "audio_s": 2.6006349206349206,
+   "trace": [
+    [
+     4.2757,
+     2.6006
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "matrix-full100-long-r0-6b78cc.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "full100",
+   "case": "long",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 26.644913668000072,
+   "total_s": 26.645769185000063,
+   "audio_s": 16.021768707482995,
+   "trace": [
+    [
+     26.6457,
+     16.0218
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 301
+  },
+  {
+   "id": "matrix-stream200-long-r0-2d4285.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream200",
+   "case": "long",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.002209342000014658,
+   "total_s": 26.62049061400012,
+   "audio_s": 16.021768707482995,
+   "trace": [
+    [
+     25.4277,
+     16.0218
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 301
+  },
+  {
+   "id": "matrix-stream150-short-r0-8422ac.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream150",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.0021551700001509744,
+   "total_s": 5.478761328000019,
+   "audio_s": 2.6006349206349206,
+   "trace": [
+    [
+     4.2823,
+     2.6006
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "matrix-base200-short-r0-c09ee9.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "base200",
+   "case": "short",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 5.451597730999993,
+   "total_s": 5.451819240000077,
+   "audio_s": 2.6006349206349206,
+   "trace": [
+    [
+     5.4518,
+     2.6006
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "matrix-base200-long-r0-e8d363.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "base200",
+   "case": "long",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 26.608042248999936,
+   "total_s": 26.609232580000025,
+   "audio_s": 16.021768707482995,
+   "trace": [
+    [
+     26.6092,
+     16.0218
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 301
+  },
+  {
+   "id": "matrix-fresh_http-short-r0-446639.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "fresh_http",
+   "case": "short",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 5.472846143999959,
+   "total_s": 5.473265570999956,
+   "audio_s": 2.6006349206349206,
+   "trace": [
+    [
+     5.4732,
+     2.6006
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "matrix-base200-emotion-r1-16e37f.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "base200",
+   "case": "emotion",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 8.366667662000054,
+   "total_s": 8.367041222999887,
+   "audio_s": 4.458231292517007,
+   "trace": [
+    [
+     8.367,
+     4.4582
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 61
+  },
+  {
+   "id": "matrix-full100-emotion-r1-be7109.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "full100",
+   "case": "emotion",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 8.344318214000168,
+   "total_s": 8.344579051999972,
+   "audio_s": 4.458231292517007,
+   "trace": [
+    [
+     8.3445,
+     4.4582
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 61
+  },
+  {
+   "id": "matrix-stream200-long-r1-adae86.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream200",
+   "case": "long",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.001960145000111879,
+   "total_s": 27.75402766000002,
+   "audio_s": 16.718367346938777,
+   "trace": [
+    [
+     26.5627,
+     16.7184
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 301
+  },
+  {
+   "id": "matrix-fresh_http-medium-r1-8971c6.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "fresh_http",
+   "case": "medium",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 8.605679640000062,
+   "total_s": 8.606347992999872,
+   "audio_s": 4.597551020408163,
+   "trace": [
+    [
+     8.6063,
+     4.5976
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "matrix-full100-long-r1-1824c9.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "full100",
+   "case": "long",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 27.727438483000014,
+   "total_s": 27.72855276900009,
+   "audio_s": 16.718367346938777,
+   "trace": [
+    [
+     27.7285,
+     16.7184
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 301
+  },
+  {
+   "id": "matrix-full100-short-r1-474010.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "full100",
+   "case": "short",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 5.416250971999943,
+   "total_s": 5.416609680999954,
+   "audio_s": 2.5541950113378684,
+   "trace": [
+    [
+     5.4165,
+     2.5542
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "matrix-fresh_http-long-r1-247c4e.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "fresh_http",
+   "case": "long",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 27.745228294999833,
+   "total_s": 27.746756216999984,
+   "audio_s": 16.718367346938777,
+   "trace": [
+    [
+     27.7467,
+     16.7184
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 301
+  },
+  {
+   "id": "matrix-stream150-emotion-r1-7f5f07.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream150",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.0024435389998416213,
+   "total_s": 8.357920596999975,
+   "audio_s": 4.458231292517007,
+   "trace": [
+    [
+     7.1747,
+     4.4582
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 61
+  },
+  {
+   "id": "matrix-stream100-medium-r1-6afff9.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream100",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.002493779999895196,
+   "total_s": 8.574524384999904,
+   "audio_s": 4.597551020408163,
+   "trace": [
+    [
+     7.3927,
+     4.5976
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "matrix-full100-medium-r1-6cb9e0.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "full100",
+   "case": "medium",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 8.590116708000096,
+   "total_s": 8.590427677999969,
+   "audio_s": 4.597551020408163,
+   "trace": [
+    [
+     8.5904,
+     4.5976
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "matrix-stream100-short-r1-9d0cdf.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream100",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.0022475329999451787,
+   "total_s": 5.381609635999894,
+   "audio_s": 2.5541950113378684,
+   "trace": [
+    [
+     4.2054,
+     2.5542
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "matrix-stream200-medium-r1-61ec0c.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream200",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.002398499000037191,
+   "total_s": 8.594688389999874,
+   "audio_s": 4.597551020408163,
+   "trace": [
+    [
+     7.3979,
+     4.5976
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "matrix-fresh_http-emotion-r1-2245f1.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "fresh_http",
+   "case": "emotion",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 8.368359458999976,
+   "total_s": 8.36871026100016,
+   "audio_s": 4.458231292517007,
+   "trace": [
+    [
+     8.3686,
+     4.4582
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 61
+  },
+  {
+   "id": "matrix-stream200-emotion-r1-2cf6dd.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream200",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.0025419840001177363,
+   "total_s": 8.373539585000117,
+   "audio_s": 4.458231292517007,
+   "trace": [
+    [
+     7.1799,
+     4.4582
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 61
+  },
+  {
+   "id": "matrix-stream150-short-r1-a78d0f.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream150",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.002171346000068297,
+   "total_s": 5.382169315000056,
+   "audio_s": 2.5541950113378684,
+   "trace": [
+    [
+     4.2019,
+     2.5542
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "matrix-base200-short-r1-d81ba7.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "base200",
+   "case": "short",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 5.398156143999813,
+   "total_s": 5.398375103999797,
+   "audio_s": 2.5541950113378684,
+   "trace": [
+    [
+     5.3983,
+     2.5542
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "matrix-stream100-long-r1-f09d84.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream100",
+   "case": "long",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.0018944989999454265,
+   "total_s": 27.787359050000077,
+   "audio_s": 16.718367346938777,
+   "trace": [
+    [
+     26.5836,
+     16.7184
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 301
+  },
+  {
+   "id": "matrix-fresh_http-short-r1-2efa21.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "fresh_http",
+   "case": "short",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 5.393713916000024,
+   "total_s": 5.394116031000067,
+   "audio_s": 2.5541950113378684,
+   "trace": [
+    [
+     5.394,
+     2.5542
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "matrix-base200-long-r1-bfcc84.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "base200",
+   "case": "long",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 27.787211284000023,
+   "total_s": 27.7887243319999,
+   "audio_s": 16.718367346938777,
+   "trace": [
+    [
+     27.7886,
+     16.7184
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 301
+  },
+  {
+   "id": "matrix-stream150-long-r1-b447c7.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream150",
+   "case": "long",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.0021341799999845534,
+   "total_s": 27.70080546700001,
+   "audio_s": 16.718367346938777,
+   "trace": [
+    [
+     26.5206,
+     16.7184
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 301
+  },
+  {
+   "id": "matrix-stream100-emotion-r1-4dbeed.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream100",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.0021565430001828645,
+   "total_s": 8.373282135000181,
+   "audio_s": 4.458231292517007,
+   "trace": [
+    [
+     7.1686,
+     4.4582
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 61
+  },
+  {
+   "id": "matrix-stream200-short-r1-699a6c.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream200",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.0021395000001120934,
+   "total_s": 5.367554268000049,
+   "audio_s": 2.5541950113378684,
+   "trace": [
+    [
+     4.1925,
+     2.5542
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 39
+  },
+  {
+   "id": "matrix-stream150-medium-r1-f87c22.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "stream150",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.0020703239999875223,
+   "total_s": 8.605709255999955,
+   "audio_s": 4.597551020408163,
+   "trace": [
+    [
+     7.3878,
+     4.5976
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "matrix-base200-medium-r1-38c33f.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "base200",
+   "case": "medium",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 8.56741420100002,
+   "total_s": 8.567711041999928,
+   "audio_s": 4.597551020408163,
+   "trace": [
+    [
+     8.5676,
+     4.5976
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "reference_cache-cache_off-medium-r0-9d77dd.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "reference_cache",
+   "kind": "measure",
+   "profile": "cache_off",
+   "case": "medium",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 8.985488098000133,
+   "total_s": 8.985792919999994,
+   "audio_s": 4.6439909297052155,
+   "trace": [
+    [
+     8.9857,
+     4.644
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "reference_cache-cache_on-medium-r0-355f9e.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "reference_cache",
+   "kind": "measure",
+   "profile": "cache_on",
+   "case": "medium",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 8.652793624999958,
+   "total_s": 8.653122636000035,
+   "audio_s": 4.6439909297052155,
+   "trace": [
+    [
+     8.6531,
+     4.644
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "reference_cache-cache_on-medium-r1-f2c31b.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "reference_cache",
+   "kind": "measure",
+   "profile": "cache_on",
+   "case": "medium",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 8.750643381999907,
+   "total_s": 8.750962985999877,
+   "audio_s": 4.690430839002268,
+   "trace": [
+    [
+     8.7509,
+     4.6904
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "reference_cache-cache_off-medium-r1-a81ecb.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "reference_cache",
+   "kind": "measure",
+   "profile": "cache_off",
+   "case": "medium",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 9.045631068000148,
+   "total_s": 9.04595418100007,
+   "audio_s": 4.690430839002268,
+   "trace": [
+    [
+     9.0459,
+     4.6904
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": 81
+  },
+  {
+   "id": "split-whole-split_demo-r0-dee67c.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "split",
+   "kind": "split",
+   "profile": "whole",
+   "case": "split_demo",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.0021244240001578873,
+   "total_s": 15.241211743000122,
+   "audio_s": 8.823582766439909,
+   "trace": [
+    [
+     14.0427,
+     8.8236
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": null
+  },
+  {
+   "id": "split-part0-split_demo-r0-7b4c45.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "split",
+   "kind": "split",
+   "profile": "part0",
+   "case": "split_demo",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.0022201049998784583,
+   "total_s": 4.131144197999902,
+   "audio_s": 1.7182766439909296,
+   "trace": [
+    [
+     2.9315,
+     1.7183
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": null
+  },
+  {
+   "id": "split-part1-split_demo-r0-f08e7e.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "split",
+   "kind": "split",
+   "profile": "part1",
+   "case": "split_demo",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.0021307760000581766,
+   "total_s": 6.564665883000089,
+   "audio_s": 3.297233560090703,
+   "trace": [
+    [
+     5.3751,
+     3.2972
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": null
+  },
+  {
+   "id": "split-part2-split_demo-r0-fe3b43.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "split",
+   "kind": "split",
+   "profile": "part2",
+   "case": "split_demo",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 0.002149175000113246,
+   "total_s": 6.777367154000103,
+   "audio_s": 3.436553287981859,
+   "trace": [
+    [
+     5.5883,
+     3.4366
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": null
+  },
+  {
+   "id": "split-whole-split_demo-r1-85588b.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "split",
+   "kind": "split",
+   "profile": "whole",
+   "case": "split_demo",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.0021657729998878494,
+   "total_s": 16.88867315399989,
+   "audio_s": 9.891700680272109,
+   "trace": [
+    [
+     15.694,
+     9.8917
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": null
+  },
+  {
+   "id": "split-part0-split_demo-r1-57aa62.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "split",
+   "kind": "split",
+   "profile": "part0",
+   "case": "split_demo",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.0021344080000744725,
+   "total_s": 3.6694806970001537,
+   "audio_s": 1.4396371882086167,
+   "trace": [
+    [
+     2.4993,
+     1.4396
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": null
+  },
+  {
+   "id": "split-part1-split_demo-r1-456fc7.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "split",
+   "kind": "split",
+   "profile": "part1",
+   "case": "split_demo",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.002180898000005982,
+   "total_s": 7.424809342999879,
+   "audio_s": 3.8545124716553287,
+   "trace": [
+    [
+     6.2405,
+     3.8545
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": null
+  },
+  {
+   "id": "split-part2-split_demo-r1-ac9c80.wav",
+   "origins": [
+    "latency-bench"
+   ],
+   "phase": "split",
+   "kind": "split",
+   "profile": "part2",
+   "case": "split_demo",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 0.0021139700002095196,
+   "total_s": 6.465839293000045,
+   "audio_s": 3.250793650793651,
+   "trace": [
+    [
+     5.296,
+     3.2508
+    ]
+   ],
+   "engine": "fish-speech-original",
+   "chars": null
+  },
+  {
+   "id": "warmup-compile-short-wav-r0-913d8d.wav",
+   "origins": [
+    "operativo"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "compile",
+   "case": "short",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 15.403964773000098,
+   "total_s": 15.404225181000015,
+   "audio_s": 2.6006349206349206,
+   "trace": [
+    [
+     15.4042,
+     2.6006
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "warmup-compile-short-pcm-r1-911f67.wav",
+   "origins": [
+    "operativo"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "compile",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.7182680539999637,
+   "total_s": 4.40301493000004,
+   "audio_s": 2.786394557823129,
+   "trace": [
+    [
+     3.7184,
+     1.846
+    ],
+    [
+     4.4005,
+     2.7864
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "warmup-compile-emotion-pcm-r2-9c64ae.wav",
+   "origins": [
+    "operativo"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "compile",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 2,
+   "header_s": 3.741868654999962,
+   "total_s": 7.3929277319999755,
+   "audio_s": 4.690430839002268,
+   "trace": [
+    [
+     3.742,
+     1.846
+    ],
+    [
+     7.0615,
+     3.9358
+    ],
+    [
+     7.3928,
+     4.6904
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-warmup-reference-R20-short-pcm-r0-a01f20.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-warmup",
+   "kind": "warmup",
+   "profile": "reference-R20",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 14.982161626999869,
+   "total_s": 15.032003481999936,
+   "audio_s": 2.7399546485260773,
+   "trace": [
+    [
+     14.9825,
+     1.846
+    ],
+    [
+     15.0319,
+     2.74
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-warmup-reference-R10-short-pcm-r0-113395.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-warmup",
+   "kind": "warmup",
+   "profile": "reference-R10",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 4.24162301399997,
+   "total_s": 5.088037272999827,
+   "audio_s": 2.8328344671201813,
+   "trace": [
+    [
+     4.2417,
+     1.846
+    ],
+    [
+     5.0879,
+     2.8328
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-warmup-reference-R5-short-pcm-r0-d7af2d.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-warmup",
+   "kind": "warmup",
+   "profile": "reference-R5",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.8725330699999176,
+   "total_s": 6.867585036000037,
+   "audio_s": 4.179591836734694,
+   "trace": [
+    [
+     3.8727,
+     1.846
+    ],
+    [
+     6.8315,
+     3.9358
+    ],
+    [
+     6.8674,
+     4.1796
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R10-emotion-pcm-r0-4a2684.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R10",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.760750062999932,
+   "total_s": 7.056797375000087,
+   "audio_s": 4.365351473922902,
+   "trace": [
+    [
+     3.7609,
+     1.846
+    ],
+    [
+     7.0163,
+     3.9358
+    ],
+    [
+     7.0567,
+     4.3654
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R20-emotion-pcm-r0-32693e.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R20",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.7943994569998267,
+   "total_s": 7.053388352999946,
+   "audio_s": 4.31891156462585,
+   "trace": [
+    [
+     3.7945,
+     1.846
+    ],
+    [
+     7.0128,
+     3.9358
+    ],
+    [
+     7.0532,
+     4.3189
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R20-medium-pcm-r0-20b08b.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R20",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.9204302959999495,
+   "total_s": 7.754355354999916,
+   "audio_s": 4.690430839002268,
+   "trace": [
+    [
+     3.9205,
+     1.846
+    ],
+    [
+     7.2678,
+     3.9358
+    ],
+    [
+     7.7542,
+     4.6904
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R10-short-pcm-r0-2ddade.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R10",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.7750937560001603,
+   "total_s": 4.9935504330001095,
+   "audio_s": 3.0650340136054424,
+   "trace": [
+    [
+     3.7753,
+     1.846
+    ],
+    [
+     4.9934,
+     3.065
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R5-medium-pcm-r0-e6ccec.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R5",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.886853828999847,
+   "total_s": 9.017897465000033,
+   "audio_s": 5.526349206349207,
+   "trace": [
+    [
+     3.887,
+     1.846
+    ],
+    [
+     7.2099,
+     3.9358
+    ],
+    [
+     9.0178,
+     5.5263
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R20-short-pcm-r0-0f8b0d.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R20",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.8695055579999007,
+   "total_s": 4.867771895000033,
+   "audio_s": 2.972154195011338,
+   "trace": [
+    [
+     3.8697,
+     1.846
+    ],
+    [
+     4.8675,
+     2.9722
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R5-short-pcm-r0-d609f2.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R5",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.752556188999961,
+   "total_s": 4.308177513999908,
+   "audio_s": 2.647074829931973,
+   "trace": [
+    [
+     3.7527,
+     1.846
+    ],
+    [
+     4.3081,
+     2.6471
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R5-emotion-pcm-r0-e6a168.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R5",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.7573761050000485,
+   "total_s": 8.824930275000042,
+   "audio_s": 5.479909297052155,
+   "trace": [
+    [
+     3.7575,
+     1.846
+    ],
+    [
+     7.0927,
+     3.9358
+    ],
+    [
+     8.8248,
+     5.4799
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R10-medium-pcm-r0-e614e5.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R10",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.7611676940000507,
+   "total_s": 10.322282803000007,
+   "audio_s": 6.408707482993197,
+   "trace": [
+    [
+     3.7613,
+     1.846
+    ],
+    [
+     7.0876,
+     3.9358
+    ],
+    [
+     10.2839,
+     6.0256
+    ],
+    [
+     10.3221,
+     6.4087
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R20-short-pcm-r1-5a57aa.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R20",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.7784754219999286,
+   "total_s": 4.190385310000011,
+   "audio_s": 2.5541950113378684,
+   "trace": [
+    [
+     3.7787,
+     1.846
+    ],
+    [
+     4.1903,
+     2.5542
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R10-emotion-pcm-r1-3b0773.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R10",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.7617417680000926,
+   "total_s": 11.204781408000144,
+   "audio_s": 6.965986394557823,
+   "trace": [
+    [
+     3.7619,
+     1.846
+    ],
+    [
+     7.1744,
+     3.9358
+    ],
+    [
+     10.4326,
+     6.0256
+    ],
+    [
+     11.2047,
+     6.966
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R5-emotion-pcm-r1-1d0ca7.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R5",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.7547188500000175,
+   "total_s": 9.803791254000089,
+   "audio_s": 6.0836281179138325,
+   "trace": [
+    [
+     3.7549,
+     1.846
+    ],
+    [
+     7.0793,
+     3.9358
+    ],
+    [
+     9.7691,
+     6.0256
+    ],
+    [
+     9.8036,
+     6.0836
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R5-short-pcm-r1-e9f162.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R5",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.7548150739999073,
+   "total_s": 5.475410824999926,
+   "audio_s": 3.3901133786848074,
+   "trace": [
+    [
+     3.755,
+     1.846
+    ],
+    [
+     5.4753,
+     3.3901
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R10-medium-pcm-r1-53dc6a.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R10",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.838484005000055,
+   "total_s": 8.108852211000112,
+   "audio_s": 5.015510204081632,
+   "trace": [
+    [
+     3.8386,
+     1.846
+    ],
+    [
+     7.2582,
+     3.9358
+    ],
+    [
+     8.1087,
+     5.0155
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R20-emotion-pcm-r1-53c637.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R20",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.7841297739998936,
+   "total_s": 8.113804307999999,
+   "audio_s": 5.015510204081632,
+   "trace": [
+    [
+     3.7843,
+     1.846
+    ],
+    [
+     7.1171,
+     3.9358
+    ],
+    [
+     8.1137,
+     5.0155
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R10-short-pcm-r1-c6bfd0.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R10",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.2613364999999703,
+   "total_s": 3.294926429000043,
+   "audio_s": 1.9969160997732427,
+   "trace": [
+    [
+     3.2615,
+     1.846
+    ],
+    [
+     3.2947,
+     1.9969
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R20-medium-pcm-r1-ede76f.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R20",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.777579779000007,
+   "total_s": 8.115394398000035,
+   "audio_s": 5.015510204081632,
+   "trace": [
+    [
+     3.7777,
+     1.846
+    ],
+    [
+     7.1881,
+     3.9358
+    ],
+    [
+     8.1153,
+     5.0155
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R5-medium-pcm-r1-d90f3c.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R5",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.7655249599999934,
+   "total_s": 8.898988001999896,
+   "audio_s": 5.526349206349207,
+   "trace": [
+    [
+     3.7657,
+     1.846
+    ],
+    [
+     7.0939,
+     3.9358
+    ],
+    [
+     8.8988,
+     5.5263
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R20-short-pcm-r2-bd8a8f.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R20",
+   "case": "short",
+   "streaming": true,
+   "rep": 2,
+   "header_s": 3.783794867999859,
+   "total_s": 4.781507541999872,
+   "audio_s": 2.9257142857142857,
+   "trace": [
+    [
+     3.784,
+     1.846
+    ],
+    [
+     4.7814,
+     2.9257
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R20-emotion-pcm-r2-98de65.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R20",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 2,
+   "header_s": 3.7995598720001453,
+   "total_s": 7.323150148000195,
+   "audio_s": 4.504671201814059,
+   "trace": [
+    [
+     3.7997,
+     1.846
+    ],
+    [
+     7.1323,
+     3.9358
+    ],
+    [
+     7.323,
+     4.5047
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R5-emotion-pcm-r2-7d637d.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R5",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 2,
+   "header_s": 3.7686262580000403,
+   "total_s": 12.890894043000117,
+   "audio_s": 8.034104308390022,
+   "trace": [
+    [
+     3.7688,
+     1.846
+    ],
+    [
+     7.0948,
+     3.9358
+    ],
+    [
+     10.4224,
+     6.0256
+    ],
+    [
+     12.8908,
+     8.0341
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R10-medium-pcm-r2-df4f04.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R10",
+   "case": "medium",
+   "streaming": true,
+   "rep": 2,
+   "header_s": 3.773433520000026,
+   "total_s": 7.085690504000013,
+   "audio_s": 4.365351473922902,
+   "trace": [
+    [
+     3.7736,
+     1.846
+    ],
+    [
+     7.0458,
+     3.9358
+    ],
+    [
+     7.0855,
+     4.3654
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R10-short-pcm-r2-697389.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R10",
+   "case": "short",
+   "streaming": true,
+   "rep": 2,
+   "header_s": 4.000970069999994,
+   "total_s": 4.556276135999951,
+   "audio_s": 2.786394557823129,
+   "trace": [
+    [
+     4.0011,
+     1.846
+    ],
+    [
+     4.5561,
+     2.7864
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R5-short-pcm-r2-ae02c5.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R5",
+   "case": "short",
+   "streaming": true,
+   "rep": 2,
+   "header_s": 3.7556340030000683,
+   "total_s": 4.7512747890000355,
+   "audio_s": 2.9257142857142857,
+   "trace": [
+    [
+     3.7558,
+     1.846
+    ],
+    [
+     4.7512,
+     2.9257
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R10-emotion-pcm-r2-a142e5.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R10",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 2,
+   "header_s": 3.8507667579999634,
+   "total_s": 8.907893608999984,
+   "audio_s": 5.526349206349207,
+   "trace": [
+    [
+     3.8509,
+     1.846
+    ],
+    [
+     7.1063,
+     3.9358
+    ],
+    [
+     8.9077,
+     5.5263
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R20-medium-pcm-r2-83596d.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R20",
+   "case": "medium",
+   "streaming": true,
+   "rep": 2,
+   "header_s": 3.7736143629999788,
+   "total_s": 8.33168647399998,
+   "audio_s": 5.154829931972789,
+   "trace": [
+    [
+     3.7738,
+     1.846
+    ],
+    [
+     7.1109,
+     3.9358
+    ],
+    [
+     8.3315,
+     5.1548
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "reference-matrix-reference-R5-medium-pcm-r2-0d5390.wav",
+   "origins": [
+    "reference-results"
+   ],
+   "phase": "reference-matrix",
+   "kind": "measure",
+   "profile": "reference-R5",
+   "case": "medium",
+   "streaming": true,
+   "rep": 2,
+   "header_s": 3.762865398000031,
+   "total_s": 9.04259629000012,
+   "audio_s": 5.61922902494331,
+   "trace": [
+    [
+     3.763,
+     1.846
+    ],
+    [
+     7.0883,
+     3.9358
+    ],
+    [
+     9.0425,
+     5.6192
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": null
+  },
+  {
+   "id": "warmup-default-short-wav-r0-de31fe.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "default",
+   "case": "short",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 14.653497549999884,
+   "total_s": 14.653727809999964,
+   "audio_s": 2.5541950113378684,
+   "trace": [
+    [
+     14.6537,
+     2.5542
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "warmup-default-short-pcm-r1-614aaf.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "default",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 4.025468219000004,
+   "total_s": 4.7978040429998146,
+   "audio_s": 2.8792743764172335,
+   "trace": [
+    [
+     4.0256,
+     1.846
+    ],
+    [
+     4.7976,
+     2.8793
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "warmup-default-medium-pcm-r2-7b7ae0.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "default",
+   "case": "medium",
+   "streaming": true,
+   "rep": 2,
+   "header_s": 3.9846315219999724,
+   "total_s": 7.6325688929998705,
+   "audio_s": 4.6439909297052155,
+   "trace": [
+    [
+     3.9848,
+     1.846
+    ],
+    [
+     7.3686,
+     3.9358
+    ],
+    [
+     7.6324,
+     4.644
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "matrix-default-short-wav-r0-a252f8.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "short",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 4.718218076000085,
+   "total_s": 4.718425282999988,
+   "audio_s": 2.9257142857142857,
+   "trace": [
+    [
+     4.7184,
+     2.9257
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "matrix-default-emotion-wav-r0-5d83c2.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "emotion",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 6.370708527000033,
+   "total_s": 6.3709404130001985,
+   "audio_s": 3.900952380952381,
+   "trace": [
+    [
+     6.3709,
+     3.901
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "matrix-default-long-pcm-r0-332f88.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "long",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.7603476169999794,
+   "total_s": 26.123404126999958,
+   "audio_s": 16.34684807256236,
+   "trace": [
+    [
+     3.7605,
+     1.846
+    ],
+    [
+     7.0754,
+     3.9358
+    ],
+    [
+     10.4043,
+     6.0256
+    ],
+    [
+     13.7314,
+     8.1154
+    ],
+    [
+     17.0528,
+     10.2052
+    ],
+    [
+     20.3786,
+     12.295
+    ],
+    [
+     23.7165,
+     14.3848
+    ],
+    [
+     26.1232,
+     16.3468
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "matrix-default-emotion-pcm-r0-1fdedc.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.773258100000021,
+   "total_s": 8.46187371499991,
+   "audio_s": 5.2477097505668935,
+   "trace": [
+    [
+     3.7734,
+     1.846
+    ],
+    [
+     7.2417,
+     3.9358
+    ],
+    [
+     8.4616,
+     5.2477
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "matrix-default-short-pcm-r0-97db8a.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.7724062470001627,
+   "total_s": 4.543478422000135,
+   "audio_s": 2.786394557823129,
+   "trace": [
+    [
+     3.7725,
+     1.846
+    ],
+    [
+     4.5434,
+     2.7864
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "matrix-default-long-wav-r0-f3a27b.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "long",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 27.396266663999768,
+   "total_s": 27.397145919999957,
+   "audio_s": 17.368526077097506,
+   "trace": [
+    [
+     27.3971,
+     17.3685
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "matrix-default-medium-pcm-r0-67401c.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.7577124559998083,
+   "total_s": 7.78986755599999,
+   "audio_s": 4.829750566893424,
+   "trace": [
+    [
+     3.7578,
+     1.846
+    ],
+    [
+     7.0887,
+     3.9358
+    ],
+    [
+     7.7897,
+     4.8298
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "matrix-default-medium-wav-r0-960541.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "medium",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 7.252546895999785,
+   "total_s": 7.252818700999796,
+   "audio_s": 4.551111111111111,
+   "trace": [
+    [
+     7.2528,
+     4.5511
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "matrix-default-short-pcm-r1-a8d914.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.8508384629999455,
+   "total_s": 4.409896335999747,
+   "audio_s": 2.693514739229025,
+   "trace": [
+    [
+     3.8512,
+     1.846
+    ],
+    [
+     4.4098,
+     2.6935
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "matrix-default-long-wav-r1-27ab53.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "long",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 28.174862802999996,
+   "total_s": 28.175816191000195,
+   "audio_s": 17.740045351473924,
+   "trace": [
+    [
+     28.1758,
+     17.74
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "matrix-default-emotion-pcm-r1-487db0.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.802435790000345,
+   "total_s": 9.566477915000178,
+   "audio_s": 5.897868480725624,
+   "trace": [
+    [
+     3.8026,
+     1.846
+    ],
+    [
+     7.1537,
+     3.9358
+    ],
+    [
+     9.5662,
+     5.8979
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "matrix-default-short-wav-r1-5a0dd8.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "short",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 3.871557042999939,
+   "total_s": 3.8717474760001096,
+   "audio_s": 2.36843537414966,
+   "trace": [
+    [
+     3.8717,
+     2.3684
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "matrix-default-long-pcm-r1-69c5b8.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "long",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.7843791329996748,
+   "total_s": 25.138817667999774,
+   "audio_s": 15.696689342403628,
+   "trace": [
+    [
+     3.7845,
+     1.846
+    ],
+    [
+     7.1151,
+     3.9358
+    ],
+    [
+     10.4457,
+     6.0256
+    ],
+    [
+     13.7759,
+     8.1154
+    ],
+    [
+     17.1023,
+     10.2052
+    ],
+    [
+     20.5856,
+     12.295
+    ],
+    [
+     23.8435,
+     14.3848
+    ],
+    [
+     25.1386,
+     15.6967
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "matrix-default-medium-wav-r1-6a8c34.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "medium",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 6.542141019000155,
+   "total_s": 6.542386050999994,
+   "audio_s": 4.08671201814059,
+   "trace": [
+    [
+     6.5424,
+     4.0867
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "matrix-default-emotion-wav-r1-689ee1.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "emotion",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 7.212366722999832,
+   "total_s": 7.212626015999831,
+   "audio_s": 4.504671201814059,
+   "trace": [
+    [
+     7.2126,
+     4.5047
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "matrix-default-medium-pcm-r1-f59bd4.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.858118612999988,
+   "total_s": 7.887865755000348,
+   "audio_s": 4.876190476190477,
+   "trace": [
+    [
+     3.8583,
+     1.846
+    ],
+    [
+     7.1166,
+     3.9358
+    ],
+    [
+     7.8878,
+     4.8762
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "warmup-default-short-wav-r0-e1134a.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "default",
+   "case": "short",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 5.7540749969998615,
+   "total_s": 5.754311373999826,
+   "audio_s": 2.8328344671201813,
+   "trace": [
+    [
+     5.7543,
+     2.8328
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "warmup-default-short-pcm-r1-571dc0.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "default",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.9990767240001333,
+   "total_s": 4.0436390019999635,
+   "audio_s": 2.461315192743764,
+   "trace": [
+    [
+     3.9992,
+     1.846
+    ],
+    [
+     4.0435,
+     2.4613
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "warmup-default-medium-pcm-r2-cbf9dd.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "warmup",
+   "kind": "warmup",
+   "profile": "default",
+   "case": "medium",
+   "streaming": true,
+   "rep": 2,
+   "header_s": 4.139102792999893,
+   "total_s": 8.318495902999985,
+   "audio_s": 5.061950113378685,
+   "trace": [
+    [
+     4.1392,
+     1.846
+    ],
+    [
+     7.3957,
+     3.9358
+    ],
+    [
+     8.3184,
+     5.062
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "matrix-default-short-wav-r0-47f0f7.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "short",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 4.506708071000048,
+   "total_s": 4.506905009000093,
+   "audio_s": 2.786394557823129,
+   "trace": [
+    [
+     4.5069,
+     2.7864
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "matrix-default-emotion-wav-r0-3247b4.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "emotion",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 7.651758802000131,
+   "total_s": 7.652052782999817,
+   "audio_s": 4.783310657596372,
+   "trace": [
+    [
+     7.6521,
+     4.7833
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "matrix-default-long-pcm-r0-e1d509.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "long",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.9231378569998014,
+   "total_s": 28.578808971999933,
+   "audio_s": 17.832925170068027,
+   "trace": [
+    [
+     3.9233,
+     1.846
+    ],
+    [
+     7.1747,
+     3.9358
+    ],
+    [
+     10.4444,
+     6.0256
+    ],
+    [
+     13.7962,
+     8.1154
+    ],
+    [
+     17.1331,
+     10.2052
+    ],
+    [
+     20.4641,
+     12.295
+    ],
+    [
+     23.8015,
+     14.3848
+    ],
+    [
+     27.2116,
+     16.4746
+    ],
+    [
+     28.5786,
+     17.8329
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "matrix-default-emotion-pcm-r0-42997e.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.8345158170000104,
+   "total_s": 6.762457987999824,
+   "audio_s": 4.179591836734694,
+   "trace": [
+    [
+     3.8347,
+     1.846
+    ],
+    [
+     6.7256,
+     3.9358
+    ],
+    [
+     6.7623,
+     4.1796
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "matrix-default-short-pcm-r0-8d8fd4.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "short",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.7612688750000416,
+   "total_s": 4.168447881000247,
+   "audio_s": 2.5541950113378684,
+   "trace": [
+    [
+     3.7615,
+     1.846
+    ],
+    [
+     4.1683,
+     2.5542
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "matrix-default-long-wav-r0-c32f39.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "long",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 25.723241619999953,
+   "total_s": 25.724158999999872,
+   "audio_s": 16.300408163265306,
+   "trace": [
+    [
+     25.7242,
+     16.3004
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "matrix-default-medium-pcm-r0-d7a442.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "medium",
+   "streaming": true,
+   "rep": 0,
+   "header_s": 3.7571400560000257,
+   "total_s": 9.537136646999897,
+   "audio_s": 5.944308390022676,
+   "trace": [
+    [
+     3.7573,
+     1.846
+    ],
+    [
+     7.2204,
+     3.9358
+    ],
+    [
+     9.537,
+     5.9443
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "matrix-default-medium-wav-r0-952acb.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "medium",
+   "streaming": false,
+   "rep": 0,
+   "header_s": 8.713912318999974,
+   "total_s": 8.714254505000099,
+   "audio_s": 5.479909297052155,
+   "trace": [
+    [
+     8.7143,
+     5.4799
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "matrix-default-short-pcm-r1-f77128.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "short",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.9107220920000145,
+   "total_s": 4.392664833000254,
+   "audio_s": 2.693514739229025,
+   "trace": [
+    [
+     3.9109,
+     1.846
+    ],
+    [
+     4.3926,
+     2.6935
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "matrix-default-long-wav-r1-14c942.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "long",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 27.065086402999896,
+   "total_s": 27.066036938999787,
+   "audio_s": 17.136326530612244,
+   "trace": [
+    [
+     27.066,
+     17.1363
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "matrix-default-emotion-pcm-r1-619764.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "emotion",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.7660178679998353,
+   "total_s": 7.8615212439999596,
+   "audio_s": 4.876190476190477,
+   "trace": [
+    [
+     3.7662,
+     1.846
+    ],
+    [
+     7.0857,
+     3.9358
+    ],
+    [
+     7.8613,
+     4.8762
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "matrix-default-short-wav-r1-9362ac.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "short",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 4.279842783999811,
+   "total_s": 4.280080476999956,
+   "audio_s": 2.647074829931973,
+   "trace": [
+    [
+     4.2801,
+     2.6471
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 39
+  },
+  {
+   "id": "matrix-default-long-pcm-r1-be3a4f.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "long",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.9105456359998243,
+   "total_s": 27.447760431000006,
+   "audio_s": 17.182766439909297,
+   "trace": [
+    [
+     3.9107,
+     1.846
+    ],
+    [
+     7.0843,
+     3.9358
+    ],
+    [
+     10.4825,
+     6.0256
+    ],
+    [
+     13.7351,
+     8.1154
+    ],
+    [
+     17.0575,
+     10.2052
+    ],
+    [
+     20.379,
+     12.295
+    ],
+    [
+     23.7126,
+     14.3848
+    ],
+    [
+     27.0387,
+     16.4746
+    ],
+    [
+     27.4476,
+     17.1828
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 301
+  },
+  {
+   "id": "matrix-default-medium-wav-r1-d58522.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "medium",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 8.144064197000262,
+   "total_s": 8.144359502000043,
+   "audio_s": 5.108390022675737,
+   "trace": [
+    [
+     8.1444,
+     5.1084
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  },
+  {
+   "id": "matrix-default-emotion-wav-r1-bd51f8.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "emotion",
+   "streaming": false,
+   "rep": 1,
+   "header_s": 7.993590392999977,
+   "total_s": 7.993907201999718,
+   "audio_s": 5.015510204081632,
+   "trace": [
+    [
+     7.9939,
+     5.0155
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 61
+  },
+  {
+   "id": "matrix-default-medium-pcm-r1-aa5883.wav",
+   "origins": [
+    "results"
+   ],
+   "phase": "matrix",
+   "kind": "measure",
+   "profile": "default",
+   "case": "medium",
+   "streaming": true,
+   "rep": 1,
+   "header_s": 3.7722039579998636,
+   "total_s": 8.1541618629999,
+   "audio_s": 5.061950113378685,
+   "trace": [
+    [
+     3.7724,
+     1.846
+    ],
+    [
+     7.0899,
+     3.9358
+    ],
+    [
+     8.154,
+     5.062
+    ]
+   ],
+   "engine": "sglang-omni",
+   "chars": 81
+  }
+ ]
+}
