@@ -457,6 +457,14 @@
         startLipsyncStream(lastText, s);
         if (pendingGesture && document.body.classList.contains('mode3d')) nyra3d?.gesture(pendingGesture);
         pendingGesture = null;
+        if (ws?.readyState === 1) {
+          ws.send(JSON.stringify({
+            type: 'tts_play_started', id: s.id, url: s.url, mode: 'stream', startMethod: 'worklet_first_render',
+            mute: !!(s.meta.mute || _MUTE),
+            clientRenderStartMs: s.stats.effectiveRenderStartMs, bufferAtStartSec: s.stats.bufferAtStartSec,
+            contextRate: s.stats.contextRate, contextState: s.stats.contextState, outputLatencyMs: s.stats.outputLatencyMs,
+          }));
+        }
       },
       onFinish: (s, result) => {
         if (ws.readyState === 1) {
@@ -515,8 +523,44 @@
   // Cola de audio: garantiza que nunca se superpongan dos audios
   const _audioQueue = [];
   let   _audioPlaying = false;
+  let   _wavMeta = null;
 
-  function _sendTTSDone() {
+  function _sendWavStart(meta, durationSec, ctx = null, startMethod = 'unknown') {
+    if (!meta || meta.startedSent) return;
+    meta.startedSent = true;
+    meta.startMethod = startMethod;
+    meta.effectiveRenderStartMs = Math.round(performance.now() - meta.t0);
+    meta.decodedDurationSec = Number.isFinite(durationSec) ? Number(durationSec.toFixed(3)) : null;
+    if (ctx) {
+      meta.contextRate = ctx.sampleRate || null;
+      meta.contextState = ctx.state || null;
+      meta.outputLatencyMs = Math.round(((ctx.outputLatency || 0) + (ctx.baseLatency || 0)) * 1000);
+    }
+    if (ws?.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: 'tts_play_started', url: meta.url, mode: 'wav', startMethod, mute: !!(meta.mute || _MUTE),
+        clientRenderStartMs: meta.effectiveRenderStartMs, contextRate: meta.contextRate,
+        contextState: meta.contextState, outputLatencyMs: meta.outputLatencyMs,
+      }));
+    }
+  }
+
+  function _sendTTSDone(result = 'done') {
+    const meta = _wavMeta;
+    _wavMeta = null;
+    if (meta && ws?.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: 'tts_playback_stats', url: meta.url, mode: 'wav',
+        stats: {
+          effectiveRenderStartMs: meta.effectiveRenderStartMs,
+          playbackEndMs: Math.round(performance.now() - meta.t0),
+          decodedDurationSec: meta.decodedDurationSec,
+          contextRate: meta.contextRate, contextState: meta.contextState,
+          outputLatencyMs: meta.outputLatencyMs, underruns: 0, underrunMs: 0, underrunRecoveries: 0,
+          result: typeof result === 'string' ? result : 'done',
+        },
+      }));
+    }
     if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'tts_done', url: _currentUrl }));
     _audioPlaying = false;
     onAudioEnd();
@@ -532,13 +576,13 @@
   }
 
   // <audio> simple (OBS y fallback): arranca el lip-sync cuando suena de verdad
-  function _playElement(url, mute) {
+  function _playElement(url, mute, meta) {
     const a = new Audio(url);
     a.muted = _MUTE;
     if (mute) a.volume = 0; // ya suena por Discord, acá solo mueve la boca (con muted, Chromium lo pausa en segundo plano)
-    a.onplaying = () => onAudioStart(a.duration);
-    a.onended = _sendTTSDone;
-    a.onerror = _sendTTSDone;
+    a.onplaying = () => { _sendWavStart(meta, a.duration, _actx, 'html_audio_onplaying'); onAudioStart(a.duration); };
+    a.onended = () => _sendTTSDone('done');
+    a.onerror = () => _sendTTSDone('error');
     return a.play();
   }
 
@@ -546,10 +590,12 @@
   async function _playNext(url, mute) {
     _audioPlaying = true;
     _currentUrl = url;
+    const meta = { url, mute, t0: performance.now(), startedSent: false, effectiveRenderStartMs: null, decodedDurationSec: null, contextRate: null, contextState: null, outputLatencyMs: null };
+    _wavMeta = meta;
     try {
       if (_isOBS) {
         // OBS: autoplay sin restricciones — onended envía tts_done
-        await _playElement(url, mute);
+        await _playElement(url, mute, meta);
         return;  // _sendTTSDone se llama vía onended, no aquí
       }
       // Browser normal: AudioContext para evitar bloqueo de autoplay
@@ -561,12 +607,13 @@
       const src     = ctx.createBufferSource();
       src.buffer    = decoded;
       if (!mute) src.connect(ctx.destination);
-      src.onended = _sendTTSDone;
+      src.onended = () => _sendTTSDone('done');
       src.start(0);
+      _sendWavStart(meta, decoded.duration, ctx, 'webaudio_buffer_start');
       onAudioStart(decoded.duration);
     } catch(e) {
       console.warn('TTS audio error:', e);
-      _playElement(url, mute).catch(_sendTTSDone);
+      _playElement(url, mute, meta).catch(() => _sendTTSDone('error'));
     }
   }
 

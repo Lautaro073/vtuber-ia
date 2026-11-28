@@ -39,6 +39,8 @@ import { SglangStreamManager } from "./lib/tts/sglang-stream.js";
 import { SglangScheduler } from "./lib/tts/sglang-scheduler.js";
 import { installSpeculation } from "./lib/tts/sglang-speculation.js";
 import { OverlapController, UNSAFE_SPEECH, findFirstSentence } from "./lib/tts/llm-tts-overlap.js";
+import { TurnTracer } from "./lib/observability/turn-tracer.js";
+import { checkDiagnosticsAccess, exportCapturedTraces } from "./lib/observability/benchmark-report.js";
 import { WhisperRemoteClient } from "./lib/stt/whisper-remote-client.js";
 import { parseVote, TRIBUNAL_ASK_RE } from "./lib/tribunal.js";
 
@@ -1069,6 +1071,7 @@ class StreamChatManager {
     this._promoTurn = 0;
     this._askedNick = new Map();    // viewer → hasta cuándo esperamos su apodo
     this._nicking = new Set();      // viewers a los que se les está inventando un apodo
+    this.tracer = null;             // observabilidad opcional (Fase 4A, desactivada por defecto)
     setInterval(() => this._refreshTikTok().catch(() => { }), 15000).unref();
     if (IDLE_FACT_MS > 0 || PROMO_MS > 0) setInterval(() => this._idleTick(), 5000).unref();
   }
@@ -1395,7 +1398,15 @@ class StreamChatManager {
     // lo pagado nunca se descarta
     if ((rank === PRI.call || rank === PRI.chat) && this.queue.filter(i => i.rank === rank).length >= this.settings.maxQueue) return;
     const at = Date.now();
-    this.queue.push({ username, text, platform, opts, rank, at, holdUntil: at + holdMs });
+    const ttsSource = (rank === PRI.call || rank === PRI.look) && discord?.on ? "discord" : "live";
+    const turnId = this.tracer?.startTurn?.({
+      source: ttsSource, platform, priority: rank,
+      cancelEpoch: tts?._cancelEpoch?.get?.(ttsSource) || 0,
+      requestedProvider: ai?.llm?.providerId || null,
+      requestedEngine: tts?.resolveEngine?.(ttsSource) || null,
+    }) || null;
+    this.tracer?.markEnqueued?.(turnId, { priority: rank, holdMs });
+    this.queue.push({ username, text, platform, opts, rank, at, holdUntil: at + holdMs, turnId });
     if (holdMs) setTimeout(() => this._pump(), holdMs + 10);
     if (rank === PRI.call || rank === PRI.look) setTimeout(() => this._pump(), SLOW_MS + 10);
     this._pump();
@@ -1406,10 +1417,14 @@ class StreamChatManager {
     const now = Date.now();
     const busy = this.queue.some(i => i.rank < PRI.idle);
     this.queue = this.queue.filter(i => {
-      if (i.rank === PRI.look && now - i.at > LOOK_TTL_MS) return false;
+      if (i.rank === PRI.look && now - i.at > LOOK_TTL_MS) {
+        this.tracer?.markQueueEvent?.(i.turnId, "expired", { reason: "look_ttl_expired" });
+        return false;
+      }
       if (i.platform !== "idle" || !busy) return true;
       // Llegó chat mientras se preparaba un recordatorio/dato: se descarta y el recordatorio vuelve más tarde
       this._lastPromo = Math.min(this._lastPromo, now - PROMO_MS + 60000);
+      this.tracer?.markQueueEvent?.(i.turnId, "replaced", { reason: "idle_preempted_by_chat" });
       return false;
     });
     this._prepareAhead(now);
@@ -1431,6 +1446,7 @@ class StreamChatManager {
     this.queue.splice(this.queue.indexOf(item), 1);
     this._thinking = false;
     this._isResponding = true;
+    this.tracer?.markPlaybackTurnStart?.(item.turnId);
     this._respond(item).catch(console.error);
   }
 
@@ -1734,8 +1750,9 @@ class StreamChatManager {
   }
 
   // Genera el texto y el audio de una respuesta, sin mostrar ni reproducir nada todavía
-  async _prepare({ username, text, platform, opts, rank, at }, client = ai.llm) {
+  async _prepare({ username, text, platform, opts, rank, at, turnId = null }, client = ai.llm) {
     const tPrep = Date.now();
+    this.tracer?.markPrepareStart?.(turnId, { overlappedWithPlayback: this._isResponding });
     const moodAtPrep = live.mood;
     const trace = opts.fixed ? null : {
       id: uuidv4().slice(0, 8),
@@ -1761,12 +1778,18 @@ class StreamChatManager {
         gesture = null;
         const nickSafe = ai.memory.getNick(username);
         fullText = !opts.streamer && username ? `${nickSafe || "@" + username}, ${safety.reply[0].toLowerCase() + safety.reply.slice(1)}` : safety.reply;
+        const tFiltSafe = performance.now();
         const filtered = filters.filterOutput(fullText, opts.maxChars);
+        this.tracer?.recordValidations?.(turnId, { filtersMs: performance.now() - tFiltSafe, status: "safety_intervene", reasonCode: "contextual_safety" });
         const ttsSource = (rank === PRI.call || rank === PRI.look) && discord.on ? "discord" : "live";
-        const synthSafe = await tts.synth(filtered, { emotion: "sad", mood: moodAtPrep, source: ttsSource, returnMeta: true, rank });
-        if (synthSafe?.cancelled) return null;
+        const synthSafe = await tts.synth(filtered, { emotion: "sad", mood: moodAtPrep, source: ttsSource, returnMeta: true, rank, turnId });
+        if (synthSafe?.cancelled) {
+          this.tracer?.finishTurn?.(turnId, { state: "cancelled", reason: "tts_cancelled" });
+          return null;
+        }
         const url = synthSafe?.url ?? null;
         if (trace) { trace.profile = "safety-guard"; trace.latencyMs = Date.now() - tPrep; }
+        this.tracer?.markPrepareEnd?.(turnId);
         return { fullText, filtered, usedRAG: false, url, gesture: null, refused: true, ignoreMins: 0, trace, emotion: "sad", mood: moodAtPrep };
       }
       // El mensaje del viewer va entre comillas y marcado como texto de terceros, no como instrucciones
@@ -1845,21 +1868,37 @@ class StreamChatManager {
         mood: moodAtPrep,
         expiresAt: expiresAtEarly,
         rank,
+        turnId,
         build: specBuild,
       }) || null;
       let modelBlocked = false;
       const tLlmStart = performance.now();
+      const llmCap = (client?.providerId === "claude-code" || client?.providerId === "agy") ? "incremental" : (client?.providerId ? "full_only" : "unknown");
+      const llmJobId = this.tracer?.startLlmAttempt?.(turnId, { providerId: client?.providerId || null, streamingCapability: llmCap }) || null;
       let firstDeltaMs = null, firstSentenceMs = null;
       try {
         try {
           const auth = { isDonor: !!opts.donor, isStreamer: fromCreator, isEvent: !!opts.rawPrompt, mood: moodAtPrep };
           for await (const chunk of ai.chatStream(prompt + gestureNote + askGoalNote + limits, fromCreator ? "streamer" : username, client, await opts.image, opts.query ?? opts.said ?? text, trace, auth)) {
-            if (chunk && firstDeltaMs === null) firstDeltaMs = Math.round(performance.now() - tLlmStart);
+            if (chunk && firstDeltaMs === null) {
+              firstDeltaMs = Math.round(performance.now() - tLlmStart);
+              this.tracer?.markLlmEvent?.(turnId, llmJobId, "first_event");
+              this.tracer?.markLlmEvent?.(turnId, llmJobId, "first_text_delta");
+            }
             body += chunk;
-            if (firstSentenceMs === null && findFirstSentence(body)) firstSentenceMs = Math.round(performance.now() - tLlmStart);
+            if (firstSentenceMs === null && findFirstSentence(body)) {
+              firstSentenceMs = Math.round(performance.now() - tLlmStart);
+              this.tracer?.markLlmEvent?.(turnId, llmJobId, "first_sentence");
+            }
             overlap?.feed?.(spec, body);
           }
+          if (trace?.fallbackUsed) {
+            this.tracer?.recordLlmFallback?.(turnId, { effectiveProvider: trace.effectiveProvider, fallbackUsed: true });
+          }
+          this.tracer?.markLlmEvent?.(turnId, llmJobId, "complete");
+          this.tracer?.markLlmEvent?.(turnId, llmJobId, "end");
         } catch (err) {
+          this.tracer?.markLlmEvent?.(turnId, llmJobId, "error", { errorCode: err?.code || (err?.modelBlocked ? "model_blocked" : "llm_error") });
           if (err.modelBlocked || isModelFilterError(err?.message)) modelBlocked = true;
           else throw err;
         }
@@ -1870,6 +1909,8 @@ class StreamChatManager {
           trace.llmDoneMs = llmDoneMs;
           trace.overlapWindowMs = firstSentenceMs !== null ? Math.max(0, llmDoneMs - firstSentenceMs) : 0;
         }
+        const tValStart = performance.now();
+        let sanitizeMs = null, emotionExtractionMs = null, responseValidationMs = null, filtersMs = null;
         if (modelBlocked || isModelRefusal(body)) {
           overlap?.abort?.(spec, "respuesta bloqueada o rechazada");
           spec = null;
@@ -1877,6 +1918,8 @@ class StreamChatManager {
           const direct = opts.rawPrompt || opts.streamer || opts.donor || rank === PRI.call || rank === PRI.look;
           if (!direct) {
             console.log(`🛑 Respuesta bloqueada por filtro del modelo [@${username}] — ignorada`);
+            this.tracer?.recordValidations?.(turnId, { status: "blocked", reasonCode: "model_filter_ignored" });
+            this.tracer?.finishTurn?.(turnId, { state: "discarded", reason: "model_blocked" });
             return null;
           }
           console.warn(`⚠️  Respuesta bloqueada por filtro del modelo [@${username}] — respondiendo negativa`);
@@ -1885,9 +1928,14 @@ class StreamChatManager {
           body = REFUSAL_LINES[Math.floor(Math.random() * REFUSAL_LINES.length)];
           fullText = prefixed ? `${nick || "@" + username}, ${body.replace(/^\p{Lu}(?=\p{Ll})/u, c => c.toLowerCase())}` : body;
         } else {
+          const tEmo0 = performance.now();
           const extractedEmo = extractEmotionTag(body);
           llmEmotion = extractedEmo.emotion;
+          emotionExtractionMs = performance.now() - tEmo0;
+          const tSan0 = performance.now();
           body = sanitizeModelResponse(extractedEmo.cleanedText);
+          sanitizeMs = performance.now() - tSan0;
+          const tRespVal0 = performance.now();
           const marked = /\[\s*(ANIMACI|GESTO)/i.test(body);
           for (const [, what] of body.matchAll(ANIM_RE)) { // si el modelo escribió el gesto como [ANIMACIÓN: ...] igual lo ejecutamos si existe
             const g = pickGesture(what);
@@ -1905,6 +1953,8 @@ class StreamChatManager {
           if (marked && !/\p{L}/u.test(body)) body = gesture ? "Mirá." : "Eso todavía no me sale, pero ya lo anoté para aprenderlo.";
           if (!/\p{L}/u.test(body)) {
             console.log(`🛑 Respuesta vacía del modelo [@${username}] — ignorada`);
+            this.tracer?.recordValidations?.(turnId, { sanitizeMs, emotionExtractionMs, responseValidationMs: performance.now() - tRespVal0, status: "empty", reasonCode: "empty_model_response" });
+            this.tracer?.finishTurn?.(turnId, { state: "discarded", reason: "empty_model_response" });
             return null;
           }
           const sug = body.match(SUG_RE);
@@ -1926,23 +1976,41 @@ class StreamChatManager {
           }
           if (!/\p{L}/u.test(body)) {
             console.log(`🛑 Respuesta sin texto tras limpiar marcas [@${username}] — ignorada`);
+            this.tracer?.recordValidations?.(turnId, { sanitizeMs, emotionExtractionMs, responseValidationMs: performance.now() - tRespVal0, status: "empty", reasonCode: "empty_after_tags" });
+            this.tracer?.finishTurn?.(turnId, { state: "discarded", reason: "empty_after_tags" });
             return null;
           }
           // La IA arranca con "Buenas tardes" aunque no la saluden (pese a la regla): se saca si el viewer no saludó
           if (!opts.rawPrompt && !GREETING_RE.test(text)) body = body.replace(LEADING_GREETING_RE, "").replace(/^\p{Ll}/u, c => c.toUpperCase());
           fullText = prefixed ? `${nick || "@" + username}, ${this._dropName(body, nick || username).replace(/^\p{Lu}(?=\p{Ll})/u, c => c.toLowerCase())}` : body;
           if (gesture === "six_seven") fullText = normalizeSixSevenSpeech(fullText);
+          responseValidationMs = performance.now() - tRespVal0;
         }
+        const tFilt0 = performance.now();
         const filtered = this._limitTics(filters.filterOutput(ai._stripContextLeaks(fullText), opts.maxChars));
+        filtersMs = performance.now() - tFilt0;
         const usedRAG = !opts.fixed && !refused && ((trace?.ragCount || 0) > 0 || ai.kb.search(opts.query ?? opts.said ?? text).length > 0);
+        const tEmoFinal0 = performance.now();
         const emotion = refused ? getMoodState(moodAtPrep).baseEmotion : resolveSpeakingEmotion({ explicitEmotion: opts.emotion || llmEmotion, text: filtered, mood: moodAtPrep });
-        if (rank === PRI.look && Date.now() - at > LOOK_TTL_MS) return null;
+        emotionExtractionMs = (emotionExtractionMs || 0) + (performance.now() - tEmoFinal0);
+        this.tracer?.recordValidations?.(turnId, {
+          sanitizeMs, filtersMs, responseValidationMs, emotionExtractionMs,
+          status: refused ? "refused" : "ok",
+        });
+        if (rank === PRI.look && Date.now() - at > LOOK_TTL_MS) {
+          this.tracer?.markQueueEvent?.(turnId, "expired", { reason: "look_ttl_after_llm" });
+          return null;
+        }
         const ttsSource = (rank === PRI.call || rank === PRI.look) && discord.on ? "discord" : "live";
         const synthRes = (await overlap?.finish?.(spec, { filtered, emotion }))
-          || await tts.synth(filtered, { emotion, mood: moodAtPrep, source: ttsSource, returnMeta: true, expiresAt: rank === PRI.look ? at + LOOK_TTL_MS : null, rank });
-        if (synthRes?.cancelled) return null;
+          || await tts.synth(filtered, { emotion, mood: moodAtPrep, source: ttsSource, returnMeta: true, expiresAt: rank === PRI.look ? at + LOOK_TTL_MS : null, rank, turnId });
+        if (synthRes?.cancelled) {
+          this.tracer?.finishTurn?.(turnId, { state: "cancelled", reason: "tts_cancelled" });
+          return null;
+        }
         const url = synthRes?.url ?? null;
         if (trace) trace.latencyMs = Date.now() - tPrep;
+        this.tracer?.markPrepareEnd?.(turnId);
         const viewerKeyOut = `${platform}:${String(username || "").toLowerCase()}`;
         const strikesOut = this._viewerStrikes?.get(viewerKeyOut) || 0;
         const hostileOut = !opts.fixed && !opts.rawPrompt && !opts.streamer && hasHostileEvidence(text, { isCreator: false, recentStrikes: strikesOut });
@@ -1959,15 +2027,24 @@ class StreamChatManager {
         overlap?.abort?.(spec, "respuesta descartada antes de reproducirse");
       }
     }
+    const tFiltFixed = performance.now();
     const filtered = this._limitTics(filters.filterOutput(ai._stripContextLeaks(fullText), opts.maxChars));
+    this.tracer?.recordValidations?.(turnId, { filtersMs: performance.now() - tFiltFixed, status: "ok", reasonCode: "fixed_text" });
     const usedRAG = false;
     const emotion = resolveSpeakingEmotion({ explicitEmotion: opts.emotion || llmEmotion, text: filtered, mood: moodAtPrep });
-    if (rank === PRI.look && Date.now() - at > LOOK_TTL_MS) return null;
+    if (rank === PRI.look && Date.now() - at > LOOK_TTL_MS) {
+      this.tracer?.markQueueEvent?.(turnId, "expired", { reason: "look_ttl_fixed" });
+      return null;
+    }
     const ttsSource = (rank === PRI.call || rank === PRI.look) && discord.on ? "discord" : "live";
-    const synthRes = await tts.synth(filtered, { emotion, mood: moodAtPrep, source: ttsSource, returnMeta: true, expiresAt: rank === PRI.look ? at + LOOK_TTL_MS : null, rank });
-    if (synthRes?.cancelled) return null;
+    const synthRes = await tts.synth(filtered, { emotion, mood: moodAtPrep, source: ttsSource, returnMeta: true, expiresAt: rank === PRI.look ? at + LOOK_TTL_MS : null, rank, turnId });
+    if (synthRes?.cancelled) {
+      this.tracer?.finishTurn?.(turnId, { state: "cancelled", reason: "tts_cancelled" });
+      return null;
+    }
     const url = synthRes?.url ?? null;
     if (trace) trace.latencyMs = Date.now() - tPrep;
+    this.tracer?.markPrepareEnd?.(turnId);
     return { fullText, filtered, usedRAG, url, gesture, refused, ignoreMins, trace, emotion, mood: moodAtPrep, moodPenalty: 0, moodPenaltyKey: null };
   }
 
@@ -2011,7 +2088,7 @@ class StreamChatManager {
       // Lo del grupo suena por Discord y el live lo toma de esa captura (con las voces de todos): OBS solo mueve
       // la boca. Si OBS también sonara, en el live se la escucharía doble.
       const inDiscord = toGroup && discord.on && p.url ? discord.play(audioSource(p.url)) : null;
-      await tts.play(p.url, p.filtered, !!inDiscord);
+      await tts.play(p.url, p.filtered, !!inDiscord, { turnId: item.turnId || null });
       if (inDiscord && await inDiscord) {
         // ya sonó entero en Discord: a OBS se le dan 3 s, así con OBS cerrado no queda muda 30 s
         const grace = setTimeout(() => tts.audioEnded(), 3000);
@@ -2031,8 +2108,13 @@ class StreamChatManager {
           if (filters.data.autoLearn) ai.chatLearning.addExchange(username, text, p.filtered);
         }
       }
+      this.tracer?.markPlaybackTurnEnd?.(item.turnId);
+      const act = this.tracer?.getActive?.(item.turnId);
+      const termState = act?.playback?.cancelled ? "cancelled" : (act?.tts?.partialFailure || act?.playback?.partial) ? "partial_failure" : "completed";
+      this.tracer?.finishTurn?.(item.turnId, { state: termState });
     } catch (err) {
       broadcast({ type: "error", text: `Error: ${err.message}`, thinking: false });
+      this.tracer?.finishTurn?.(item.turnId, { state: "failed", reason: err?.code || "respond_error" });
     } finally {
       this._audioDoneResolve = null;
       this._lastActivity = Date.now();
@@ -2740,6 +2822,9 @@ class TTSEngine {
     this.streams = new SglangStreamManager({ outDir: join(__dirname, "public", "tts") }); // hub: lo conecta el WS
     this.sglang.getStreamStats = () => this.streams.lastStats; // panel: última reproducción progresiva
     this._streamUrl = null; // sesión PCM progresiva que está sonando (Fase 2)
+    this.tracer = null; // observabilidad opcional (Fase 4A)
+    this._activeTurnId = null;
+    this._activePlayback = null; // vinculación estricta turno/url/modo/vistas para validar ACKs (H03)
     const ep = this.fish.enginePrefs;
     const valid = new Set(["edge", "piper", "murf", "system", "fish", "sglang"]);
     if (ep.engine && valid.has(ep.engine)) {
@@ -2751,13 +2836,23 @@ class TTSEngine {
   }
 
   // Llamado cuando OBS manda tts_done (audio terminó de reproducirse en browser)
-  audioEnded() {
+  audioEnded(endResult = "done") {
     if (this._playbackTimeout) { clearTimeout(this._playbackTimeout); this._playbackTimeout = null; }
+    let partial = false;
     if (this._streamUrl) {
       // La vista terminó de sonar (o venció el tope): liberar la sesión; si seguía generando, nadie la va a escuchar
       const r = this.streams.release(this._streamUrl);
+      partial = Boolean(r?.st?.partial);
       if (r?.stillGenerating) this.sglang.abortSource(r.st.source);
       this._streamUrl = null;
+    }
+    if (this._activeTurnId) {
+      this.tracer?.markPlaybackEnd?.(this._activeTurnId, { result: endResult, partial, disconnected: endResult === "no_consumers" });
+      this._activeTurnId = null;
+    }
+    if (this._activePlayback) {
+      this._activePlayback.cancelled = endResult === "cancelled";
+      this._activePlayback = null;
     }
     this.speaking = false;
     this._onDone?.();
@@ -2806,8 +2901,15 @@ class TTSEngine {
     return CONFIG.ttsEngine || (CONFIG.useSystemTTS ? "system" : "murf");
   }
 
-  async synth(text, { engine = null, emotion = null, mood = 50, source = "live", returnMeta = false, expiresAt = null, rank = 4 } = {}) {
-    const clean = applyPhonetics(this.clean(text)); // palabras en inglés escritas como suenan (panel: Pronunciación)
+  async synth(text, { engine = null, emotion = null, mood = 50, source = "live", returnMeta = false, expiresAt = null, rank = 4, turnId = null } = {}) {
+    const tClean0 = performance.now();
+    const cleaned = this.clean(text);
+    const tPh0 = performance.now();
+    const clean = applyPhonetics(cleaned); // palabras en inglés escritas como suenan (panel: Pronunciación)
+    const tPh1 = performance.now();
+    if (turnId) {
+      this.tracer?.recordValidations?.(turnId, { ttsTransformMs: tPh0 - tClean0, phoneticsMs: tPh1 - tPh0 });
+    }
     const wrap = (url, cancelled = false, fallbackUsed = false) => returnMeta ? { url, cancelled, fallbackUsed } : url;
     if (!clean) return wrap(null);
     const myEpoch = this._cancelEpoch.get(source) || 0;
@@ -2815,21 +2917,31 @@ class TTSEngine {
     const chosen = engine || this.resolveEngine(source);
     if (chosen === "system") return wrap(null);
     if (chosen === "fish") {
+      const enqAt = performance.now();
+      const jobIds = this.tracer?.startTtsJob?.(turnId, { requestedEngine: "fish", effectiveEngine: "fish", playbackMode: "wav" });
       const runFish = async () => {
         if (isCancelled()) throw Object.assign(new Error("Fish TTS cancelado"), { cancelled: true });
-        return this._synthFish(clean, { emotion, mood, source });
+        const qMs = Math.round(performance.now() - enqAt);
+        if (jobIds) this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, { requestStart: true, queueWaitMs: qMs });
+        return this._synthFish(clean, { emotion, mood, source, queueMs: qMs, turnId, ttsJobId: jobIds?.ttsJobId || null });
       };
       const queued = this._fishQueue.then(runFish, runFish);
       this._fishQueue = queued.catch(() => {});
       try {
         const url = await queued;
-        if (isCancelled()) return wrap(null, true);
+        if (isCancelled()) {
+          if (jobIds) this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, { cancelled: true });
+          return wrap(null, true);
+        }
+        this.tracer?.linkUrl?.(turnId, url);
         return wrap(url);
       } catch (err) {
         if (err.cancelled || isCancelled()) {
+          if (jobIds) this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, { cancelled: true });
           console.log(`🛑 Fish TTS cancelado [${source}] — sin fallback`);
           return wrap(null, true);
         }
+        if (jobIds) this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, { errorCode: err.code || (err.status ? `http_${err.status}` : "fish_error") });
         if (!this.fish.config.fallback) {
           console.error("❌ Fish TTS error (fallback desactivado):", err.message);
           return wrap(null);
@@ -2837,8 +2949,9 @@ class TTSEngine {
         this.fish.recordFallback();
         console.error(`❌ Fish TTS error (fallback a Edge): ${err.message}`);
         try {
-          const edgeUrl = await this._synthEdge(clean);
+          const edgeUrl = await this._synthEdge(clean, { turnId, requestedEngine: "fish", fallback: true });
           if (isCancelled()) return wrap(null, true);
+          this.tracer?.linkUrl?.(turnId, edgeUrl);
           return wrap(edgeUrl, false, true);
         } catch (edgeErr) { console.error("❌ Edge TTS fallback error:", edgeErr.message); return wrap(null); }
       }
@@ -2849,7 +2962,8 @@ class TTSEngine {
       const useStream = wantStream && this.streams.capableClients().length > 0;
       if (wantStream && !useStream) console.log("🎧 SGLang stream: ninguna vista compatible conectada — se usa WAV");
       try {
-        const { url } = await (useStream ? this.sglangStreamJob(clean, { emotion, mood, source, expiresAt, rank }) : this.sglangJob(clean, { emotion, mood, source, expiresAt, rank }));
+        const { url } = await (useStream ? this.sglangStreamJob(clean, { emotion, mood, source, expiresAt, rank, turnId }) : this.sglangJob(clean, { emotion, mood, source, expiresAt, rank, turnId }));
+        this.tracer?.linkUrl?.(turnId, url);
         return wrap(url);
       } catch (err) {
         if (err.cancelled || err.expired || isCancelled()) {
@@ -2863,8 +2977,9 @@ class TTSEngine {
         this.sglang.recordFallback();
         console.error(`❌ SGLang TTS error (fallback a Edge): ${err.message}`);
         try {
-          const edgeUrl = await this._synthEdge(clean);
+          const edgeUrl = await this._synthEdge(clean, { turnId, requestedEngine: "sglang", fallback: true });
           if (isCancelled()) return wrap(null, true);
+          this.tracer?.linkUrl?.(turnId, edgeUrl);
           console.log(`📊 TTS pedido=sglang efectivo=edge [${source}]`);
           return wrap(edgeUrl, false, true);
         } catch (edgeErr) { console.error("❌ Edge TTS fallback error:", edgeErr.message); return wrap(null); }
@@ -2879,14 +2994,26 @@ class TTSEngine {
       catch (err) { console.error("❌ Murf TTS error:", err.message); return wrap(null); }
     }
     if (chosen === "murf") console.log("⚠️  Murf sin configurar — usando Edge TTS de fallback");
-    try { return wrap(await this._synthEdge(clean)); }
+    try {
+      const edgeUrl = await this._synthEdge(clean, { turnId, requestedEngine: chosen, fallback: chosen !== "edge" });
+      this.tracer?.linkUrl?.(turnId, edgeUrl);
+      return wrap(edgeUrl);
+    }
     catch (err) { console.error("❌ Edge TTS error:", err.message); return wrap(null); }
   }
 
-  async _synthFish(text, { emotion = null, mood = 50, source = "live" } = {}) {
+  async _synthFish(text, { emotion = null, mood = 50, source = "live", queueMs = 0, turnId = null, ttsJobId = null } = {}) {
     console.log(`🐟 Fish Audio S2 Pro generando audio [${source}]...`);
     const dir = join(__dirname, "public", "tts");
-    const res = await this.fish.synthesizeWav(text, { emotion, mood, source, outDir: dir });
+    const res = await this.fish.synthesizeWav(text, { emotion, mood, source, outDir: dir, queueMs });
+    if (turnId && ttsJobId) {
+      this.tracer?.updateTtsJob?.(turnId, ttsJobId, {
+        headers: true, firstByte: true, httpBodyEnd: true,
+        httpTotalMs: res.metrics.httpTotalMs, bytesReceived: res.metrics.bytes || 0,
+        retries429: res.metrics.retries || 0, backoffMs: res.metrics.backoffMs || 0,
+        audioDurationSec: res.metrics.audioDurationSec, result: "ok",
+      });
+    }
     for (const f of readdirSync(dir))
       if ((f.endsWith(".mp3") || f.endsWith(".wav")) && Date.now() - Number(f.slice(0, 13)) > 1800000) try { unlinkSync(join(dir, f)); } catch { }
     const filename = res.filePath.split(/[\\/]/).pop();
@@ -2896,23 +3023,52 @@ class TTSEngine {
 
   // Un pedido SGLang en su cola propia (1 a la vez, no bloquea Fish/Piper/Edge). La epoch de la fuente se toma al
   // encolar: stop(fuente) invalida activos y pendientes. Lanza {cancelled} o {expired}; el fallback lo decide quien llama.
-  sglangJob(text, { emotion = null, mood = 50, source = "live", expiresAt = null, rank = 4 } = {}) {
+  sglangJob(text, { emotion = null, mood = 50, source = "live", expiresAt = null, rank = 4, turnId = null } = {}) {
     const myEpoch = this._cancelEpoch.get(source) || 0;
     const isCancelled = () => (this._cancelEpoch.get(source) || 0) !== myEpoch;
     const enqueuedAt = performance.now();
+    const jobIds = this.tracer?.startTtsJob?.(turnId, { requestedEngine: "sglang", effectiveEngine: "sglang", playbackMode: "wav" });
     const run = async () => {
-      if (isCancelled()) throw Object.assign(new Error("SGLang TTS cancelado"), { cancelled: true });
-      // El TTL se revisa cuando el pedido realmente arranca, no cuando entró a la cola
-      if (expiresAt && Date.now() > expiresAt) throw Object.assign(new Error("SGLang TTS: pedido vencido"), { expired: true });
-      const dir = join(__dirname, "public", "tts");
-      const res = await this.sglang.synthesizeWav(text, { emotion, mood, source, outDir: dir, queueMs: Math.round(performance.now() - enqueuedAt), expiresAt, shouldCancel: isCancelled });
-      if (isCancelled()) { // llegó tarde: no se reproduce y se borra
-        try { unlinkSync(res.filePath); } catch { }
+      if (isCancelled()) {
+        if (jobIds) this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, { cancelled: true });
         throw Object.assign(new Error("SGLang TTS cancelado"), { cancelled: true });
       }
-      for (const f of readdirSync(dir))
-        if ((f.endsWith(".mp3") || f.endsWith(".wav")) && Date.now() - Number(f.slice(0, 13)) > 1800000) try { unlinkSync(join(dir, f)); } catch { }
-      return { url: `/tts/${res.filePath.split(/[\\/]/).pop()}`, metrics: res.metrics };
+      // El TTL se revisa cuando el pedido realmente arranca, no cuando entró a la cola
+      if (expiresAt && Date.now() > expiresAt) {
+        if (jobIds) this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, { errorCode: "ttl_expired" });
+        throw Object.assign(new Error("SGLang TTS: pedido vencido"), { expired: true });
+      }
+      const dir = join(__dirname, "public", "tts");
+      const qMs = Math.round(performance.now() - enqueuedAt);
+      if (jobIds) this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, { requestStart: true, queueWaitMs: qMs });
+      try {
+        const res = await this.sglang.synthesizeWav(text, { emotion, mood, source, outDir: dir, queueMs: qMs, expiresAt, shouldCancel: isCancelled });
+        if (isCancelled()) { // llegó tarde: no se reproduce y se borra
+          try { unlinkSync(res.filePath); } catch { }
+          if (jobIds) this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, { cancelled: true });
+          throw Object.assign(new Error("SGLang TTS cancelado"), { cancelled: true });
+        }
+        const url = `/tts/${res.filePath.split(/[\\/]/).pop()}`;
+        if (jobIds) {
+          this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, {
+            url, headers: true, firstByte: true, httpBodyEnd: true,
+            httpTotalMs: res.metrics.totalMs, bytesReceived: res.metrics.bytes || 0,
+            retries429: res.metrics.retries || 0, backoffMs: res.metrics.backoffMs || 0,
+            audioDurationSec: res.metrics.audioDurationSec, result: "ok",
+          });
+        }
+        for (const f of readdirSync(dir))
+          if ((f.endsWith(".mp3") || f.endsWith(".wav")) && Date.now() - Number(f.slice(0, 13)) > 1800000) try { unlinkSync(join(dir, f)); } catch { }
+        return { url, metrics: res.metrics };
+      } catch (err) {
+        if (jobIds) {
+          this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, {
+            cancelled: Boolean(err.cancelled || isCancelled()),
+            errorCode: err.code || (err.status ? `http_${err.status}` : (err.expired ? "ttl_expired" : "sglang_error")),
+          });
+        }
+        throw err;
+      }
     };
     return this._sglang.enqueue(run, { rank, kind: "normal" });
   }
@@ -2920,26 +3076,54 @@ class TTSEngine {
   // Fase 2: misma cola y epoch que sglangJob, pero resuelve apenas el gateway valida las cabeceras (url "stream:<id>").
   // La generación sigue en segundo plano ocupando la cola hasta terminar; el PCM espera en la sesión hasta play().
   // Errores ANTES de las cabeceras rechazan (el fallback de synth() actúa como en WAV); después, los maneja la sesión.
-  sglangStreamJob(text, { emotion = null, mood = 50, source = "live", expiresAt = null, rank = 4 } = {}) {
+  sglangStreamJob(text, { emotion = null, mood = 50, source = "live", expiresAt = null, rank = 4, turnId = null } = {}) {
     const myEpoch = this._cancelEpoch.get(source) || 0;
     const isCancelled = () => (this._cancelEpoch.get(source) || 0) !== myEpoch;
     const enqueuedAt = performance.now();
-    const st = this.streams.create({ source, text });
-    let gotHeaders = false, headersOk, headersFail;
+    const st = this.streams.create({ source, text, turnId });
+    if (turnId) this.tracer?.linkStream?.(turnId, st.id, st.url);
+    const jobIds = this.tracer?.startTtsJob?.(turnId, { requestedEngine: "sglang", effectiveEngine: "sglang", playbackMode: "stream", streamId: st.id });
+    let gotHeaders = false, headersOk, headersFail, gotFirstPcm = false;
     const ready = new Promise((res, rej) => { headersOk = res; headersFail = rej; });
     const run = async () => {
       try {
         if (isCancelled()) throw Object.assign(new Error("SGLang TTS cancelado"), { cancelled: true });
         if (expiresAt && Date.now() > expiresAt) throw Object.assign(new Error("SGLang TTS: pedido vencido"), { expired: true });
         st.m.queueMs = Math.round(performance.now() - enqueuedAt);
+        if (jobIds) this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, { requestStart: true, queueWaitMs: st.m.queueMs });
         const m = await this.sglang.synthesizeStream(text, {
           emotion, mood, source, queueMs: st.m.queueMs, expiresAt, shouldCancel: isCancelled, streamId: st.id,
-          onHeaders: () => { gotHeaders = true; this.streams.onHeaders(st); headersOk({ url: st.url, stream: st }); },
-          onPcm: (buf, info) => this.streams.onPcm(st, buf, info),
+          onHeaders: () => {
+            gotHeaders = true;
+            if (jobIds) this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, { headers: true });
+            this.streams.onHeaders(st);
+            headersOk({ url: st.url, stream: st });
+          },
+          onPcm: (buf, info) => {
+            if (!gotFirstPcm) {
+              gotFirstPcm = true;
+              if (jobIds) this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, { firstValidPcm: true });
+            }
+            this.streams.onPcm(st, buf, info);
+          },
         });
         if (isCancelled()) throw Object.assign(new Error("SGLang TTS cancelado"), { cancelled: true });
+        if (jobIds) {
+          this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, {
+            httpBodyEnd: true, httpTotalMs: m.totalMs, bytesReceived: m.bytes || 0, samplesReceived: m.samples || 0,
+            chunkCount: m.chunks || 0, retries429: m.retries || 0, backoffMs: m.backoffMs || 0,
+            audioDurationSec: m.audioDurationSec, result: "ok",
+          });
+        }
         this.streams.onEnd(st, m);
       } catch (err) {
+        if (jobIds) {
+          this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, {
+            cancelled: Boolean(err.cancelled || isCancelled()),
+            partialFailure: Boolean(err.partial || st.forwarded),
+            errorCode: err.code || (err.status ? `http_${err.status}` : (err.expired ? "ttl_expired" : "sglang_stream_error")),
+          });
+        }
         if (!gotHeaders) { this.streams.discard(st, err.cancelled ? "cancelled" : err.expired ? "expired" : "error"); headersFail(err); }
         else if (err.cancelled || isCancelled()) this.streams.cancel(st, "stop");
         else this.streams.onFail(st, err);
@@ -2949,26 +3133,35 @@ class TTSEngine {
     return ready;
   }
 
-  async _playStream(url, clean, mute) {
+  async _playStream(url, clean, mute, turnId = null) {
     const st = this.streams.get(url);
-    if (!st) return this.audioEnded(); // cancelada o descartada mientras esperaba turno
+    if (!st) return this.audioEnded("cancelled"); // cancelada o descartada mientras esperaba turno
     this._streamUrl = url;
     this.currentUrl = url;
+    this._activeTurnId = turnId || st.turnId || this.tracer?.resolveTurnByUrl?.(url)?.ids?.turnId || null;
     const r = await this.streams.play(st, {
       mute,
       cb: {
         setTimeoutMs: ms => { if (this._streamUrl === url) this._startPlaybackTimeoutMs(ms); },
-        fallback: () => { if (this._streamUrl === url) this._streamFallback(url, clean, mute); },
+        fallback: () => { if (this._streamUrl === url) this._streamFallback(url, clean, mute, this._activeTurnId); },
         complete: () => this._streamFinished(url),            // la última vista audible que faltaba se fue (lenta/cerrada)
         empty: () => this._streamNoConsumers(url),            // ya no queda ninguna vista participando
       },
     });
     if (this._streamUrl !== url) return; // Stop o fallback en el medio
-    if (r.mode === "stream") return this._startPlaybackTimeoutMs(r.timeoutMs);
-    if (r.mode === "fallback") return this._streamFallback(url, clean, mute);
+    if (r.mode === "stream") {
+      const playbackId = this.tracer?.markPlaybackDispatched?.(this._activeTurnId, {
+        url, mode: "stream", participants: st.m.participants || 0, audibleParticipants: st.m.audibleParticipants || 0,
+      });
+      this._activePlayback = { turnId: this._activeTurnId, playbackId, url, mode: "stream", streamId: st.id, cancelled: false };
+      return this._startPlaybackTimeoutMs(r.timeoutMs);
+    }
+    if (r.mode === "fallback") return this._streamFallback(url, clean, mute, this._activeTurnId);
     this._streamUrl = null;
     if (r.mode === "wav") {
       this.currentUrl = r.url;
+      this.tracer?.linkUrl?.(this._activeTurnId, r.url);
+      this._bindWavTelemetry(this._activeTurnId, r.url, mute);
       this._broadcast?.({ type: "tts_play", url: r.url, mute });
       return this._startPlaybackTimeout(clean);
     }
@@ -2977,26 +3170,28 @@ class TTSEngine {
   }
 
   // La sesión falló sin haber enviado audio a ninguna vista: el fallback existente no puede duplicar nada
-  async _streamFallback(url, clean, mute) {
+  async _streamFallback(url, clean, mute, turnId = null) {
     this.streams.release(url);
     this._streamUrl = null;
     if (!this.sglang.config.fallback) {
       console.error("❌ SGLang stream falló antes de sonar (fallback desactivado)");
       this.currentUrl = null;
-      return this.audioEnded();
+      return this.audioEnded("error");
     }
     this.sglang.recordFallback();
     console.error("❌ SGLang stream falló antes de sonar (fallback a Edge)");
     try {
-      const edgeUrl = await this._synthEdge(clean);
+      const edgeUrl = await this._synthEdge(clean, { turnId, requestedEngine: "sglang", fallback: true });
       if (this.currentUrl !== url) return; // Stop mientras se generaba el fallback
       console.log("📊 TTS pedido=sglang(stream) efectivo=edge");
       this.currentUrl = edgeUrl;
+      this.tracer?.linkUrl?.(turnId, edgeUrl);
+      this._bindWavTelemetry(turnId, edgeUrl, mute);
       this._broadcast?.({ type: "tts_play", url: edgeUrl, mute });
       this._startPlaybackTimeout(clean);
     } catch (err) {
       console.error("❌ Edge TTS fallback error:", err.message);
-      if (this.currentUrl === url) { this.currentUrl = null; this.audioEnded(); }
+      if (this.currentUrl === url) { this.currentUrl = null; this.audioEnded("error"); }
     }
   }
 
@@ -3036,7 +3231,80 @@ class TTSEngine {
     if (this.streams.cancel(st, "no_consumers")) this.sglang.abortSource(st.source);
     this._streamUrl = null;
     this.currentUrl = null;
-    this.audioEnded();
+    this.audioEnded("no_consumers");
+  }
+
+  // Registro acotado solo para telemetría de qué vistas recibieron un tts_play WAV (no altera la lógica funcional de Fases 1–3)
+  _bindWavTelemetry(turnId, url, mute) {
+    const raw = this.streams.hub?.clients?.() || [];
+    const views = raw.filter(c => c && c.readyState === 1 && !c.isPanel).slice(0, 32);
+    const participants = new Map(views.map(ws => [ws, { audible: !mute && !ws.ttsMute }]));
+    const audibleCount = [...participants.values()].filter(p => p.audible).length;
+    const playbackId = this.tracer?.markPlaybackDispatched?.(turnId, {
+      url, mode: "wav",
+      participants: participants.size,
+      audibleParticipants: audibleCount,
+    });
+    this._activePlayback = { turnId, playbackId, url, mode: "wav", streamId: null, cancelled: false, participants };
+  }
+
+  // Valida que el ACK/stats pertenezca a la reproducción activa y a una vista participante (H03)
+  _resolvePlaybackAckTarget(ws, msg, { allowEndedStats = false } = {}) {
+    if (!this.tracer || !msg || typeof msg !== "object" || Array.isArray(msg)) return null;
+    if (ws?.isPanel) return null; // el panel no es vista reproductora de OBS
+    const url = typeof msg.url === "string" ? msg.url : null;
+    const isStream = (url && url.startsWith("stream:")) || (msg.id != null && !url);
+
+    if (isStream) {
+      const targetUrl = url || `stream:${Number(msg.id)}`;
+      if (!allowEndedStats && targetUrl !== this._streamUrl) return null;
+      const st = this.streams.get(targetUrl);
+      if (!st || st.state === "cancelled" || st.state === "released") return null;
+      if (msg.id != null && Number(msg.id) !== st.id) return null;
+      // Solo vistas participantes en esta sesión PCM pueden escribir métricas del turno
+      if (!st.participants?.has(ws)) return null;
+      const part = st.participants.get(ws);
+      const tr = this.tracer.resolveTurnByStreamId(st.id) || this.tracer.resolveTurnByUrl(targetUrl);
+      if (!tr) return null;
+      return { turnId: tr.ids.turnId, audible: Boolean(part?.audible && !msg.mute), mode: "stream" };
+    }
+
+    if (!url || !this.speaking) return null;
+    if (url !== this.currentUrl) return null; // rechaza ACK tardío o de otro turno
+    if (!this._activePlayback || this._activePlayback.cancelled || this._activePlayback.url !== url) return null;
+    // Solo vistas que realmente recibieron el tts_play pueden enviar ACK/stats de este turno WAV
+    if (!this._activePlayback.participants?.has(ws)) return null;
+    const wavPart = this._activePlayback.participants.get(ws);
+    const tr = this.tracer.resolveTurnByUrl(url);
+    if (!tr) return null;
+    return { turnId: tr.ids.turnId, audible: Boolean(wavPart?.audible && msg.mute !== true && ws?.ttsMute !== true), mode: "wav" };
+  }
+
+  onPlaybackStarted(ws, msg = {}) {
+    const target = this._resolvePlaybackAckTarget(ws, msg);
+    if (!target) return false;
+    return Boolean(this.tracer.recordPlaybackStartAck(target.turnId, {
+      viewId: ws?._viewId || "obs",
+      audible: target.audible,
+      mode: target.mode,
+      startMethod: typeof msg.startMethod === "string" ? msg.startMethod : "unknown",
+      clientRenderStartMs: msg.clientRenderStartMs,
+      bufferAtStartSec: msg.bufferAtStartSec,
+      contextRate: msg.contextRate,
+      contextState: msg.contextState,
+      outputLatencyMs: msg.outputLatencyMs,
+    }));
+  }
+
+  onPlaybackStats(ws, msg = {}) {
+    if (!msg || typeof msg.stats !== "object" || !msg.stats || Array.isArray(msg.stats)) return false;
+    const target = this._resolvePlaybackAckTarget(ws, msg, { allowEndedStats: true });
+    if (!target) return false;
+    return Boolean(this.tracer.recordClientPlaybackStats(target.turnId, {
+      viewId: ws?._viewId || "obs",
+      audible: target.audible,
+      stats: msg.stats,
+    }));
   }
 
   // Una vista se desconectó o dejó de poder reproducir (AudioContext suspendido). Si era la última → se libera el turno
@@ -3049,18 +3317,22 @@ class TTSEngine {
   }
 
   // Reproduce un audio ya generado en OBS; sin URL, usa la voz del sistema
-  async play(url, text, mute = false) {
+  async play(url, text, mute = false, { turnId = null } = {}) {
     const clean = this.clean(text);
     if (!clean) return this.audioEnded(); // nada que decir: liberar la cola
     this.speaking = true;
-    if (typeof url === "string" && url.startsWith("stream:")) return this._playStream(url, clean, mute);
+    this._activeTurnId = turnId || this.tracer?.resolveTurnByUrl?.(url)?.ids?.turnId || null;
+    if (typeof url === "string" && url.startsWith("stream:")) return this._playStream(url, clean, mute, this._activeTurnId);
     if (!url) {
       console.log("🗣️  Voz del sistema...");
+      this.tracer?.markPlaybackDispatched?.(this._activeTurnId, { mode: "system" });
       await this._speakFallback(applyPhonetics(clean));
       return this.audioEnded();
     }
     if (this._broadcast) {
       this.currentUrl = url;
+      this.tracer?.linkUrl?.(this._activeTurnId, url);
+      this._bindWavTelemetry(this._activeTurnId, url, mute);
       this._broadcast({ type: "tts_play", url, mute });
       this._startPlaybackTimeout(clean); // speaking se libera cuando OBS manda tts_done
     }
@@ -3084,8 +3356,11 @@ class TTSEngine {
     return data.audioFile; // OBS la descarga directo de Murf
   }
 
-  async _synthEdge(text) {
+  async _synthEdge(text, { turnId = null, requestedEngine = "edge", fallback = false } = {}) {
     console.log("🎤 Edge TTS generando audio...");
+    const jobIds = this.tracer?.startTtsJob?.(turnId, { requestedEngine, effectiveEngine: "edge", playbackMode: "wav", fallback });
+    const t0 = performance.now();
+    if (jobIds) this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, { requestStart: true, queueWaitMs: 0 });
     const { MsEdgeTTS, OUTPUT_FORMAT } = await import("msedge-tts");
     const edgeTts = new MsEdgeTTS();
     await edgeTts.setMetadata(CONFIG.edgeVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
@@ -3095,17 +3370,28 @@ class TTSEngine {
     const id = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
     const tmp = join(dir, `tmp-${id}`);
     mkdirSync(tmp, { recursive: true });
+    const finalPath = join(dir, `${id}.mp3`);
     try {
       await edgeTts.toFile(tmp, text);
-      renameSync(join(tmp, "audio.mp3"), join(dir, `${id}.mp3`));
+      renameSync(join(tmp, "audio.mp3"), finalPath);
+      const url = `/tts/${id}.mp3`;
+      if (jobIds) {
+        this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, {
+          url, headers: true, firstByte: true, httpBodyEnd: true,
+          httpTotalMs: Math.round(performance.now() - t0), result: "ok", fallbackUsed: fallback,
+        });
+      }
+      for (const f of readdirSync(dir)) // limpiar audios de más de 30 min (los precargados esperan turno)
+        if ((f.endsWith(".mp3") || f.endsWith(".wav")) && Date.now() - Number(f.slice(0, 13)) > 1800000) try { unlinkSync(join(dir, f)); } catch { }
+      console.log("✅ Edge TTS listo");
+      return url;
+    } catch (err) {
+      if (jobIds) this.tracer?.updateTtsJob?.(turnId, jobIds.ttsJobId, { errorCode: err?.code || "edge_error" });
+      throw err;
     } finally {
       edgeTts.close?.();
       try { rmSync(tmp, { recursive: true, force: true }); } catch { }
     }
-    for (const f of readdirSync(dir)) // limpiar audios de más de 30 min (los precargados esperan turno)
-      if ((f.endsWith(".mp3") || f.endsWith(".wav")) && Date.now() - Number(f.slice(0, 13)) > 1800000) try { unlinkSync(join(dir, f)); } catch { }
-    console.log("✅ Edge TTS listo");
-    return `/tts/${id}.mp3`;
   }
 
   _ensurePiperWorker() {
@@ -3218,7 +3504,7 @@ class TTSEngine {
       this.currentProcess = null;
     }
     discord.stopAudio();
-    this.audioEnded();
+    this.audioEnded("cancelled");
   }
 }
 
@@ -3284,15 +3570,19 @@ const kb = new KnowledgeBase();
 const ai = new NyraAI(kb, providerRegistry);
 await ai.syncProviders();
 const providerController = createProviderController({ registry: providerRegistry, ai });
+const tracer = new TurnTracer({ enabled: process.env.NYRA_TRACE_DETAILED === "1", category: "real_gateway" });
 const tts = installSpeculation(new TTSEngine(), { applyPhonetics });
+tts.tracer = tracer;
 const overlap = new OverlapController({
   tts,
   enabled: () => tts.sglang.config.overlap === true,
   log: s => console.log(s),
+  tracer,
 });
 tts.sglang.getOverlapStats = () => ({ ...overlap.publicStats(), activeProvider: ai.llm?.providerId || null });
 const filters = new FilterEngine();
 const streamChat = new StreamChatManager();
+streamChat.tracer = tracer;
 streamChat.settings.respondToAll = !!filters.data.respondToAll; // respetar lo guardado (el panel lo muestra desde filters.json)
 const kick = new KickAPI();
 const live = new LiveEvents();
@@ -3803,6 +4093,77 @@ app.get("/api/tts/sglang/config", (req, res) => {
   res.json({ ok: true, config: tts.sglang.getPublicConfig() });
 });
 
+// Diagnóstico de trazas de latencia (solo lectura, sin secretos ni texto privado; detallado desactivado por defecto).
+// Con PANEL_PASSWORD definida: /api exige x-panel-key. Sin PANEL_PASSWORD: solo loopback local directo (sin proxy).
+function requireDiagnosticsAccess(req, res) {
+  const check = checkDiagnosticsAccess({
+    panelPassword: PANEL_PASSWORD,
+    remoteAddress: req.socket?.remoteAddress || "",
+    forwarded: req.get("x-forwarded-for") || req.get("forwarded") || "",
+  });
+  if (!check.ok) {
+    res.status(check.status).json({ ok: false, error: check.error });
+    return false;
+  }
+  return true;
+}
+
+app.get("/api/diagnostics/traces", (req, res) => {
+  if (!requireDiagnosticsAccess(req, res)) return;
+  const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 50));
+  const category = typeof req.query.category === "string" && req.query.category.trim() ? req.query.category.trim() : null;
+  res.json({ ok: true, summary: tracer.getSummary(), traces: tracer.getHistory({ category, limit }) });
+});
+
+// H06: exportación segura de trazas ya capturadas (Fase 4B) estrictamente dentro de logs/benchmarks/<runId>/
+app.post("/api/diagnostics/traces/export", (req, res) => {
+  if (!requireDiagnosticsAccess(req, res)) return;
+  try {
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const requestedCat = typeof body.category === "string" && body.category.trim() ? body.category.trim() : tracer.category;
+    // No permite forjar categorías arbitrarias distintas del origen real del tracer (solo real_gateway/real_obs en runtime)
+    const allowedCats = new Set([tracer.category, ...(tracer.category === "real_gateway" ? ["real_obs"] : [])]);
+    if (!allowedCats.has(requestedCat)) {
+      return res.status(400).json({ ok: false, error: "Categoría no permitida para este entorno de ejecución" });
+    }
+    const traces = tracer.getHistory({ category: requestedCat });
+    if (!tracer.isEnabled() && traces.length === 0) {
+      return res.status(409).json({ ok: false, error: "Telemetría detallada desactivada (NYRA_TRACE_DETAILED=0) y sin trazas capturadas" });
+    }
+    // runId generado exclusivamente en servidor; el cliente no controla rutas ni nombres de archivo
+    const runId = `capture_${new Date().toISOString().replace(/[:.]/g, "-")}`;
+    const baseDir = join(__dirname, "logs", "benchmarks");
+    const { doc, files } = exportCapturedTraces(traces, {
+      authorizedBaseDir: baseDir,
+      runId,
+      category: requestedCat,
+      synthetic: false,
+      dataOrigin: "runtime_capture",
+      effectiveProvider: ai.llm?.providerId || null,
+      config: {
+        ttsEngine: tts.resolveEngine("live"),
+        discordTtsEngine: tts.resolveEngine("discord"),
+        shareTtsEngine: CONFIG.shareTtsEngine,
+        sglangPlaybackMode: tts.sglang.config.playbackMode,
+        sglangOverlap: tts.sglang.config.overlap,
+        traceDetailedEnabled: tracer.isEnabled(),
+      },
+    });
+    res.json({
+      ok: true,
+      runId: doc.runId,
+      category: doc.category,
+      synthetic: doc.synthetic,
+      dataOrigin: doc.dataOrigin,
+      exportedCount: doc.traces.length,
+      formats: Object.keys(files),
+      dirName: runId,
+    });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
+  }
+});
+
 app.post("/api/tts/sglang/config", (req, res) => {
   try {
     const { url, timeoutMs, expressive, fallback, playbackMode, overlap: overlapFlag } = req.body || {};
@@ -4029,6 +4390,7 @@ wss.on("connection", (ws, req) => {
   ws.authed = isPanelAuthed(params.get("key"));
   ws.isPanel = ws.authed && params.has("key"); // OBS y el overlay se conectan sin key
   ws.is3d = params.has("3d") && params.get("3d") !== "0";
+  ws._viewId = tracer.nextId(ws.isPanel ? "panel" : ws.is3d ? "obs3d" : "obs");
   console.log(`🎙️ Cliente conectado al WebSocket${ws.is3d ? " (3D)" : ""}`);
 
   ws.send(JSON.stringify({
@@ -4042,8 +4404,8 @@ wss.on("connection", (ws, req) => {
   ws.on("message", async (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
-    // tts_caps / tts_stream_stats: las vistas de OBS (sin contraseña) anuncian soporte de PCM progresivo y mandan métricas
-    if (!ws.authed && msg.type !== "tts_done" && msg.type !== "ping" && msg.type !== "obs_3d" && msg.type !== "tts_caps" && msg.type !== "tts_stream_stats") {
+    // tts_caps / tts_stream_stats / tts_play_started / tts_playback_stats: las vistas de OBS (sin contraseña) reportan capacidades y métricas
+    if (!ws.authed && msg.type !== "tts_done" && msg.type !== "ping" && msg.type !== "obs_3d" && msg.type !== "tts_caps" && msg.type !== "tts_stream_stats" && msg.type !== "tts_play_started" && msg.type !== "tts_playback_stats") {
       ws.send(JSON.stringify({ type: "error", text: "Contraseña del panel requerida" }));
       return;
     }
@@ -4056,7 +4418,9 @@ wss.on("connection", (ws, req) => {
       if (was && !ws.ttsStream) tts.streamClientGone(ws); // se le suspendió el audio: deja de participar
       return;
     }
-    if (msg.type === "tts_stream_stats") { tts.streams.recordClientStats(msg); return; }
+    if (msg.type === "tts_play_started") { tts.onPlaybackStarted(ws, msg); return; }
+    if (msg.type === "tts_playback_stats") { tts.onPlaybackStats(ws, msg); return; }
+    if (msg.type === "tts_stream_stats") { tts.streams.recordClientStats(msg); tts.onPlaybackStats(ws, msg); return; }
 
     if (msg.type === "chat") {
       // Enrutar por la cola de streamChat para respetar el orden y esperar el audio

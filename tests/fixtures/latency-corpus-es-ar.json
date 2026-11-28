@@ -1,0 +1,180 @@
+{
+  "schemaVersion": "1.0.0",
+  "locale": "es-AR",
+  "synthetic": true,
+  "note": "Corpus público y sintético en español argentino para evaluación reproducible de Fase 4A. No contiene conversaciones privadas reales ni datos de usuarios reales. Edge TTS usa una voz distinta y actúa solo como referencia operativa; Fish Speech original y SGLang comparan textos idénticos bajo la misma referencia vocal R20.",
+  "ttsIsolatedTexts": [
+    {
+      "id": "tts_short",
+      "lengthClass": "corta",
+      "emotion": "happy",
+      "text": "Buenas noches chat, qué lindo verlos por acá hoy."
+    },
+    {
+      "id": "tts_medium",
+      "lengthClass": "mediana",
+      "emotion": "neutral",
+      "text": "Che, qué buena pregunta la tuya sobre el micrófono. Si ajustás bien la ganancia y el filtro, cambia muchísimo la claridad de la voz."
+    },
+    {
+      "id": "tts_emotional",
+      "lengthClass": "emocional",
+      "emotion": "surprised",
+      "text": "¡No te puedo creer lo que acabás de mandar, sos un genio total! Me dejaste sin palabras, en serio mil gracias por bancar el directo."
+    },
+    {
+      "id": "tts_long",
+      "lengthClass": "larga",
+      "emotion": "neutral",
+      "text": "A ver, te lo explico paso a paso para que no quede ninguna duda en el chat. Primero medimos desde que entra el mensaje hasta que el modelo entrega la primera oración segura, sin cortar abreviaturas ni decimales. Después comparamos el tiempo hasta el primer bloque PCM reproducible, el margen del búfer adaptativo y si aparece algún corte audible durante la frase completa."
+    }
+  ],
+  "turns": [
+    {
+      "id": "c01_saludo_corto",
+      "type": "saludo_corto",
+      "lengthClass": "corta",
+      "platform": "tiktok",
+      "source": "live",
+      "priority": 4,
+      "input": "Buenas noches NYRA, ¿todo bien?",
+      "reply": "Buenas noches, todo tranquilo por el umbral. ¿Cómo andás vos hoy?",
+      "emotion": "happy"
+    },
+    {
+      "id": "c02_respuesta_casual",
+      "type": "respuesta_casual",
+      "lengthClass": "mediana",
+      "platform": "tiktok",
+      "source": "live",
+      "priority": 4,
+      "input": "Che, recién llego del laburo y me preparé unos mates.",
+      "reply": "Qué bien esos mates después del laburo, te los re ganaste. Ponete cómodo que hoy la charla viene linda y relajada.",
+      "emotion": "happy"
+    },
+    {
+      "id": "c03_pregunta_tecnica",
+      "type": "pregunta_tecnica",
+      "lengthClass": "mediana",
+      "platform": "tiktok",
+      "source": "live",
+      "priority": 4,
+      "input": "¿Por qué conviene usar PCM de 44.1 kHz en el streaming de audio?",
+      "reply": "Porque coincide directo con el formato que entrega el servidor y evita remuestrear de más en el navegador. Además, al ir por AudioWorklet se puede empezar a reproducir apenas junta margen seguro sin esperar el archivo entero.",
+      "emotion": "neutral"
+    },
+    {
+      "id": "c04_chiste",
+      "type": "chiste",
+      "lengthClass": "mediana",
+      "platform": "tiktok",
+      "source": "live",
+      "priority": 4,
+      "input": "Tirate un chiste malo para levantar la noche.",
+      "reply": "¿Qué hace una abeja en el gimnasio? Zumba, obvio, y no me miren así que ustedes me pidieron uno malo.",
+      "emotion": "happy"
+    },
+    {
+      "id": "c05_respuesta_sarcastica",
+      "type": "respuesta_sarcastica",
+      "lengthClass": "mediana",
+      "platform": "tiktok",
+      "source": "live",
+      "priority": 4,
+      "input": "Seguro que hoy ganás todas las partidas sin perder ni una.",
+      "reply": "Claro, campeón, porque en este canal jamás se manquea bajo presión. Igual anotá la fecha por si hoy ocurre un milagro histórico.",
+      "emotion": "neutral"
+    },
+    {
+      "id": "c06_donacion",
+      "type": "donacion",
+      "lengthClass": "mediana",
+      "platform": "tiktok",
+      "source": "live",
+      "priority": 0,
+      "donor": true,
+      "input": "Mandó 500 diamantes: ¡Vamos NYRA, tremendo directo!",
+      "reply": "¡Muchísimas gracias por esos quinientos diamantes, sos una locura! Me alegraste toda la noche, de verdad se re agradece el aguante.",
+      "emotion": "surprised"
+    },
+    {
+      "id": "c07_reaccion_emocional",
+      "type": "reaccion_emocional",
+      "lengthClass": "emocional",
+      "platform": "tiktok",
+      "source": "live",
+      "priority": 4,
+      "input": "Hoy rendí el último final de la facu y aprobé.",
+      "reply": "¡Qué notición increíble, felicitaciones de todo corazón! Después de tanto esfuerzo merecés festejarlo a lo grande esta noche.",
+      "emotion": "happy"
+    },
+    {
+      "id": "c08_respuesta_extensa",
+      "type": "respuesta_extensa",
+      "lengthClass": "larga",
+      "platform": "tiktok",
+      "source": "live",
+      "priority": 4,
+      "input": "Contame cómo se organiza un buen stream sin que el chat se vuelva un caos.",
+      "reply": "Lo primero es tener reglas claras desde el arranque para que la gente sepa el clima del canal. Después ayuda muchísimo ordenar las prioridades entre donaciones, llamadas de voz y chat común, así nadie queda colgado para siempre. Por último, mantener un ritmo parejo de respuestas hace que el directo se sienta vivo y natural sin pisar conversaciones.",
+      "emotion": "neutral"
+    },
+    {
+      "id": "c09_mensaje_con_numeros",
+      "type": "mensaje_con_numeros",
+      "lengthClass": "mediana",
+      "platform": "tiktok",
+      "source": "live",
+      "priority": 4,
+      "input": "El parche pesa 3.5 GB y bajó a 120 Mbps en 4 minutos.",
+      "reply": "Con 3.5 GB a 120 Mbps te baja en un suspiro, che. Ojalá todas las actualizaciones tardaran apenas 4 minutos y no media tarde.",
+      "emotion": "neutral"
+    },
+    {
+      "id": "c10_mensaje_con_abreviaturas",
+      "type": "mensaje_con_abreviaturas",
+      "lengthClass": "mediana",
+      "platform": "tiktok",
+      "source": "live",
+      "priority": 4,
+      "input": "El Dr. Pérez dijo que aprox. a las 20 hs. arranca el torneo.",
+      "reply": "Me lo confirmó el Dr. Pérez hace un rato, aprox. a las 20 hs. empieza la primera ronda. Así que llegamos tranquilos si nos preparamos ahora.",
+      "emotion": "neutral"
+    },
+    {
+      "id": "c11_nombre_propio",
+      "type": "nombre_propio",
+      "lengthClass": "mediana",
+      "platform": "tiktok",
+      "source": "live",
+      "priority": 4,
+      "input": "Mandale un saludo a Valentina y a Benjamín que están en Córdoba.",
+      "reply": "Un saludo gigante para Valentina y para Benjamín allá en Córdoba. Qué lindo que estén prendidos al stream compartiendo la noche.",
+      "emotion": "happy"
+    },
+    {
+      "id": "c12_conversacion_discord",
+      "type": "conversacion_discord",
+      "lengthClass": "mediana",
+      "platform": "discord",
+      "source": "discord",
+      "priority": 1,
+      "input": "Nira, ¿nos tiramos otra partida de Wild Rift o cambiamos de modo?",
+      "reply": "Dale, tirémonos una más de Wild Rift pero esta vez con cabeza fría. Si sale bien seguimos, y si no cambiamos de modo.",
+      "emotion": "happy"
+    },
+    {
+      "id": "c13_prioritario_durante_especulacion",
+      "type": "prioritario_durante_especulacion",
+      "lengthClass": "mediana",
+      "platform": "tiktok",
+      "source": "live",
+      "priority": 0,
+      "donor": true,
+      "displacesTurnId": "c08_respuesta_extensa",
+      "input": "Regalo prioritario mientras corre una especulación de chat común.",
+      "reply": "¡Ey, llegó un regalo prioritario y pasa directo al frente de la fila! Gracias totales por activar la alerta en vivo.",
+      "emotion": "surprised"
+    }
+  ]
+}

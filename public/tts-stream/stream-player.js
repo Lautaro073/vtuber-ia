@@ -79,7 +79,13 @@ class StreamSession {
     this.playing = false;
     this.closed = false;
     this.underrunAt = null;
-    this.stats = { firstChunkMs: null, audibleStartMs: null, bufferAtStartSec: null, underruns: 0, underrunMs: 0, seqGaps: 0, duplicates: 0, receivedSamples: 0, playedSamples: 0, contextRate: ctx.sampleRate, outputLatencyMs: null, result: null };
+    this.stats = {
+      firstChunkMs: null, bufferingStartMs: null, audibleStartMs: null, effectiveRenderStartMs: null,
+      bufferAtStartSec: null, underruns: 0, underrunMs: 0, underrunRecoveries: 0,
+      seqGaps: 0, duplicates: 0, receivedSamples: 0, playedSamples: 0,
+      contextRate: ctx.sampleRate, contextState: ctx.state || null, outputLatencyMs: null,
+      streamEndMs: null, playbackEndMs: null, result: null,
+    };
   }
 
   get playedSec() { return this.played / this.rate; }
@@ -88,6 +94,7 @@ class StreamSession {
   begin() {
     if (this.closed || this.begun) return;
     this.begun = true;
+    this.stats.bufferingStartMs = Math.round(performance.now() - this.t0);
     this.timer = setInterval(() => this._tick(), 50);
     this._tick();
   }
@@ -122,6 +129,7 @@ class StreamSession {
     if (this.closed) return;
     this.ended = true;
     this.partial = partial;
+    this.stats.streamEndMs = Math.round(performance.now() - this.t0);
     this.policy.onEnd(performance.now() / 1000, this.received / this.rate);
     this.node.port.postMessage({ type: "end" });
     if (!this.received) this._finish(partial ? "error" : "done");
@@ -145,9 +153,12 @@ class StreamSession {
     if (d.type === "started") {
       // inicio estimado del renderizado: no es el sonido físico en el parlante (falta la latencia del dispositivo)
       const ctx = this.player.ctx;
+      this.stats.contextState = ctx.state || null;
       this.stats.outputLatencyMs = Math.round(((ctx.outputLatency || 0) + (ctx.baseLatency || 0)) * 1000);
       if (this.stats.audibleStartMs === null) {
-        this.stats.audibleStartMs = Math.round(performance.now() - this.t0);
+        const ms = Math.round(performance.now() - this.t0);
+        this.stats.audibleStartMs = ms;
+        this.stats.effectiveRenderStartMs = ms;
         this.cb.onAudible?.(this);
       }
       return;
@@ -166,7 +177,11 @@ class StreamSession {
 
   // Se reanudó tras un corte (el worklet vuelve a "playing" con play()): contabilizar la duración del corte
   _closeUnderrun() {
-    if (this.underrunAt !== null) { this.stats.underrunMs += Math.round(performance.now() - this.underrunAt); this.underrunAt = null; }
+    if (this.underrunAt !== null) {
+      this.stats.underrunMs += Math.round(performance.now() - this.underrunAt);
+      this.stats.underrunRecoveries += 1;
+      this.underrunAt = null;
+    }
   }
 
   cancel(reason = "cancelled") { this._finish("cancelled", reason); }
@@ -181,6 +196,8 @@ class StreamSession {
     try { this.node.disconnect(); this.gain.disconnect(); } catch { }
     this.node.port.onmessage = null;
     this.player.sessions.delete(this.id);
+    this.stats.contextState = this.player.ctx?.state || this.stats.contextState;
+    this.stats.playbackEndMs = Math.round(performance.now() - this.t0);
     Object.assign(this.stats, { receivedSamples: this.received, playedSamples: this.played, result: result === "done" ? "done" : result === "cancelled" ? "cancelled" : "error" });
     this.cb.onFinish?.(this, result, reason);
   }
